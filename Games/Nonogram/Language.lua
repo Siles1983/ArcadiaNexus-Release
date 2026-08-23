@@ -1,0 +1,121 @@
+-- Games/Nonogram/Language.lua
+
+local ArcadiaNexus = _G.ArcadiaNexus
+
+ArcadiaNexus.RegisterLocale("NONOGRAM", "deDE", {
+    game_title        = "Nonogram",
+    lbl_score         = "Punkte",
+    lbl_puzzle        = "Puzzle",
+    lbl_timer         = "Zeit",
+    lbl_errors        = "Fehler",
+    lbl_highscore     = "Highscore",
+    lbl_mode          = "Modus",
+    lbl_input_fill    = "Füllen",
+    lbl_input_mark    = "Markieren",
+    lbl_cursor        = "Cursor",
+
+    btn_start         = "Spiel starten",
+    btn_stop          = "Beenden",
+    btn_resume        = "Weiterspielen",
+    btn_new_puzzle    = "Neues Puzzle",
+
+    diff_easy         = "Einfach",
+    diff_normal       = "Normal",
+    diff_hard         = "Schwer",
+    diff_easy_detail  = "5x5",
+    diff_normal_detail= "10x10",
+    diff_hard_detail  = "15x15",
+
+    mode_free         = "Freies Lösen",
+    mode_strict       = "Streng",
+    mode_select_title = "Weiter spielen?",
+
+    state_idle        = "Schwierigkeit wählen",
+    state_win         = "Gelöst!",
+    state_gameover    = "Keine Fehler mehr!",
+
+    sound_enabled     = "Sound aktiviert",
+    sound_fill        = "Zelle füllen",
+    sound_mark        = "Zelle markieren",
+    sound_error       = "Fehler",
+    sound_win         = "Sieg",
+    sound_lose        = "Niederlage",
+
+    guide_1           = "Fülle Zellen anhand der Zahlen-Hinweise aus.",
+    guide_2           = "Zahlen zeigen zusammenhängende gefüllte Blöcke pro Zeile/Spalte.",
+    guide_3           = "Linksklick / Leertaste: Zelle füllen.",
+    guide_4           = "Rechtsklick / M: Zelle als leer markieren (x).",
+    guide_5           = "Tab: zwischen Füllen und Markieren wechseln.",
+    guide_6           = "Pfeiltasten: Cursor bewegen.",
+    guide_7           = "Grüne Hinweiszahlen = Zeile/Spalte vollständig gelöst.",
+    guide_8           = "Strenger Modus: Falsches Füllen kostet ein Fehler-Leben.",
+
+    box_sound         = "Sound",
+    box_guide         = "Anleitung",
+    box_stats         = "Statistiken",
+    btn_reset         = "Reset",
+    lbl_played        = "Gespielt",
+    lbl_wins          = "Siege",
+    lbl_losses        = "Niederlagen",
+    lbl_top3          = "Top 3",
+    lbl_puzzles_solved= "Puzzle gelöst",
+})
+
+ArcadiaNexus.RegisterLocale("NONOGRAM", "enUS", {
+    game_title        = "Nonogram",
+    lbl_score         = "Score",
+    lbl_puzzle        = "Puzzle",
+    lbl_timer         = "Time",
+    lbl_errors        = "Errors",
+    lbl_highscore     = "Highscore",
+    lbl_mode          = "Mode",
+    lbl_input_fill    = "Fill",
+    lbl_input_mark    = "Mark",
+    lbl_cursor        = "Cursor",
+
+    btn_start         = "Start Game",
+    btn_stop          = "Stop",
+    btn_resume        = "Continue",
+    btn_new_puzzle    = "New Puzzle",
+
+    diff_easy         = "Easy",
+    diff_normal       = "Normal",
+    diff_hard         = "Hard",
+    diff_easy_detail  = "5x5",
+    diff_normal_detail= "10x10",
+    diff_hard_detail  = "15x15",
+
+    mode_free         = "Free Play",
+    mode_strict       = "Strict",
+    mode_select_title = "Continue?",
+
+    state_idle        = "Choose Difficulty",
+    state_win         = "Solved!",
+    state_gameover    = "No lives left!",
+
+    sound_enabled     = "Sound enabled",
+    sound_fill        = "Fill Cell",
+    sound_mark        = "Mark Cell",
+    sound_error       = "Error",
+    sound_win         = "Victory",
+    sound_lose        = "Defeat",
+
+    guide_1           = "Fill cells based on the number clues.",
+    guide_2           = "Numbers show consecutive filled blocks per row/column.",
+    guide_3           = "Left-click / Space: Fill a cell.",
+    guide_4           = "Right-click / M: Mark cell as empty (x).",
+    guide_5           = "Tab: Toggle between Fill and Mark mode.",
+    guide_6           = "Arrow keys: Move cursor.",
+    guide_7           = "Green clue numbers = row/column fully solved.",
+    guide_8           = "Strict Mode: wrong fill costs one error life.",
+
+    box_sound         = "Sound",
+    box_guide         = "Guide",
+    box_stats         = "Statistics",
+    btn_reset         = "Reset",
+    lbl_played        = "Played",
+    lbl_wins          = "Wins",
+    lbl_losses        = "Losses",
+    lbl_top3          = "Top 3",
+    lbl_puzzles_solved= "Puzzles Solved",
+})

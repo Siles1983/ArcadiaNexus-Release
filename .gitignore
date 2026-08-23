@@ -1,0 +1,21 @@
+# Development environments and editor metadata
+.venv/
+venv/
+.cursor/
+.idea/
+.vscode/
+__pycache__/
+*.py[cod]
+
+# Internal project material and tooling
+_tools/
+docs/
+ArcadiaNexus_Project_Data/
+Backup/
+AGENTS.md
+
+# Local and packaged artifacts
+*.zip
+*.log
+Thumbs.db
+.DS_Store

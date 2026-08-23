@@ -1,0 +1,478 @@
+-- Games/AzerothWords/WordList.lua
+-- Alle Wörter in GROSSBUCHSTABEN gespeichert.
+-- Format: { word = "XXXXX", cat = "CATEGORY_ID" }
+-- Kategorien: PLACES | CLASSES | RACES | SPELLS | NPCS | CRAFTING
+
+ArcadiaNexus.WRD_WordList = {}
+local W = ArcadiaNexus.WRD_WordList
+
+-- ============================================================
+-- enUS
+-- ============================================================
+W["enUS"] = {}
+
+-- ── 5-Buchstaben ─────────────────────────────────────────────
+W["enUS"][5] = {
+    -- CLASSES
+    { word="DRUID",  cat="CLASSES"  },
+    { word="MAGE",   cat="CLASSES"  },  -- 4 Buchstaben, Platzhalter
+    { word="ROGUE",  cat="CLASSES"  },
+    { word="MONK",   cat="CLASSES"  },
+    { word="DEATH",  cat="CLASSES"  },
+    { word="SHAMAN", cat="CLASSES"  },
+    -- RACES
+    { word="GNOME",  cat="RACES"    },
+    { word="TROLL",  cat="RACES"    },
+    { word="DWARF",  cat="RACES"    },
+    { word="TAUREN", cat="RACES"    },
+    { word="WORGEN", cat="RACES"    },
+    { word="HUMAN",  cat="RACES"    },
+    { word="PANDA",  cat="RACES"    },
+    { word="GOBLIN", cat="RACES"    },
+    -- PLACES
+    { word="STORM",  cat="PLACES"   },
+    { word="ORGRI",  cat="PLACES"   },
+    { word="DREAD",  cat="PLACES"   },
+    { word="HYJAL",  cat="PLACES"   },
+    { word="UNGORO", cat="PLACES"   },
+    { word="BLADE",  cat="PLACES"   },
+    { word="ULDUM",  cat="PLACES"   },
+    { word="GORGE",  cat="PLACES"   },
+    { word="SHOLAZAR",cat="PLACES"  },
+    -- SPELLS
+    { word="SMITE",  cat="SPELLS"   },
+    { word="BLINK",  cat="SPELLS"   },
+    { word="WRATH",  cat="SPELLS"   },
+    { word="POLYMORPH",cat="SPELLS" },
+    { word="PURGE",  cat="SPELLS"   },
+    { word="CHAIN",  cat="SPELLS"   },
+    { word="FROST",  cat="SPELLS"   },
+    { word="FLARE",  cat="SPELLS"   },
+    { word="GOUGE",  cat="SPELLS"   },
+    { word="BLAZE",  cat="SPELLS"   },
+    { word="DRAIN",  cat="SPELLS"   },
+    { word="SCORCH", cat="SPELLS"   },
+    { word="STOMP",  cat="SPELLS"   },
+    { word="CURSE",  cat="SPELLS"   },
+    { word="ROOTS",  cat="SPELLS"   },
+    -- NPCS
+    { word="JAINA",  cat="NPCS"     },
+    { word="THRALL", cat="NPCS"     },
+    { word="SYLVANAS",cat="NPCS"    },
+    { word="GARROSH",cat="NPCS"     },
+    { word="VELEN",  cat="NPCS"     },
+    { word="LOTHAR", cat="NPCS"     },
+    { word="MOROES", cat="NPCS"     },
+    { word="ONYXIA", cat="NPCS"     },
+    { word="HOGGAR", cat="NPCS"     },
+    -- CRAFTING
+    { word="ANVIL",  cat="CRAFTING" },
+    { word="SWORD",  cat="CRAFTING" },
+    { word="FLASK",  cat="CRAFTING" },
+    { word="FORGE",  cat="CRAFTING" },
+    { word="STAFF",  cat="CRAFTING" },
+    { word="RELIC",  cat="CRAFTING" },
+    { word="SHARD",  cat="CRAFTING" },
+    { word="CLOTH",  cat="CRAFTING" },
+    { word="TONIC",  cat="CRAFTING" },
+    { word="INGOT",  cat="CRAFTING" },
+    { word="CLOAK",  cat="CRAFTING" },
+    { word="BOOTS",  cat="CRAFTING" },
+    { word="GLOVE",  cat="CRAFTING" },
+    { word="SHIELD", cat="CRAFTING" },
+    { word="QUIVER", cat="CRAFTING" },
+    { word="ARROW",  cat="CRAFTING" },
+    { word="IMBUE",  cat="CRAFTING" },
+    { word="SIGIL",  cat="CRAFTING" },
+    { word="TRAPS",  cat="CRAFTING" },
+    { word="SALVE",  cat="CRAFTING" },
+    { word="STAVE",  cat="CRAFTING" },
+    { word="ALLOY",  cat="CRAFTING" },
+    { word="CHISEL", cat="CRAFTING" },
+    { word="GOLEM",  cat="CRAFTING" },
+    { word="LINEN",  cat="CRAFTING" },
+    { word="RIVET",  cat="CRAFTING" },
+    { word="STONE",  cat="CRAFTING" },
+    { word="PLANK",  cat="CRAFTING" },
+    { word="POUCH",  cat="CRAFTING" },
+}
+
+-- ── 6-Buchstaben ─────────────────────────────────────────────
+W["enUS"][6] = {
+    -- CLASSES
+    { word="HUNTER",  cat="CLASSES"  },
+    { word="PRIEST",  cat="CLASSES"  },
+    { word="ROGUE",   cat="CLASSES"  },
+    { word="WARRIOR", cat="CLASSES"  },
+    { word="PALADIN", cat="CLASSES"  },
+    { word="SHAMAN",  cat="CLASSES"  },
+    { word="WARLOCK", cat="CLASSES"  },
+    -- RACES
+    { word="ELF",     cat="RACES"    },
+    { word="NELF",    cat="RACES"    },
+    { word="UNDEAD",  cat="RACES"    },
+    { word="GOBLIN",  cat="RACES"    },
+    { word="WORGEN",  cat="RACES"    },
+    { word="VULPERA", cat="RACES"    },
+    { word="TAUREN",  cat="RACES"    },
+    -- PLACES
+    { word="DALARAN", cat="PLACES"   },
+    { word="ORGRIMMAR",cat="PLACES"  },
+    { word="BOOTY",   cat="PLACES"   },
+    { word="ELWYNN",  cat="PLACES"   },
+    { word="FERALAS", cat="PLACES"   },
+    { word="SILITHUS",cat="PLACES"   },
+    { word="THRALL",  cat="PLACES"   },
+    { word="ASHARA",  cat="PLACES"   },
+    { word="NAGRAND", cat="PLACES"   },
+    { word="TEROKKAR",cat="PLACES"   },
+    { word="ARATHI",  cat="PLACES"   },
+    { word="GILNEAS", cat="PLACES"   },
+    { word="BURNING", cat="PLACES"   },
+    { word="SUNKEN",  cat="PLACES"   },
+    { word="BARRENS", cat="PLACES"   },
+    { word="HILLSBRAD",cat="PLACES"  },
+    -- SPELLS
+    { word="CHARGE",  cat="SPELLS"   },
+    { word="SHADOW",  cat="SPELLS"   },
+    { word="ARCANE",  cat="SPELLS"   },
+    { word="DIVINE",  cat="SPELLS"   },
+    { word="MORTAL",  cat="SPELLS"   },
+    { word="HAMSTRING",cat="SPELLS"  },
+    { word="REJUVENATION",cat="SPELLS"},
+    { word="FROSTBOLT",cat="SPELLS"  },
+    { word="MOONFIRE",cat="SPELLS"   },
+    { word="ENTANGLE",cat="SPELLS"   },
+    { word="SILENCE", cat="SPELLS"   },
+    { word="SHIELD",  cat="SPELLS"   },
+    { word="RENEW",   cat="SPELLS"   },
+    { word="BANISH",  cat="SPELLS"   },
+    { word="STEALTH", cat="SPELLS"   },
+    { word="VANISH",  cat="SPELLS"   },
+    { word="DIVINE",  cat="SPELLS"   },
+    -- NPCS
+    { word="ARTHAS",  cat="NPCS"     },
+    { word="ILLIDAN", cat="NPCS"     },
+    { word="RAGNAROS",cat="NPCS"     },
+    { word="SYLVANAS",cat="NPCS"     },
+    { word="ANDUIN",  cat="NPCS"     },
+    { word="GARROSH", cat="NPCS"     },
+    { word="KHADGAR", cat="NPCS"     },
+    { word="MEDIVH",  cat="NPCS"     },
+    { word="YSERA",   cat="NPCS"     },
+    { word="ALEXSTRASZA",cat="NPCS"  },
+    { word="NEFARIAN",cat="NPCS"     },
+    { word="ARCHIMONDE",cat="NPCS"   },
+    -- CRAFTING
+    { word="POTION",  cat="CRAFTING" },
+    { word="ELIXIR",  cat="CRAFTING" },
+    { word="SMELTING",cat="CRAFTING" },
+    { word="SCROLL",  cat="CRAFTING" },
+    { word="RECIPE",  cat="CRAFTING" },
+    { word="LEATHER", cat="CRAFTING" },
+    { word="ENCHANT", cat="CRAFTING" },
+    { word="MINING",  cat="CRAFTING" },
+    { word="FISHING", cat="CRAFTING" },
+    { word="TAILOR",  cat="CRAFTING" },
+    { word="FABRIC",  cat="CRAFTING" },
+    { word="JEWEL",   cat="CRAFTING" },
+    { word="DAGGER",  cat="CRAFTING" },
+    { word="HAMMER",  cat="CRAFTING" },
+    { word="BOTTLE",  cat="CRAFTING" },
+    { word="QUIVER",  cat="CRAFTING" },
+    { word="BUCKLE",  cat="CRAFTING" },
+}
+
+-- ── 7-Buchstaben ─────────────────────────────────────────────
+W["enUS"][7] = {
+    -- CLASSES
+    { word="PALADIN",  cat="CLASSES"  },
+    { word="WARRIOR",  cat="CLASSES"  },
+    { word="WARLOCK",  cat="CLASSES"  },
+    { word="EVOKER",   cat="CLASSES"  },
+    { word="DEMONHUNTER",cat="CLASSES"},
+    -- RACES
+    { word="PANDAREN", cat="RACES"    },
+    { word="NIGHTELF", cat="RACES"    },
+    { word="DRACTHYR", cat="RACES"    },
+    { word="MAGHAR",   cat="RACES"    },
+    { word="DARKITON", cat="RACES"    },
+    { word="KULMOON",  cat="RACES"    },
+    -- PLACES
+    { word="ULDUAR",   cat="PLACES"   },
+    { word="STRATHOLME",cat="PLACES"  },
+    { word="NAXXRAMAS",cat="PLACES"   },
+    { word="HELLFIRE", cat="PLACES"   },
+    { word="ZANGARMARSH",cat="PLACES" },
+    { word="DRAGONBLIGHT",cat="PLACES"},
+    { word="WESTFALL", cat="PLACES"   },
+    { word="DUSKWOOD", cat="PLACES"   },
+    { word="ASHENVALE",cat="PLACES"   },
+    { word="STRANGLETHORN",cat="PLACES"},
+    { word="ICECROWN", cat="PLACES"   },
+    { word="CRYSTALSONG",cat="PLACES" },
+    { word="SHOLAZAR", cat="PLACES"   },
+    { word="BOREAN",   cat="PLACES"   },
+    { word="GRIZZLY",  cat="PLACES"   },
+    { word="STORMPEAKS",cat="PLACES"  },
+    { word="VASHJ",    cat="PLACES"   },
+    { word="TWILIGHT", cat="PLACES"   },
+    -- SPELLS
+    { word="FIREBALL", cat="SPELLS"   },
+    { word="BLIZZARD", cat="SPELLS"   },
+    { word="EXECUTE",  cat="SPELLS"   },
+    { word="WINDFURY", cat="SPELLS"   },
+    { word="TYPHOON",  cat="SPELLS"   },
+    { word="ERUPTION", cat="SPELLS"   },
+    { word="BLACKOUT", cat="SPELLS"   },
+    { word="SILENCE",  cat="SPELLS"   },
+    { word="FROSTFIRE",cat="SPELLS"   },
+    { word="STARFALL", cat="SPELLS"   },
+    { word="HURRICANE",cat="SPELLS"   },
+    { word="SWIFTMEND",cat="SPELLS"   },
+    -- NPCS
+    { word="DEATHWING",cat="NPCS"     },
+    { word="KELTHAS",  cat="NPCS"     },
+    { word="ARCHIMONDE",cat="NPCS"    },
+    { word="MANKRIK",  cat="NPCS"     },
+    { word="VASHJTIR", cat="NPCS"     },
+    { word="KHADGAR",  cat="NPCS"     },
+    { word="TIRION",   cat="NPCS"     },
+    { word="SYLVANA",  cat="NPCS"     },
+    { word="VEREESA",  cat="NPCS"     },
+    { word="GALAKROND",cat="NPCS"     },
+    { word="YOGSARON", cat="NPCS"     },
+    -- CRAFTING
+    { word="ALCHEMY",  cat="CRAFTING" },
+    { word="SMITHING", cat="CRAFTING" },
+    { word="INSCRIBE", cat="CRAFTING" },
+    { word="SMELTED",  cat="CRAFTING" },
+    { word="BLESSED",  cat="CRAFTING" },
+    { word="MASTERWORK",cat="CRAFTING"},
+    { word="ENCHANT",  cat="CRAFTING" },
+    { word="ENGRAVED", cat="CRAFTING" },
+    { word="REFINED",  cat="CRAFTING" },
+    { word="INFUSED",  cat="CRAFTING" },
+    { word="TEMPERED", cat="CRAFTING" },
+    { word="CRAFTED",  cat="CRAFTING" },
+}
+
+-- ============================================================
+-- deDE
+-- ============================================================
+W["deDE"] = {}
+
+-- ── 5-Buchstaben ─────────────────────────────────────────────
+W["deDE"][5] = {
+    -- CLASSES
+    { word="MAGIER", cat="CLASSES"  },
+    { word="DRUIDE", cat="CLASSES"  },
+    { word="JAGER",  cat="CLASSES"  },
+    { word="MONCH",  cat="CLASSES"  },
+    -- RACES
+    { word="TROLL",  cat="RACES"    },
+    { word="ZWERG",  cat="RACES"    },
+    { word="GNOM",   cat="RACES"    },
+    { word="OGER",   cat="RACES"    },
+    { word="ORCH",   cat="RACES"    },
+    -- PLACES
+    { word="STURMWIND",cat="PLACES" },
+    { word="IROND",  cat="PLACES"   },
+    { word="ULDUM",  cat="PLACES"   },
+    { word="ORGRIMMAR",cat="PLACES" },
+    { word="HYJAL",  cat="PLACES"   },
+    { word="GORGE",  cat="PLACES"   },
+    -- SPELLS
+    { word="BLITZ",  cat="SPELLS"   },
+    { word="WELLE",  cat="SPELLS"   },
+    { word="SCHLAG", cat="SPELLS"   },
+    { word="FROST",  cat="SPELLS"   },
+    { word="FEUER",  cat="SPELLS"   },
+    { word="FLUCH",  cat="SPELLS"   },
+    { word="HEILEN", cat="SPELLS"   },
+    { word="SCHILD", cat="SPELLS"   },
+    { word="STURM",  cat="SPELLS"   },
+    { word="HIEB",   cat="SPELLS"   },
+    -- NPCS
+    { word="THRALL", cat="NPCS"     },
+    { word="JAINA",  cat="NPCS"     },
+    { word="ARTHAS", cat="NPCS"     },
+    { word="VELEN",  cat="NPCS"     },
+    { word="ANDUIN", cat="NPCS"     },
+    { word="GARROSH",cat="NPCS"     },
+    { word="ONYXIA", cat="NPCS"     },
+    -- CRAFTING
+    { word="AMBOSS", cat="CRAFTING" },
+    { word="TRANK",  cat="CRAFTING" },
+    { word="STOFF",  cat="CRAFTING" },
+    { word="ERZE",   cat="CRAFTING" },
+    { word="NAGEL",  cat="CRAFTING" },
+    { word="RUNE",   cat="CRAFTING" },
+    { word="STAHL",  cat="CRAFTING" },
+    { word="LEDER",  cat="CRAFTING" },
+    { word="HOLZ",   cat="CRAFTING" },
+    { word="STEIN",  cat="CRAFTING" },
+    { word="KETTE",  cat="CRAFTING" },
+    { word="SIRUP",  cat="CRAFTING" },
+    { word="KLINGE", cat="CRAFTING" },
+    { word="BOGEN",  cat="CRAFTING" },
+    { word="SCHURZ", cat="CRAFTING" },
+    { word="KEULE",  cat="CRAFTING" },
+    { word="HELM",   cat="CRAFTING" },
+    { word="HEMD",   cat="CRAFTING" },
+    { word="MANTEL", cat="CRAFTING" },
+    { word="TASCHE", cat="CRAFTING" },
+}
+
+-- ── 6-Buchstaben ─────────────────────────────────────────────
+W["deDE"][6] = {
+    -- CLASSES
+    { word="SCHURK",   cat="CLASSES"  },
+    { word="PRIESTER", cat="CLASSES"  },
+    { word="KRIEGER",  cat="CLASSES"  },
+    { word="MAGIER",   cat="CLASSES"  },
+    { word="DRUIDE",   cat="CLASSES"  },
+    { word="SCHAMANE", cat="CLASSES"  },
+    { word="HEXER",    cat="CLASSES"  },
+    { word="JAGER",    cat="CLASSES"  },
+    { word="PALADIN",  cat="CLASSES"  },
+    { word="EVOKER",   cat="CLASSES"  },
+    -- RACES
+    { word="TAUREN",   cat="RACES"    },
+    { word="GOBLIN",   cat="RACES"    },
+    { word="PANDAREN", cat="RACES"    },
+    { word="WORGEN",   cat="RACES"    },
+    { word="VULPERA",  cat="RACES"    },
+    { word="NACHTELF", cat="RACES"    },
+    { word="BLUTELFE", cat="RACES"    },
+    -- PLACES
+    { word="DALARAN",  cat="PLACES"   },
+    { word="FERALAS",  cat="PLACES"   },
+    { word="NAGRAND",  cat="PLACES"   },
+    { word="ARATHI",   cat="PLACES"   },
+    { word="GILNEAS",  cat="PLACES"   },
+    { word="BARRENS",  cat="PLACES"   },
+    { word="WETLANDS", cat="PLACES"   },
+    { word="UNDERCITY",cat="PLACES"   },
+    { word="IRONFORGE",cat="PLACES"   },
+    { word="DARKSHIRE",cat="PLACES"   },
+    { word="BOOTY",    cat="PLACES"   },
+    -- SPELLS
+    { word="ARKANE",   cat="SPELLS"   },
+    { word="HEILUNG",  cat="SPELLS"   },
+    { word="ANGRIFF",  cat="SPELLS"   },
+    { word="KLINGE",   cat="SPELLS"   },
+    { word="RAUSCH",   cat="SPELLS"   },
+    { word="BANN",     cat="SPELLS"   },
+    { word="ABWEHR",   cat="SPELLS"   },
+    { word="VERWAND",  cat="SPELLS"   },
+    { word="DONNER",   cat="SPELLS"   },
+    { word="SCHLAG",   cat="SPELLS"   },
+    -- NPCS
+    { word="ILLIDAN",  cat="NPCS"     },
+    { word="KHADGAR",  cat="NPCS"     },
+    { word="SYLVANAS", cat="NPCS"     },
+    { word="MEDIVH",   cat="NPCS"     },
+    { word="NEFARIAN", cat="NPCS"     },
+    { word="RAGNAROS", cat="NPCS"     },
+    { word="ANDUIN",   cat="NPCS"     },
+    { word="YSERA",    cat="NPCS"     },
+    -- CRAFTING
+    { word="ELIXIER",  cat="CRAFTING" },
+    { word="REZEPT",   cat="CRAFTING" },
+    { word="SCHMIED",  cat="CRAFTING" },
+    { word="SCHNEID",  cat="CRAFTING" },
+    { word="ANGELN",   cat="CRAFTING" },
+    { word="BERGBAU",  cat="CRAFTING" },
+    { word="DOLCH",    cat="CRAFTING" },
+    { word="HAMMER",   cat="CRAFTING" },
+    { word="RUSTE",    cat="CRAFTING" },
+    { word="BEUTEL",   cat="CRAFTING" },
+    { word="PANEL",    cat="CRAFTING" },
+    { word="SCHWERT",  cat="CRAFTING" },
+    { word="WESTE",    cat="CRAFTING" },
+    { word="UMHANG",   cat="CRAFTING" },
+    { word="RING",     cat="CRAFTING" },
+}
+
+-- ── 7-Buchstaben ─────────────────────────────────────────────
+W["deDE"][7] = {
+    -- CLASSES
+    { word="KRIEGER",  cat="CLASSES"  },
+    { word="HEXER",    cat="CLASSES"  },
+    { word="SCHAMANE", cat="CLASSES"  },
+    { word="PRIESTER", cat="CLASSES"  },
+    { word="PALADIN",  cat="CLASSES"  },
+    -- RACES
+    { word="PANDAREN", cat="RACES"    },
+    { word="DRACHYR",  cat="RACES"    },
+    { word="NACHTELF", cat="RACES"    },
+    { word="BLUTELFE", cat="RACES"    },
+    { word="LICHTGEB", cat="RACES"    },
+    -- PLACES
+    { word="DALARAN",  cat="PLACES"   },
+    { word="ULDUAR",   cat="PLACES"   },
+    { word="EISENKRON",cat="PLACES"   },
+    { word="DRACHENBLIGHT",cat="PLACES"},
+    { word="STURMWIND",cat="PLACES"   },
+    { word="ASHENVALE",cat="PLACES"   },
+    { word="WESTFALL", cat="PLACES"   },
+    { word="DUSKWOOD", cat="PLACES"   },
+    { word="HELLFIRE", cat="PLACES"   },
+    { word="TEROKKAR", cat="PLACES"   },
+    { word="SHOLAZAR", cat="PLACES"   },
+    { word="GRIZZLYHILLS",cat="PLACES"},
+    { word="BOREAN",   cat="PLACES"   },
+    { word="SILITHUS", cat="PLACES"   },
+    -- SPELLS
+    { word="FEUERBALL",cat="SPELLS"   },
+    { word="BLIZZARD", cat="SPELLS"   },
+    { word="STURMBOLT",cat="SPELLS"   },
+    { word="WINDZORN", cat="SPELLS"   },
+    { word="DONNERSTURM",cat="SPELLS" },
+    { word="AUSROTTEN",cat="SPELLS"   },
+    { word="HEILNOVA", cat="SPELLS"   },
+    { word="MONDBRAND",cat="SPELLS"   },
+    { word="VERWANDL", cat="SPELLS"   },
+    { word="FROSTBOLT",cat="SPELLS"   },
+    { word="NACHTFALL",cat="SPELLS"   },
+    { word="SONNENBRAND",cat="SPELLS" },
+    -- NPCS
+    { word="DEATHWING",cat="NPCS"     },
+    { word="ILLIDAN",  cat="NPCS"     },
+    { word="ARCHIMONDE",cat="NPCS"    },
+    { word="KHADGAR",  cat="NPCS"     },
+    { word="GALAKROND",cat="NPCS"     },
+    { word="LOTHAR",   cat="NPCS"     },
+    { word="GARROSH",  cat="NPCS"     },
+    { word="SYLVANAS", cat="NPCS"     },
+    -- CRAFTING
+    { word="ALCHEMIE", cat="CRAFTING" },
+    { word="VERZAUB",  cat="CRAFTING" },
+    { word="SCHMIED",  cat="CRAFTING" },
+    { word="INSCHR",   cat="CRAFTING" },
+    { word="BERGBAU",  cat="CRAFTING" },
+    { word="ANGELN",   cat="CRAFTING" },
+    { word="KOCHEN",   cat="CRAFTING" },
+    { word="NAHEN",    cat="CRAFTING" },
+    { word="ERSTELLT", cat="CRAFTING" },
+    { word="GEHARTER", cat="CRAFTING" },
+    { word="MEISTER",  cat="CRAFTING" },
+    { word="GESEGNET", cat="CRAFTING" },
+}
+
+-- ============================================================
+-- Lookup-Tabelle: schnelle Validierung (O(1))
+-- ============================================================
+ArcadiaNexus.WRD_ValidWords = {}
+local VW = ArcadiaNexus.WRD_ValidWords
+
+for locale, lengths in pairs(W) do
+    VW[locale] = VW[locale] or {}
+    for length, entries in pairs(lengths) do
+        VW[locale][length] = VW[locale][length] or {}
+        for _, e in ipairs(entries) do
+            VW[locale][length][e.word] = true
+        end
+    end
+end
