@@ -18,9 +18,6 @@
 - The Retire button sits in control-bar segment 1 and only appears when the pet is eligible.
 - Need bars show 32×32 icons (hunger, happiness, energy, health, hygiene) in front of the labels.
 - Opening a pet in the stable uses the same 3D viewer position as active play. Name overlay on the model, translated DE/EN detail rows with dividers, and Care / New Pet / Back in one row under the box.
-- Model widget size (play_model / stall_model) no longer overrides camera zoom and scale from PetData, so framing can be adjusted per species and stage.
-- Developer Mode adds a button to jump to the next evolution stage (or back to baby on adult) to review all models.
-- Developer Mode is locked to a character allowlist. Other characters do not see the Developer tab, and flipping the saved flag is not enough. `/andevwho` prints the Name-Realm key to add.
 - The stable list is scrollable so New Pet and Back stay visible. The shared Nexus scrollbar appears only when the list is long enough to scroll.
 - Pets can be released from the stable overview via an X on each card, with a gold confirmation popup.
 - A stable holds at most 24 pets. Adopting another while full shows an info popup asking you to release one first.
@@ -42,8 +39,6 @@
 - Der Ruhestand-Button sitzt in Segment 1 der Controls-Leiste und erscheint nur, wenn das Pet den Status hat.
 - Vor den Bedürfnis-Labels stehen 32×32-Icons (Hunger, Glück, Energie, Gesundheit, Sauberkeit).
 - Ein Pet im Stall öffnet denselben 3D-Viewer wie im aktiven Spiel. Namens-Overlay auf dem Modell, übersetzte DE/EN-Details mit Trennlinien, Pflegen / Neues Pet / Zurück in einer Reihe unter der Box.
-- Die Widget-Größe von play_model / stall_model überschreibt Zoom und Scale aus PetData nicht mehr; die Kameras können pro Art und Stufe eingestellt werden.
-- Im Developer-Modus springt ein Button zur nächsten Evolutionsstufe (bzw. zurück zum Baby), um alle Modelle zu prüfen.
 - Der Developer-Modus ist an eine Charakter-Allowlist gebunden. Andere Charaktere sehen den Entwickler-Tab nicht, das Setzen des Saved-Flags reicht nicht. `/andevwho` gibt den Name-Realm-Schlüssel aus.
 - Die Stall-Liste ist scrollbar, damit Neues Pet und Zurück sichtbar bleiben. Der gemeinsame Nexus-Scrollbalken erscheint nur, wenn die Liste lang genug zum Scrollen ist.
 - Pets können in der Stall-Übersicht über ein X an der Karte freigelassen werden, mit goldenem Bestätigungs-Popup.
