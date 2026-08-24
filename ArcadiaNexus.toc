@@ -1,8 +1,8 @@
-## Interface: 120000
+## Interface: 120100
 ## Title: Arcadia Nexus
 ## Notes: Arcadia Nexus - Mini-Game Framework
 ## Author: Siles
-## Version: 1.1.0
+## Version: 1.1.3
 ## IconTexture: Interface\Icons\INV_Misc_Dice_01
 ## SavedVariables: ArcadiaNexusDB
 
@@ -272,7 +272,6 @@ Games/ShellGame/Renderer.lua
 Games/ShellGame/ShellGame_Achievements.lua
 Games/ShellGame/ShellGame_Leaderboard.lua
 
-# Tavern Cards - UNO (Karten)
 Games/TavernCards/Language.lua
 Games/TavernCards/Settings.lua
 Games/TavernCards/Deck.lua
@@ -286,8 +285,6 @@ Games/TavernCards/Renderer.lua
 Games/TavernCards/TavernCards_Achievements.lua
 Games/TavernCards/TavernCards_Leaderboard.lua
 
-# Goblin Blast - Arcade (/goblinblast, /gblast)
-# Texturen: Games/GoblinBlast/assets/ (Logo/Border vom Nutzer, Sprites per Python-Pipeline)
 Games/GoblinBlast/Language.lua
 Games/GoblinBlast/Settings.lua
 Games/GoblinBlast/Levels.lua
@@ -297,8 +294,6 @@ Games/GoblinBlast/Renderer.lua
 Games/GoblinBlast/GoblinBlast_Achievements.lua
 Games/GoblinBlast/GoblinBlast_Leaderboard.lua
 
-# Barrel Brawl - Arcade (/barrelbrawl, /bbrawl)
-# Texturen: Games/BarrelBrawl/assets/sprites/ (32x32-TGAs per Python-Pipeline)
 Games/BarrelBrawl/Language.lua
 Games/BarrelBrawl/Logic.lua
 Games/BarrelBrawl/Engine.lua
@@ -353,8 +348,6 @@ Games/Nonogram/Renderer.lua
 Games/Nonogram/Nonogram_Achievements.lua
 Games/Nonogram/Nonogram_Leaderboard.lua
 
-# Azeroth Jewels - Match-3 Deluxe (/azerothjewels, /aj)
-# Texturen: Games/AzerothJewels/assets/gems/ (64x64-TGAs per Python-Pipeline)
 Games/AzerothJewels/Language.lua
 Games/AzerothJewels/Settings.lua
 Games/AzerothJewels/Levels.lua
@@ -365,10 +358,6 @@ Games/AzerothJewels/Renderer.lua
 Games/AzerothJewels/AzerothJewels_Achievements.lua
 Games/AzerothJewels/AzerothJewels_Leaderboard.lua
 
-# -----------------------------------------------------------------------------
-# UI - Framework-Infrastruktur (Core)
-# UIHelpers MUSS als erstes UI-Modul geladen werden
-# -----------------------------------------------------------------------------
 UI/Core/UIHelpers.lua
 UI/Core/LayoutConfig.lua
 UI/Core/GameViewport.lua
@@ -384,8 +373,6 @@ UI/HubTabs/HubTab_Profil.lua
 UI/HubTabs/HubTab_Settings.lua
 UI/Core/ContentPanel.lua
 
-# GamesPanel-Module
-# Ladereihenfolge: Deps -> Core (BuildSidebarPanel) -> Panel-Submodule
 UI/GamesPanel/FavoritesManager.lua
 UI/GamesPanel/CategoryBuilder.lua
 UI/GamesPanel/StarButton.lua
@@ -405,9 +392,6 @@ UI/Core/Language.lua
 UI/Panels/WelcomePanel_Logo.lua
 UI/Panels/WelcomePanel.lua
 
-# Achievement-Module
-# Spiel-eigene *_Achievements.lua und *_Leaderboard.lua werden oben in den Spiel-Bloecken geladen.
-# Hier: globale Achievements + Index (immer zuletzt)
 UI/Achievements/Achievement_Global.lua
 UI/Achievements/Achievement_Index.lua
 UI/Achievements/Achievement_Summary_Helpers.lua
@@ -421,8 +405,6 @@ UI/Achievements/Achievement_Summary.lua
 
 UI/Core/ToastManager.lua
 UI/Panels/Stats_UI.lua
-# Settings-Module
-# Ladereihenfolge: Core (HubSettings-Table) -> Tabs (General/Games/Stats/Developer)
 UI/Settings/HubSettings_Core.lua
 UI/Settings/HubSettings_TabGeneral.lua
 UI/Settings/HubSettings_TabGames.lua
@@ -433,7 +415,6 @@ UI/Core/HUD.lua
 UI/Core/MinimapButton.lua
 UI/Panels/Leaderboard_UI.lua
 
-# GameSettings - Spiel-spezifische Settings Panels
 UI/GameSettings/GameSettingsBuilder.lua
 UI/GameSettings/SymbolBackgroundSettingsBuilder.lua
 UI/GameSettings/TicTacToe_SettingsPanel.lua
