@@ -24,7 +24,7 @@ local P = ArcadiaNexus.Persistence
 -- SCHEMA VERSION
 -- Erhöhe diese Nummer bei strukturellen DB-Änderungen.
 -- ============================================================
-local CURRENT_SCHEMA = 7
+local CURRENT_SCHEMA = 8
 
 -- ============================================================
 -- DEFAULT SCHEMA
@@ -166,6 +166,12 @@ function P:_RunMigrations()
     if dbVersion < 7 then
         self:_MigrateLudoToLoa()
         GH_LogInfo("Persistence", "Migration v6 -> v7 abgeschlossen")
+    end
+
+    -- Schema v7 → v8: Goblin Gold Hunter und DevBlueprint entfernen
+    if dbVersion < 8 then
+        self:_RemoveRetiredGames()
+        GH_LogInfo("Persistence", "Migration v7 -> v8 abgeschlossen")
     end
 end
 
@@ -375,6 +381,54 @@ function P:_MigrateLudoToLoa()
         for i, id in ipairs(ArcadiaNexusDB.favorites) do
             if id == "LUDO" then ArcadiaNexusDB.favorites[i] = "LOA" end
         end
+    end
+end
+
+--- v8: Goblin Gold Hunter (GGH) und DevBlueprint vollständig aus der DB entfernen.
+function P:_RemoveRetiredGames()
+    local retired = { GGH = true, DEVBLUEPRINT = true }
+
+    if ArcadiaNexusDB.gameSettings then
+        ArcadiaNexusDB.gameSettings.GGH = nil
+        ArcadiaNexusDB.gameSettings.DEVBLUEPRINT = nil
+    end
+
+    if ArcadiaNexusDB.leaderboard then
+        ArcadiaNexusDB.leaderboard.GGH = nil
+        ArcadiaNexusDB.leaderboard.DEVBLUEPRINT = nil
+    end
+
+    ArcadiaNexusDB.blueprint = nil
+
+    local function stripIdList(list)
+        if type(list) ~= "table" then return end
+        for i = #list, 1, -1 do
+            if retired[list[i]] then
+                table.remove(list, i)
+            end
+        end
+        list.GGH = nil
+        list.DEVBLUEPRINT = nil
+    end
+    stripIdList(ArcadiaNexusDB.favorites)
+    stripIdList(ArcadiaNexusDB.hiddenGames)
+
+    local ach = ArcadiaNexusDB.achievements
+    if ach then
+        local function stripAchKeys(tbl)
+            if type(tbl) ~= "table" then return end
+            local toRemove = {}
+            for key in pairs(tbl) do
+                if type(key) == "string" and (key:sub(1, 4) == "GGH_" or key:sub(1, 4) == "DBP_") then
+                    toRemove[#toRemove + 1] = key
+                end
+            end
+            for _, key in ipairs(toRemove) do
+                tbl[key] = nil
+            end
+        end
+        stripAchKeys(ach.unlocked)
+        stripAchKeys(ach.progress)
     end
 end
 

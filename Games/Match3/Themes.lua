@@ -21,6 +21,7 @@ local T = ArcadiaNexus.M3_Themes
 T.Themes = {
 
     -- ── 1. Raid-Marker ────────────────────────────────────────
+    -- Verifiziert: identische Raid-Targeting-Icon-IDs (1–8)
     -- Zuordnung: 1=Stern, 2=Kreis, 3=Diamant, 4=Dreieck,
     --            5=Mond,  6=Quadrat, 7=Kreuz, 8=Totenkopf
 raidmarker = {

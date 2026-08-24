@@ -703,7 +703,7 @@ function GS.Build(parent, config)
         nextY = nextY + guideH + UI.BOX_PAD
     end
 
-    -- ── Extra-Boxen (z. B. GGH Punkte-Info) ──────────────────
+    -- ── Extra-Boxen (optionale Zeilen unter Guide) ──────────
     for _, boxCfg in ipairs(config.extraBoxes or {}) do
         local boxH = boxCfg.height or 100
         local _, cExtra = UI.CreateBox(parent, boxCfg.title or "", UI.BOX_PAD, nextY, totalW, boxH)

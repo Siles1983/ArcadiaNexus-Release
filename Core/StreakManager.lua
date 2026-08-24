@@ -11,6 +11,32 @@ ArcadiaNexus.StreakManager = SM
 -- Muss VOR Init() stehen – Lua local ist erst ab Deklarationszeile sichtbar
 local _firstGameGiven = false
 
+-- Serielle Nummer eines lokalen Kalendertags (Gregorianischer Kalender).
+-- GetServerTime liefert einen stabilen Unix-Zeitstempel; date("*t", ...)
+-- ordnet ihn dem Kalendertag des Clients zu. Die serielle Nummer erlaubt
+-- korrekte Differenzen auch über Monats-, Jahres- und Schaltjahrgrenzen.
+local function GetCalendarDay(timestamp)
+    if type(timestamp) ~= "number" or timestamp <= 0 then return nil end
+
+    local calendar = date("*t", timestamp)
+    if not calendar then return nil end
+
+    local year  = calendar.year
+    local month = calendar.month
+    local day   = calendar.day
+    local a = math.floor((14 - month) / 12)
+    local y = year + 4800 - a
+    local m = month + 12 * a - 3
+
+    return day
+        + math.floor((153 * m + 2) / 5)
+        + 365 * y
+        + math.floor(y / 4)
+        - math.floor(y / 100)
+        + math.floor(y / 400)
+        - 32045
+end
+
 -- ============================================================
 -- MEILENSTEINE
 -- ============================================================
@@ -51,21 +77,21 @@ function SM:OnLogin()
     local db = ArcadiaNexusDB.streak
     if not db then return end
 
-    local now     = GetServerTime()
-    local last    = db.lastLogin or 0
-    local DAY_SEC = 86400
+    local now        = GetServerTime()
+    local currentDay = GetCalendarDay(now)
+    local lastDay    = GetCalendarDay(db.lastLogin)
+    local dayDiff    = lastDay and currentDay and (currentDay - lastDay) or nil
 
-    local diff = now - last
-
-    if diff < DAY_SEC then
-        -- Gleicher Tag – nichts tun (Streak bleibt)
-    elseif diff < DAY_SEC * 2 then
-        -- Nächster Tag: Streak fortführen
+    if dayDiff == 0 then
+        -- Gleicher Kalendertag – nichts tun (Streak bleibt)
+    elseif dayDiff == 1 then
+        -- Direkt folgender Kalendertag: Streak fortführen
         db.current       = (db.current or 0) + 1
         db.claimedToday  = false
         SM:_CheckMilestone()
     else
-        -- Mehr als 1 Tag Pause: Streak gebrochen
+        -- Erster Login, übersprungener Tag oder ungültige/future Daten:
+        -- eine neue Streak mit dem heutigen Tag beginnen.
         db.current      = 1
         db.claimedToday = false
     end
@@ -77,7 +103,7 @@ function SM:OnLogin()
     end
 
     -- Erstes tägliches Spiel: +2 Gold (falls heute noch nicht erhalten)
-    -- wird in _CheckFirstGameOfDay() ausgelöst wenn GAME_RESULT eintrifft
+    -- wird vom GAME_RESULT-Listener aus Init() ausgelöst.
 
     ArcadiaNexus.Engine:Emit("STREAK_UPDATED", db)
 end

@@ -16,6 +16,7 @@ ArcadiaNexus.RegisterLocale("LOA", "deDE", {
     status_pick     = "|cffffff00Figur wählen|r",
     status_ai_think = "|cffaaaaaa KI denkt...|r",
     status_no_move  = "|cffff8800Kein Zug möglich!|r",
+    status_reroll   = "|cffff8800Keine 6 – nochmal würfeln (%d/%d)|r",
 
     result_win_title  = "|cffffd700Sieg! Für den Ruhm Azeroths!|r",
     result_win_sub    = "|cff00ff00Du hast alle Figuren ins Ziel gebracht!|r",
@@ -63,10 +64,11 @@ ArcadiaNexus.RegisterLocale("LOA", "deDE", {
 
     guide_goal      = "|cffffff00Ziel:|r Bringe alle 4 Figuren ins Ziel.",
     guide_dice      = "|cffffff00Würfeln:|r Klicke auf den Würfel-Button.",
-    guide_six       = "|cffffff006 würfeln:|r Figur aus der Basis + nochmals würfeln.",
+    guide_six       = "|cffffff00Würfeln:|r Keine Figur auf dem Feld: bis zu 3 Würfe, bis eine 6 fällt. Sonst nur 1 Wurf. Eine 6: nochmals würfeln.",
     guide_move      = "|cffffff00Figur ziehen:|r Gültige Figuren leuchten gelb.",
-    guide_capture   = "|cffffff00Schlagen:|r Gegnerische Figur zurück in die Basis.",
-    guide_safe      = "|cffffff00Sicher:|r Einstiegsfeld ist nicht schlagbar.",
+    guide_capture   = "|cffffff00Schlagen (Pflicht):|r Landest du auf einer Figur (Gegner oder eigene), muss sie zurück ins Haus. Auch das Startfeld ist nicht sicher.",
+    guide_safe      = "|cffffff00Haus verlassen:|r Steht bereits eine eigene Figur auf dem Startfeld, muss sie erst ziehen, bevor eine neue das Haus verlässt.",
+    guide_home      = "|cffffff00Zielfelder:|r Die vier Felder werden nacheinander belegt. Figuren bleiben sichtbar. Exakte Augenzahl, kein Besetzen eines belegten Zielfelds.",
     guide_ai        = "|cffffff00KI:|r Schlägt bevorzugt, sonst vorderste Figur.",
     guide_hint      = "|cffaaaaaa Positions-Kalibrierung: /loa debug path|r",
 
@@ -86,6 +88,7 @@ ArcadiaNexus.RegisterLocale("LOA", "enUS", {
     status_pick     = "|cffffff00Choose a piece|r",
     status_ai_think = "|cffaaaaaa AI thinking...|r",
     status_no_move  = "|cffff8800No move possible!|r",
+    status_reroll   = "|cffff8800No 6 – roll again (%d/%d)|r",
 
     result_win_title  = "|cffffd700Victory! For the glory of Azeroth!|r",
     result_win_sub    = "|cff00ff00You moved all pieces to the goal!|r",
@@ -133,10 +136,11 @@ ArcadiaNexus.RegisterLocale("LOA", "enUS", {
 
     guide_goal      = "|cffffff00Goal:|r Move all 4 pieces to the goal.",
     guide_dice      = "|cffffff00Dice:|r Click the dice button.",
-    guide_six       = "|cffffff00Roll 6:|r Place a piece from base + roll again.",
+    guide_six       = "|cffffff00Rolling:|r No piece on the board: up to 3 rolls until a 6. Otherwise only 1 roll. A 6: roll again.",
     guide_move      = "|cffffff00Move:|r Valid pieces glow yellow.",
-    guide_capture   = "|cffffff00Capture:|r Send opponent back to base.",
-    guide_safe      = "|cffffff00Safe:|r Entry square cannot be captured.",
+    guide_capture   = "|cffffff00Capture (mandatory):|r Landing on a piece (opponent or your own) sends it back to base. The start square is not safe.",
+    guide_safe      = "|cffffff00Leaving base:|r If one of your pieces is already on the start square, it must move before another can leave the house.",
+    guide_home      = "|cffffff00Home:|r Fill the four home squares one by one. Pieces stay visible. Exact count; no landing on an occupied home square.",
     guide_ai        = "|cffffff00AI:|r Prefers captures, else leading piece.",
     guide_hint      = "|cffaaaaaa Position calibration: /loa debug path|r",
 

@@ -15,6 +15,7 @@ local function BuildCategoryPanel(parent)
     local F = ArcadiaNexus.UI.GetGamesPanelFrameRefs()
 
     local function ActivateGame(catID)
+        local gameShown = false
         NexusTabState.activeCategory = catID
         for _, b in ipairs(F.catBtns) do b.Refresh() end
         NexusTabs.RefreshPanelVisibility()
@@ -24,12 +25,19 @@ local function BuildCategoryPanel(parent)
             NexusTabs.StopAllGames()
             local info = GR.GetById(catID)
             if info then
-                GR.ShowContainer(catID)
-                local rnd = GR.GetRenderer(catID)
-                local eng = GR.GetEngine(catID)
-                local engRunning = eng and eng.state and eng.state ~= "IDLE"
-                if rnd and rnd.EnterIdleState and not engRunning then
-                    rnd:EnterIdleState()
+                local shown = GR.ShowContainer(catID)
+                if shown then
+                    gameShown = true
+                    local rnd = GR.GetRenderer(catID)
+                    local eng = GR.GetEngine(catID)
+                    local engRunning = eng and eng.state and eng.state ~= "IDLE"
+                    if rnd and rnd.EnterIdleState and not engRunning then
+                        local ok, err = pcall(rnd.EnterIdleState, rnd)
+                        if not ok then
+                            GH_LogError("GamesPanel", "EnterIdleState fehlgeschlagen ["
+                                .. tostring(catID) .. "]: " .. tostring(err))
+                        end
+                    end
                 end
             end
         end
@@ -37,7 +45,11 @@ local function BuildCategoryPanel(parent)
         if fpr and fpr.OnCategoryChange then fpr:OnCategoryChange(catID) end
         -- Willkommens-Panel ausblenden wenn ein Spiel aktiviert wird
         if ArcadiaNexus.UI.WelcomePanel then
-            ArcadiaNexus.UI.WelcomePanel:Hide()
+            if gameShown then
+                ArcadiaNexus.UI.WelcomePanel:Hide()
+            else
+                ArcadiaNexus.UI.WelcomePanel:Show()
+            end
         end
     end
     -- Export damit WelcomePanel den GOTD-Button verknüpfen kann

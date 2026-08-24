@@ -1,7 +1,7 @@
 --[[
     NEXUS GAMING HUB
     Modul: MinimapButton
-    Verantwortlich für: Minimap-Button Erstellung und Renderer-Init
+    Verantwortlich für: Minimap-Button Erstellung
 
     Abhängigkeiten:
         UI/MainFrame.lua  (F()-Accessor)
@@ -74,14 +74,6 @@ local function CreateMinimapButton()
     btn:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
-	-- Renderer initialisieren; erstes Spiel-Container anzeigen
-if _G.ArcadiaNexus and _G.ArcadiaNexus.GameRegistry then
-    local GR = _G.ArcadiaNexus.GameRegistry
-    GR.InitRenderers()
-    GR.SetupInitialContainers()
-end
-
-
 end
 
 -- Export für Init()-Aufruf in MainFrame.lua

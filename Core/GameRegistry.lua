@@ -24,7 +24,9 @@
         ArcadiaNexus.GameRegistry.HideAllContainers()
         ArcadiaNexus.GameRegistry.ShowContainer(id)
         ArcadiaNexus.GameRegistry.StopActiveGame()
+        ArcadiaNexus.GameRegistry.InitRenderer(id)
         ArcadiaNexus.GameRegistry.InitRenderers()
+        ArcadiaNexus.GameRegistry.GetRendererInitStatus(id)
         ArcadiaNexus.GameRegistry.SetupInitialContainers()
         ArcadiaNexus.GameRegistry.GetAll()
 ]]
@@ -35,6 +37,36 @@ local GR = ArcadiaNexus.GameRegistry
 
 local registry = {}
 local byId = {}
+local rendererInitState = {}
+
+local function CaptureError(err)
+    local message = tostring(err)
+    if debugstack then
+        local ok, trace = pcall(debugstack, 2, 20, 20)
+        if ok and trace and trace ~= "" then
+            message = message .. "\n" .. trace
+        end
+    end
+    return message
+end
+
+local function LogGameError(gameId, action, err)
+    GH_LogError("GameRegistry",
+        tostring(action) .. " fehlgeschlagen [" .. tostring(gameId) .. "]: " .. tostring(err))
+end
+
+local function SafeContainerCall(gameId, container, method)
+    if not container or type(container[method]) ~= "function" then
+        return false
+    end
+    local ok, err = xpcall(function()
+        container[method](container)
+    end, CaptureError)
+    if not ok then
+        LogGameError(gameId, "Container:" .. method, err)
+    end
+    return ok
+end
 
 -- Standard-Filter-Policies (single source of truth)
 GR.FILTER_SIDEBAR     = { includeDevOnly = true,  respectHidden = true }
@@ -281,16 +313,23 @@ function GR.HideAllContainers()
     for _, info in ipairs(registry) do
         local container = GR.GetContainer(info.id)
         if container then
-            container:Hide()
+            SafeContainerCall(info.id, container, "Hide")
         end
     end
 end
 
 function GR.ShowContainer(id)
+    local state = rendererInitState[id]
+    if state and state.state == "failed" then
+        GH_LogWarn("GameRegistry", "Spiel ist wegen Renderer-Fehler nicht verfügbar: " .. tostring(id))
+        return false
+    end
+
     local container = GR.GetContainer(id)
     if container then
-        container:Show()
+        return SafeContainerCall(id, container, "Show")
     end
+    return false
 end
 
 --- Stoppt nur das aktuell laufende Spiel (Lifecycle-aware).
@@ -303,12 +342,22 @@ function GR.StopActiveGame()
 
     local eng = GR.GetEngine(activeId)
     local rnd = GR.GetRenderer(activeId)
+    local stopTarget, stopMethod
     if eng and eng.StopGame then
-        eng:StopGame()
+        stopTarget, stopMethod = eng, "StopGame"
     elseif rnd and rnd.StopGame then
-        rnd:StopGame()
+        stopTarget, stopMethod = rnd, "StopGame"
     elseif rnd and rnd.EnterIdleState then
-        rnd:EnterIdleState()
+        stopTarget, stopMethod = rnd, "EnterIdleState"
+    end
+
+    if stopTarget then
+        local ok, err = xpcall(function()
+            stopTarget[stopMethod](stopTarget)
+        end, CaptureError)
+        if not ok then
+            LogGameError(activeId, stopMethod, err)
+        end
     end
 
     if LC and LC:IsGameActive() then
@@ -319,27 +368,94 @@ function GR.StopActiveGame()
     end
 end
 
+--- Initialisiert genau einen Renderer hinter einer Fehlergrenze.
+--- Ein defektes Spiel darf weder weitere Renderer noch den Hub-Bootstrap abbrechen.
+--- Erfolgreiche und fehlgeschlagene Initialisierungen werden in dieser UI-Session
+--- nicht automatisch wiederholt, da viele Renderer Event-Listener registrieren.
+function GR.InitRenderer(id)
+    local info = GR.GetById(id)
+    if not info then
+        return false, "Spiel nicht registriert: " .. tostring(id)
+    end
+
+    local previous = rendererInitState[id]
+    if previous then
+        if previous.state == "ready" then
+            return true
+        end
+        if previous.state == "failed" then
+            return false, previous.error
+        end
+        if previous.state == "initializing" then
+            return false, "Renderer-Initialisierung läuft bereits"
+        end
+    end
+
+    local rnd = GR.GetRenderer(id)
+    if not rnd or type(rnd.Init) ~= "function" then
+        local err = "Renderer oder Init-Funktion fehlt"
+        rendererInitState[id] = { state = "failed", error = err }
+        LogGameError(id, "Renderer:Init", err)
+        return false, err
+    end
+
+    rendererInitState[id] = { state = "initializing" }
+    local ok, err = xpcall(function()
+        rnd:Init()
+    end, CaptureError)
+
+    if ok then
+        rendererInitState[id] = { state = "ready" }
+        return true
+    end
+
+    rendererInitState[id] = { state = "failed", error = err }
+    local container = GR.GetContainer(id)
+    if container then
+        SafeContainerCall(id, container, "Hide")
+    end
+    LogGameError(id, "Renderer:Init", err)
+    return false, err
+end
+
+function GR.GetRendererInitStatus(id)
+    local status = rendererInitState[id]
+    if not status then
+        return "pending", nil
+    end
+    return status.state, status.error
+end
+
 function GR.InitRenderers()
+    local summary = { ready = 0, failed = 0 }
     GR.Iterate(GR.FILTER_REGISTRY, function(info)
-        local rnd = GR.GetRenderer(info.id)
-        if rnd and rnd.Init then
-            rnd:Init()
+        local ok = GR.InitRenderer(info.id)
+        if ok then
+            summary.ready = summary.ready + 1
+        else
+            summary.failed = summary.failed + 1
         end
     end)
+    return summary
 end
 
 --- Erstes registriertes Spiel sichtbar, alle anderen Container versteckt.
 function GR.SetupInitialContainers()
-    local first = GR.GetFirst(GR.FILTER_REGISTRY)
-    local firstId = first and first.id
+    local firstId
+    GR.Iterate(GR.FILTER_REGISTRY, function(info)
+        local status = rendererInitState[info.id]
+        if not firstId and status and status.state == "ready" and GR.GetContainer(info.id) then
+            firstId = info.id
+        end
+    end)
 
     GR.Iterate(GR.FILTER_REGISTRY, function(info)
         local container = GR.GetContainer(info.id)
         if container then
             if info.id == firstId then
-                container:Show()
+                SafeContainerCall(info.id, container, "Show")
             else
-                container:Hide()
+                SafeContainerCall(info.id, container, "Hide")
             end
         end
     end)

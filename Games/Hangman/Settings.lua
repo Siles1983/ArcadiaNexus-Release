@@ -15,6 +15,27 @@ local DEFAULTS = {
     losses        = 0,
 }
 
+local CATEGORY_ALIASES = {
+    all="all", alle="all",
+    chars="chars", characters="chars", charaktere="chars",
+    places="places", orte="places",
+    weapons="weapons", waffen="weapons",
+    instances="raids", instanzen="raids", raids="raids",
+    ["Schlachtzüge"]="raids", ["schlachtzüge"]="raids", schlachtzuege="raids",
+    dungeons="dungeons",
+    classes="classes", klassen="classes",
+    races="races", ["Völker"]="races", ["völker"]="races", voelker="races", peoples="races",
+    bosses="bosses", bosse="bosses",
+    factions="factions", fraktionen="factions",
+    creatures="creatures", kreaturen="creatures",
+    professions="professions", berufe="professions",
+}
+
+local function NormalizeCategory(value)
+    if type(value) ~= "string" then return "all" end
+    return CATEGORY_ALIASES[value] or CATEGORY_ALIASES[string.lower(value)] or "all"
+end
+
 local function MigrateSoundKey(db)
     if db.sound ~= nil and db.soundEnabled == nil then
         db.soundEnabled = db.sound
@@ -31,10 +52,20 @@ function S:Get(key)
     MigrateSoundKey(db)
     local v = db[key]
     if v == nil then return DEFAULTS[key] end
+    if key == "category" then
+        local normalized = NormalizeCategory(v)
+        if normalized ~= v then
+            P:SetGameSetting(DB_KEY, key, normalized)
+        end
+        return normalized
+    end
     return v
 end
 
-function S:Set(key, value) P:SetGameSetting(DB_KEY, key, value) end
+function S:Set(key, value)
+    if key == "category" then value = NormalizeCategory(value) end
+    P:SetGameSetting(DB_KEY, key, value)
+end
 
 function S:IncrWins()
     S:Set("wins", S:Get("wins") + 1)

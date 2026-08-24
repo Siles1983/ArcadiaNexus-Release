@@ -16,11 +16,13 @@ function E:StartGame()
     local Renderer = ArcadiaNexus.HGM_Renderer
     if not Renderer then return end
 
-    E._sessionId = ArcadiaNexus.Lifecycle:RestartGame("HANGMAN", E._sessionId)
-
     local cat     = Settings:Get("category")
+    local diff    = string.lower(Settings:Get("difficulty") or "Normal")
     local maxErr  = Settings:GetMaxErrors()
-    local entry   = Logic:PickWord(cat)
+    local entry   = Logic:PickWord(cat, diff)
+    if not entry then return end
+
+    E._sessionId = ArcadiaNexus.Lifecycle:RestartGame("HANGMAN", E._sessionId)
 
     self.board = Logic:NewBoard(entry, maxErr)
     self.state = "PLAYING"

@@ -59,9 +59,30 @@ local CFG = {
     hud_lives_w    = 140,
     hud_lives_h    = 28,
     hud_lives_alpha = 0.75,
-    hud_pu_y       =  199,    -- hud_y - 16
+
+    -- Power-Up-Statusbox (relativ zu Canvas CENTER; Frame über dem Spielfeld)
+    hud_pu_x       = -210,
+    hud_pu_y       =  199,
+    hud_pu_w       =  160,
+    hud_pu_h       =   28,
+    hud_pu_alpha   = 0.75,
     hud_pu_bar_w   =  100,
     hud_pu_bar_h   =    4,
+    hud_pu_bar_x   =    0,    -- relativ zur PU-Box CENTER
+    hud_pu_bar_y   =  -14,
+
+    -- Power-Up-Liste aller aktiven Timer (relativ zu Canvas CENTER)
+    hud_pu_list_x     =    0,
+    hud_pu_list_y     =  230,
+    hud_pu_list_w     =  420,
+    hud_pu_list_h     =   28,
+    hud_pu_list_alpha = 0.75,
+
+    -- Fallende Power-Up-Drops (Offset relativ zur Logic-Position)
+    pu_drop_w      = 96,
+    pu_drop_h      = 26,
+    pu_drop_ofs_x  =  0,
+    pu_drop_ofs_y  =  0,
 
     -- Spielfeld-Objekte (Layout-Quelle: BB_Logic, Werte hier als Fallback)
     block_w      = 28,
@@ -237,6 +258,8 @@ R._extraBallPool = nil
 R._puDropFrame  = nil
 R._flashFrame   = nil
 R._puBar        = nil
+R._puBox        = nil
+R._puListBox    = nil
 
 R._scoreFS      = nil
 R._levelFS      = nil
@@ -352,31 +375,115 @@ function R:_CreateHUD()
     endlessFS:SetText("")
     self._endlessFS = endlessFS
 
-    local puTimerFS = canvas:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    puTimerFS:SetPoint("CENTER", canvas, "CENTER", CFG.hud_l_x, CFG.hud_pu_y)
-    puTimerFS:SetText("")
-    self._puTimerFS = puTimerFS
+    self._puBox, self._puTimerFS = UI.CreateHudStatBox(canvas, {
+        w = CFG.hud_pu_w, h = CFG.hud_pu_h,
+        point = "CENTER", relativePoint = "CENTER",
+        x = CFG.hud_pu_x, y = CFG.hud_pu_y,
+        alpha = CFG.hud_pu_alpha,
+        font = "GameFontNormalSmall",
+        shown = false,
+    })
+    if self._puBox then
+        local puBg = self._puBox:CreateTexture(nil, "ARTWORK")
+        puBg:SetSize(CFG.hud_pu_bar_w, CFG.hud_pu_bar_h)
+        puBg:SetPoint("CENTER", self._puBox, "CENTER", CFG.hud_pu_bar_x, CFG.hud_pu_bar_y)
+        puBg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
+        puBg:Hide()
+        self._puTimerBg = puBg
 
-    local puBg = canvas:CreateTexture(nil, "ARTWORK")
-    puBg:SetSize(CFG.hud_pu_bar_w, CFG.hud_pu_bar_h)
-    puBg:SetPoint("CENTER", canvas, "CENTER", CFG.hud_l_x, CFG.hud_pu_y - 10)
-    puBg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
-    self._puTimerBg = puBg
+        local puFill = self._puBox:CreateTexture(nil, "ARTWORK", nil, 1)
+        puFill:SetHeight(CFG.hud_pu_bar_h)
+        puFill:SetPoint("LEFT", puBg, "LEFT", 0, 0)
+        puFill:SetColorTexture(1, 0.85, 0, 1)
+        puFill:Hide()
+        self._puTimerFill = puFill
+    end
+end
 
-    local puFill = canvas:CreateTexture(nil, "ARTWORK", nil, 1)
-    puFill:SetHeight(CFG.hud_pu_bar_h)
-    puFill:SetPoint("LEFT", puBg, "LEFT", 0, 0)
-    puFill:SetColorTexture(1, 0.85, 0, 1)
-    self._puTimerFill = puFill
+function R:_RaiseHudOverField()
+    local field = self._fieldFrame
+    if not field then return end
+    local hudLvl = field:GetFrameLevel() + 25
+    local boxes = {
+        self._timeBox, self._scoreBox, self._livesBox,
+        self._puBox, self._puListBox,
+    }
+    for i = 1, #boxes do
+        local b = boxes[i]
+        if b then b:SetFrameLevel(hudLvl) end
+    end
+end
+
+function R:_IsDevMode()
+    return ArcadiaNexus.IsDevMode and ArcadiaNexus.IsDevMode() == true
+end
+
+-- Dummy-Inhalt für PU-Boxen (Stack + Countdown), damit Layout ohne aktives PU sichtbar ist.
+function R:_FillDevPuPreview()
+    local L = ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
+    local stack = {
+        (L["pu_big"] or "big") .. " 8s",
+        (L["pu_fast"] or "fast") .. " 5s",
+        (L["pu_strength"] or "strength") .. " 3s",
+    }
+    if self._puBar then
+        self._puBar:SetText("[DEV]  " .. table.concat(stack, "  "))
+    end
+    if self._puListBox then self._puListBox:Show() end
+
+    local def = PU_TIMER_DEF.strength
+    if self._puTimerFS then
+        self._puTimerFS:SetText((L["pu_strength"] or "strength") .. " 3s")
+        if def then self._puTimerFS:SetTextColor(def.r, def.g, def.b) end
+    end
+    if self._puBox then self._puBox:Show() end
+    if self._puTimerBg then self._puTimerBg:Show() end
+    if self._puTimerFill and def then
+        self._puTimerFill:SetWidth(math.max(1, CFG.hud_pu_bar_w * (3 / def.max)))
+        self._puTimerFill:SetColorTexture(def.r, def.g, def.b, 1)
+        self._puTimerFill:Show()
+    end
+end
+
+function R:_ApplyDevHudPreview()
+    if not self:_IsDevMode() then return false end
+    local L = ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
+    if self._timeBox  then self._timeBox:Show()  end
+    if self._scoreBox then self._scoreBox:Show() end
+    if self._livesBox then self._livesBox:Show() end
+    if self._goldGrid then self._goldGrid:Show() end
+    if self._timeFS then
+        self._timeFS:SetText((L["lbl_time"] or "Zeit") .. ": 01:23")
+    end
+    if self._scoreFS then
+        self._scoreFS:SetText(
+            (L["lbl_level"] or "Level") .. ": 4   " ..
+            (L["lbl_score"] or "Punkte") .. ": 12500")
+    end
+    if self._livesFS then
+        local hearts = ""
+        for _ = 1, 3 do
+            hearts = hearts .. "|T" .. HEART_PATH .. ":14:14|t"
+        end
+        self._livesFS:SetText(hearts)
+    end
+    self:_FillDevPuPreview()
+    self:_RaiseHudOverField()
+    return true
 end
 
 function R:_SetHudShown(shown)
+    local vis = shown or self:_IsDevMode()
     local boxes = { self._timeBox, self._scoreBox, self._livesBox, self._goldGrid }
     for i = 1, #boxes do
         local b = boxes[i]
         if b then
-            if shown then b:Show() else b:Hide() end
+            if vis then b:Show() else b:Hide() end
         end
+    end
+    if not vis then
+        if self._puBox     then self._puBox:Hide()     end
+        if self._puListBox then self._puListBox:Hide() end
     end
 end
 
@@ -417,6 +524,7 @@ function R:_CreateFieldFrame()
     if UI and UI.CreateGoldGridFrame then
         self._goldGrid = UI.CreateGoldGridFrame(self._canvas, field)
     end
+    self:_RaiseHudOverField()
 end
 
 -- ── _CreateLogo ───────────────────────────────────────────────
@@ -502,17 +610,22 @@ end
 
 -- ── Power-Up-Status-Bar ───────────────────────────────────────
 function R:_CreatePUBar()
-    local cf = self._contentFrame
-    if not cf then return end
-    local bar = cf:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    bar:SetPoint("TOPLEFT", cf, "TOPLEFT", CFG.field_ofs_x, CFG.field_ofs_y - 4)
-    bar:SetTextColor(1, 0.85, 0)
-    bar:SetText("")
-    self._puBar = bar
+    local canvas = self._canvas
+    local UI = ArcadiaNexus.UI
+    if not canvas or not UI or not UI.CreateHudStatBox then return end
+    self._puListBox, self._puBar = UI.CreateHudStatBox(canvas, {
+        w = CFG.hud_pu_list_w, h = CFG.hud_pu_list_h,
+        point = "CENTER", relativePoint = "CENTER",
+        x = CFG.hud_pu_list_x, y = CFG.hud_pu_list_y,
+        alpha = CFG.hud_pu_list_alpha,
+        font = "GameFontNormalSmall",
+        shown = false,
+    })
+    self:_RaiseHudOverField()
 end
 
 function R:_UpdatePUBar(gs)
-    if not self._puBar or not gs then return end
+    if not gs then return end
     local L = ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
 
     -- Bestehende Text-Bar (über Spielfeld)
@@ -527,10 +640,19 @@ function R:_UpdatePUBar(gs)
     addTimer("slowTimer",     "slow")
     addTimer("smallTimer",    "small")
     addTimer("strengthTimer", "strength")
-    self._puBar:SetText(table.concat(parts, "  "))
+    local usedDevPu = false
+    if #parts > 0 then
+        if self._puBar then self._puBar:SetText(table.concat(parts, "  ")) end
+        if self._puListBox then self._puListBox:Show() end
+    elseif self:_IsDevMode() then
+        self:_FillDevPuPreview()
+        usedDevPu = true
+    else
+        if self._puBar then self._puBar:SetText("") end
+        if self._puListBox then self._puListBox:Hide() end
+    end
 
-    -- PU-Timer-Anzeige unter Zeit-Label
-    -- Aktives PU mit der kürzesten verbleibenden Zeit anzeigen (dringendster)
+    -- PU-Timer-Anzeige: aktives PU mit der kürzesten Restzeit (dringendster)
     local activePU, activeTime, activeDef = nil, math.huge, nil
     local timerFields = {
         { field="bigTimer",      key="big"      },
@@ -553,6 +675,7 @@ function R:_UpdatePUBar(gs)
         local secs  = math.ceil(activeTime)
         self._puTimerFS:SetText(label .. " " .. secs .. "s")
         self._puTimerFS:SetTextColor(activeDef.r, activeDef.g, activeDef.b)
+        if self._puBox then self._puBox:Show() end
 
         local frac = math.max(0, math.min(1, activeTime / activeDef.max))
         if self._puTimerBg  then self._puTimerBg:Show()  end
@@ -561,11 +684,11 @@ function R:_UpdatePUBar(gs)
             self._puTimerFill:SetColorTexture(activeDef.r, activeDef.g, activeDef.b, 1)
             self._puTimerFill:Show()
         end
-    else
-        -- Kein aktives PU: alles ausblenden
+    elseif not usedDevPu then
         if self._puTimerFS   then self._puTimerFS:SetText("") end
         if self._puTimerBg   then self._puTimerBg:Hide()      end
         if self._puTimerFill then self._puTimerFill:Hide()     end
+        if self._puBox       then self._puBox:Hide()          end
     end
 end
 
@@ -764,6 +887,8 @@ function R:EnterIdleState()
     if self._logoTex      then self._logoTex:Show()      end
     if self._diffContainer then self._diffContainer:Show() end
     if self._puBar        then self._puBar:SetText("")   end
+    if self._puListBox    then self._puListBox:Hide()    end
+    if self._puBox        then self._puBox:Hide()        end
     if self._slotMenu     then self._slotMenu:Hide()     end
 
     if self._startBtn then
@@ -788,6 +913,7 @@ function R:EnterIdleState()
     if self._puTimerFS   then self._puTimerFS:SetText("") end
     if self._puTimerBg   then self._puTimerBg:Hide()      end
     if self._puTimerFill then self._puTimerFill:Hide()     end
+    self:_ApplyDevHudPreview()
 end
 
 function R:OnGameStarted(gs)
@@ -999,8 +1125,9 @@ function R:UpdatePhysics(gs)
     -- Pool bei Bedarf erweitern
     local drops = gs.droppedPUs or {}
     while #self._puDropPool < #drops do
-        local pf = CreateFrame("Frame", nil, field)
-        pf:SetSize(96, 26)   -- 128×34 skaliert auf ~75%
+            local pf = CreateFrame("Frame", nil, field)
+        pf:SetSize(CFG.pu_drop_w, CFG.pu_drop_h)
+        pf:SetFrameLevel(field:GetFrameLevel() + 12)
         local pt = pf:CreateTexture(nil, "ARTWORK")
         pt:SetAllPoints(pf)
         pf._tex = pt
@@ -1012,8 +1139,10 @@ function R:UpdatePhysics(gs)
             local pu = drops[i]
             local path = GetPUTexPath(pu.type)
             if path and pf._tex then pf._tex:SetTexture(path) end
+            pf:SetFrameLevel(field:GetFrameLevel() + 12)
             pf:ClearAllPoints()
-            pf:SetPoint("CENTER", field, "TOPLEFT", pu.x, -pu.y)
+            pf:SetPoint("CENTER", field, "TOPLEFT",
+                pu.x + CFG.pu_drop_ofs_x, -(pu.y) + CFG.pu_drop_ofs_y)
             pf:Show()
         else
             pf:Hide()

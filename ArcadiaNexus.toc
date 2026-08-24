@@ -177,6 +177,9 @@ Games/WhackAMole/WhackAMole_Leaderboard.lua
 
 Games/Hangman/Settings.lua
 Games/Hangman/Language.lua
+Games/Hangman/Words.lua
+Games/Hangman/Words_deDE.lua
+Games/Hangman/Words_enUS.lua
 Games/Hangman/Logic.lua
 Games/Hangman/Engine.lua
 Games/Hangman/Renderer.lua

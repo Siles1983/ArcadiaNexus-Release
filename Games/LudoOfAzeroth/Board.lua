@@ -73,10 +73,8 @@ end
 
 B.CENTER_FIELD = 61
 
+-- Einstiegsfelder sind keine Safe-Zone: dort wird ebenfalls geschlagen.
 B.SAFE_FIELDS = {}
-for pID = 1, 4 do
-    B.SAFE_FIELDS[B.PLAYER_ENTRY[pID]] = true
-end
 
 function B:GetMainGlobalIdx(colorIdx, relPos)
     if relPos <= 0 or relPos > 40 then return nil end

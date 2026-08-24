@@ -74,7 +74,6 @@ local BASE_XP = {
     TETRIS         = 12,
     WHACKAMOLE     =  8,
     HANGMAN        = 10,
-    GGH            = 14,
     -- Neuere Spiele (ab v1.0)
     MATCH3         = 12,
     BLOCKBREAKER   = 10,

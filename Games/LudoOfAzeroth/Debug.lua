@@ -176,9 +176,12 @@ function D:OnFieldClick(fieldFrame)
         self._guidedIdx = self._guidedIdx + 1
         self:PrintStepPrompt()
 
-        if self._renderer and self._renderer._game then
-            self._renderer:RenderAllPieces(self._renderer._game)
-            self._renderer:PositionDice(self._renderer._game)
+        if self._renderer then
+            if self._renderer._game then
+                self._renderer:RenderAllPieces(self._renderer._game)
+                self._renderer:PositionDice(self._renderer._game)
+            end
+            self._renderer:RefreshDevPosOverlay()
         end
     end
 end

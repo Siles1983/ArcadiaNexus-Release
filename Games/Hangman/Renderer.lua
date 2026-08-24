@@ -626,6 +626,15 @@ function R:RenderBoard(board)
 
     -- Wort-Display
     if self._wordDisplay then
+        local wordLength = #(board.word or "")
+        local fontSize = wordLength <= 10 and 22
+            or (wordLength <= 16 and 18)
+            or (wordLength <= 27 and 15)
+            or 12
+        if self._wordFontSize ~= fontSize then
+            self._wordDisplay:SetFont("Fonts\\MORPHEUS.TTF", fontSize, "OUTLINE")
+            self._wordFontSize = fontSize
+        end
         self._wordDisplay:SetText(ArcadiaNexus.HGM_Logic:GetDisplayWord(board))
     end
 

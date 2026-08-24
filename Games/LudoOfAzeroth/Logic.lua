@@ -95,10 +95,90 @@ function L:NewGame(config)
         aiID         = aiIDs[1],
         dice         = 0,
         rolled       = false,
-        sixCount     = 0,
-        phase        = "roll",
-        winner       = 0,
+        sixCount      = 0,
+        rollAttempts  = 0,
+        phase         = "roll",
+        winner        = 0,
     }
+end
+
+function L:IsInHome(piece)
+    local rel = piece and piece.relPos or 0
+    return rel >= 41 and rel <= 44
+end
+
+function L:CountHomePieces(player)
+    local n = 0
+    if not player then return n end
+    for _, piece in ipairs(player.pieces) do
+        if self:IsInHome(piece) then n = n + 1 end
+    end
+    return n
+end
+
+function L:HasPieceOnBoard(game, playerID)
+    local player = game.players[playerID or game.current]
+    if not player then return false end
+    for _, piece in ipairs(player.pieces) do
+        if piece.relPos > 0 then return true end
+    end
+    return false
+end
+
+function L:MaxRollAttempts(game)
+    if self:HasPieceOnBoard(game) then return 1 end
+    return 3
+end
+
+local function HasOwnAtRel(player, relPos, exceptIdx)
+    for i, piece in ipairs(player.pieces) do
+        if i ~= exceptIdx and piece.relPos == relPos then
+            return true
+        end
+    end
+    return false
+end
+
+function L:SendToBase(player, piece)
+    local board = GetBoard()
+    local baseFields = board.BASE_FIELDS[player.colorIdx]
+    local used = {}
+    for _, pc in ipairs(player.pieces) do
+        if pc ~= piece and pc.relPos == 0 then
+            used[pc.gridIdx] = true
+        end
+    end
+    for _, bf in ipairs(baseFields) do
+        if not used[bf] then
+            piece.relPos   = 0
+            piece.gridIdx  = bf
+            piece.finished = false
+            return true
+        end
+    end
+    return false
+end
+
+function L:OccupantAtGrid(game, gridIdx, exceptPlayerID, exceptPieceIdx)
+    if not gridIdx then return nil, nil, nil end
+    for pID, player in pairs(game.players) do
+        for i, piece in ipairs(player.pieces) do
+            if not (pID == exceptPlayerID and i == exceptPieceIdx)
+                    and piece.relPos > 0 and piece.relPos <= 40
+                    and piece.gridIdx == gridIdx then
+                return player, piece, i
+            end
+        end
+    end
+    return nil, nil, nil
+end
+
+function L:WouldCapture(game, player, pieceIdx, destRel)
+    if destRel < 1 or destRel > 40 then return false end
+    local board = GetBoard()
+    local gridIdx = board:GetGridIndex(player.colorIdx, destRel)
+    local occ = self:OccupantAtGrid(game, gridIdx, player.id, pieceIdx)
+    return occ ~= nil
 end
 
 function L:IsAI(game, playerID)
@@ -106,28 +186,48 @@ function L:IsAI(game, playerID)
 end
 
 function L:RollDice(game)
-    if game.rolled then return game.dice end
-    local val   = math.random(1, 6)
-    game.dice   = val
-    game.rolled = true
-    game.phase  = "move"
+    if game.phase ~= "roll" or game.rolled then return game.dice end
+    local val = math.random(1, 6)
+    game.dice = val
+    game.rollAttempts = (game.rollAttempts or 0) + 1
+
+    local moves = self:GetValidMoves(game)
+    if #moves > 0 then
+        game.rolled = true
+        game.phase  = "move"
+    elseif game.rollAttempts < self:MaxRollAttempts(game) then
+        game.rolled = false
+        game.phase  = "roll"
+    else
+        game.rolled = true
+        game.phase  = "move"
+    end
     return val
+end
+
+function L:CanReroll(game)
+    return game.phase == "roll" and not game.rolled
+        and (game.rollAttempts or 0) < self:MaxRollAttempts(game)
 end
 
 function L:GetValidMoves(game)
     local player = game.players[game.current]
     local dice   = game.dice
     local moves  = {}
+    if not player or not dice or dice < 1 then return moves end
+
+    local startBlocked = HasOwnAtRel(player, 1)
 
     for i, piece in ipairs(player.pieces) do
-        if not piece.finished then
-            if piece.relPos == 0 then
-                if dice == 6 then
-                    moves[#moves + 1] = { pieceIdx = i, steps = 0, action = "enter" }
-                end
-            else
-                local newRel = piece.relPos + dice
-                if newRel <= 44 then
+        if piece.relPos == 0 then
+            if dice == 6 and not startBlocked then
+                moves[#moves + 1] = { pieceIdx = i, steps = 0, action = "enter" }
+            end
+        elseif piece.relPos <= 44 then
+            local newRel = piece.relPos + dice
+            if newRel <= 44 then
+                local blockedHome = newRel > 40 and HasOwnAtRel(player, newRel, i)
+                if not blockedHome then
                     moves[#moves + 1] = { pieceIdx = i, steps = dice, action = "move" }
                 end
             end
@@ -141,29 +241,28 @@ function L:ApplyMove(game, pieceIdx)
     local player = game.players[game.current]
     local piece  = player.pieces[pieceIdx]
     local dice   = game.dice
+    local wasHome = self:IsInHome(piece)
     local result = "moved"
 
     if piece.relPos == 0 then
         piece.relPos  = 1
         piece.gridIdx = board:GetGridIndex(player.colorIdx, 1)
+        piece.finished = false
         result = "entered"
     else
         piece.relPos  = piece.relPos + dice
         piece.gridIdx = board:GetGridIndex(player.colorIdx, piece.relPos)
-
-        if piece.relPos >= 44 then
-            piece.relPos   = 45
+        if self:IsInHome(piece) then
             piece.finished = true
-            piece.gridIdx  = nil
-            result = "finished"
+            if not wasHome then result = "finished" end
+        else
+            piece.finished = false
         end
     end
 
-    if result == "moved" or result == "entered" then
-        if piece.relPos <= 40 then
-            if self:CheckCapture(game, player, piece) then
-                result = "captured"
-            end
+    if piece.relPos <= 40 then
+        if self:CheckCapture(game, player, piece, pieceIdx) then
+            result = "captured"
         end
     end
 
@@ -176,34 +275,18 @@ function L:ApplyMove(game, pieceIdx)
     return result
 end
 
-function L:CheckCapture(game, movingPlayer, movedPiece)
-    local board = GetBoard()
-    if board.SAFE_FIELDS[movedPiece.gridIdx] then return false end
+function L:CheckCapture(game, movingPlayer, movedPiece, movedIdx)
+    if movedPiece.relPos < 1 or movedPiece.relPos > 40 then return false end
 
     local captured = false
-    for oppID, opponent in pairs(game.players) do
-        if oppID ~= game.current then
-            for _, oppPiece in ipairs(opponent.pieces) do
-                if not oppPiece.finished and oppPiece.relPos > 0
-                        and oppPiece.relPos <= 40
-                        and oppPiece.gridIdx == movedPiece.gridIdx then
-                    local baseFields = board.BASE_FIELDS[opponent.colorIdx]
-                    local usedBases  = {}
-                    for _, op2 in ipairs(opponent.pieces) do
-                        if op2.relPos == 0 then
-                            usedBases[op2.gridIdx] = true
-                        end
-                    end
-                    for _, bf in ipairs(baseFields) do
-                        if not usedBases[bf] then
-                            oppPiece.relPos  = 0
-                            oppPiece.gridIdx = bf
-                            captured = true
-                            break
-                        end
-                    end
-                end
-            end
+    while true do
+        local occPlayer, occPiece = self:OccupantAtGrid(
+            game, movedPiece.gridIdx, movingPlayer.id, movedIdx)
+        if not occPiece then break end
+        if self:SendToBase(occPlayer, occPiece) then
+            captured = true
+        else
+            break
         end
     end
     return captured
@@ -211,10 +294,8 @@ end
 
 function L:CheckWin(game, playerID)
     local player = game.players[playerID]
-    for _, piece in ipairs(player.pieces) do
-        if not piece.finished then return false end
-    end
-    return true
+    if not player then return false end
+    return self:CountHomePieces(player) >= 4
 end
 
 function L:NextTurn(game)
@@ -232,9 +313,10 @@ function L:NextTurn(game)
         game.current = order[(idx % #order) + 1]
     end
 
-    game.dice   = 0
-    game.rolled = false
-    game.phase  = "roll"
+    game.dice          = 0
+    game.rolled        = false
+    game.rollAttempts  = 0
+    game.phase         = "roll"
 end
 
 function L:HasAnyMove(game)
@@ -245,7 +327,6 @@ function L:AIPickMove(game)
     local moves  = self:GetValidMoves(game)
     if #moves == 0 then return nil end
 
-    local board  = GetBoard()
     local player = game.players[game.current]
     local best, bestScore = nil, -999
 
@@ -257,22 +338,11 @@ function L:AIPickMove(game)
             score = 10
         else
             local newRel = piece.relPos + game.dice
-            if newRel >= 44 then
-                score = 100
+            if newRel >= 41 then
+                score = 80 + newRel
             else
-                local newGrid = board:GetGridIndex(player.colorIdx, newRel)
-                if newRel <= 40 and not board.SAFE_FIELDS[newGrid] then
-                    for oppID, opponent in pairs(game.players) do
-                        if oppID ~= game.current then
-                            for _, op in ipairs(opponent.pieces) do
-                                if not op.finished and op.relPos > 0
-                                        and op.relPos <= 40
-                                        and op.gridIdx == newGrid then
-                                    score = score + 50
-                                end
-                            end
-                        end
-                    end
+                if self:WouldCapture(game, player, move.pieceIdx, newRel) then
+                    score = score + 50
                 end
                 score = score + newRel
             end
@@ -323,9 +393,10 @@ function L:Serialize(game)
         aiID         = game.aiID,
         dice         = game.dice,
         rolled       = game.rolled,
-        sixCount     = game.sixCount,
-        phase        = game.phase,
-        winner       = game.winner,
+        sixCount      = game.sixCount,
+        rollAttempts  = game.rollAttempts,
+        phase         = game.phase,
+        winner        = game.winner,
     }
 end
 
@@ -337,10 +408,13 @@ function L:Deserialize(data)
         local pieces = {}
         for i, pc in ipairs(pd.pieces or {}) do
             pieces[i] = {
-                relPos   = pc.relPos or 0,
+                relPos   = math.min(44, math.max(0, pc.relPos or 0)),
                 gridIdx  = pc.gridIdx,
                 finished = pc.finished and true or false,
             }
+            if pieces[i].relPos >= 41 then
+                pieces[i].finished = true
+            end
         end
         players[id] = {
             id       = pd.id or id,
@@ -362,8 +436,9 @@ function L:Deserialize(data)
         aiID         = data.aiID or 2,
         dice         = data.dice or 0,
         rolled       = data.rolled or false,
-        sixCount     = data.sixCount or 0,
-        phase        = data.phase or "roll",
-        winner       = data.winner or 0,
+        sixCount      = data.sixCount or 0,
+        rollAttempts  = data.rollAttempts or 0,
+        phase         = data.phase or "roll",
+        winner        = data.winner or 0,
     }
 end

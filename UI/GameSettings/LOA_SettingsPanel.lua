@@ -29,7 +29,7 @@ local function BuildLoaSettingsPanel(parent)
             sections = {
                 GS.GuideSection(nil, L, {
                     "guide_goal", "guide_dice", "guide_six", "guide_move",
-                    "guide_capture", "guide_safe", "guide_ai", "guide_hint",
+                    "guide_capture", "guide_safe", "guide_home", "guide_ai", "guide_hint",
                 }, 15),
             },
         },

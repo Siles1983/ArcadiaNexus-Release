@@ -233,17 +233,32 @@ local function Init()
     NexusTabs.RefreshPanelVisibility()
     NexusTabs.RefreshTabButtons()
     ArcadiaNexus.UI.UpdateBadge()
-    ArcadiaNexus.UI.CreateMinimapButton()
 
+    -- Ab hier ist der Core-Hub vollständig aufgebaut. Spiel-Renderer sind
+    -- optionale Module und werden anschließend einzeln fehlerisoliert gestartet.
     ArcadiaNexus.UI._hubUiInitialized = true
+
+    -- Event-Listener fuer Streak/Gold im Header
+    ArcadiaNexus.Engine:On("STREAK_UPDATED", function() pcall(ArcadiaNexus.UI.UpdateBadge) end)
+    ArcadiaNexus.Engine:On("GOLD_UPDATED",   function() pcall(ArcadiaNexus.UI.UpdateBadge) end)
+
+    ArcadiaNexus.UI.CreateMinimapButton()
 
     -- GOTD-Badge aufbauen (braucht DB)
     pcall(ArcadiaNexus.UI.BuildGotdBadge)
     pcall(ArcadiaNexus.UI.UpdateBadge)
 
-    -- Event-Listener fuer Streak/Gold im Header
-    ArcadiaNexus.Engine:On("STREAK_UPDATED", function() pcall(ArcadiaNexus.UI.UpdateBadge) end)
-    ArcadiaNexus.Engine:On("GOLD_UPDATED",   function() pcall(ArcadiaNexus.UI.UpdateBadge) end)
+    -- Optionale Spielmodule bewusst zuletzt starten. Ihre Fehlergrenze liegt
+    -- in GameRegistry.InitRenderer; der Core-Hub ist zu diesem Zeitpunkt fertig.
+    local GR = ArcadiaNexus.GameRegistry
+    if GR then
+        local summary = GR.InitRenderers()
+        GR.SetupInitialContainers()
+        if summary.failed > 0 then
+            GH_LogWarn("MainFrame", tostring(summary.failed)
+                .. " Spiel-Renderer konnten nicht initialisiert werden; der Hub bleibt verfügbar.")
+        end
+    end
 end
 
 local initF = CreateFrame("Frame", "NexusUIInitFrame")

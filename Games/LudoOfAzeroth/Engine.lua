@@ -180,6 +180,18 @@ function E:_ContinueAfterRoll(game)
     local moves = L:GetValidMoves(game)
 
     if #moves == 0 then
+        if L:CanReroll(game) then
+            if R then R:OnRollAgain(game) end
+            if self:IsAITurn(game) then
+                C_Timer.After(self.AI_DELAY, function()
+                    if not self._running then return end
+                    if self.activeGame ~= game then return end
+                    if game.phase ~= "roll" then return end
+                    self:DoRoll(game)
+                end)
+            end
+            return
+        end
         ArcadiaNexus.Engine:Emit("LOA_NO_MOVE", game)
         C_Timer.After(1.0, function()
             if not self._running then return end
@@ -239,9 +251,7 @@ function E:DoMove(game, pieceIdx)
         local figuresHome = 0
         local humanPlayer = game.players and game.players[game.humanID]
         if humanPlayer then
-            for _, piece in ipairs(humanPlayer.pieces or {}) do
-                if piece.finished then figuresHome = figuresHome + 1 end
-            end
+            figuresHome = L:CountHomePieces(humanPlayer)
         end
         ArcadiaNexus.Engine:Emit("GAME_RESULT", {
             gameId = "LOA", difficulty = nil, score = 0, result = playerResult,

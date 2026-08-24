@@ -35,10 +35,12 @@ local CFG = {
     piece_model_w   = 44,
     piece_model_h   = 56,
     hit_size        = 20,
+    dev_mark_size   = 10,
     dice_w          = 40,
     dice_h          = 40,
     dice_scene_size = 250,
     dice_icon_size  = 35,
+    dice_result_font = 32,
     max_piece_models = 16,
     dd_w            = 120,
     btn_w           = 144,
@@ -87,6 +89,8 @@ R._logoFallback   = nil
 R._assetsOk       = nil
 R._playLayer      = nil
 R._debugOverlay   = nil
+R._devPosLayer    = nil
+R._devPosMarkers  = {}
 R._diceFrame      = nil
 R._diceScene      = nil
 R._diceActor      = nil
@@ -146,6 +150,8 @@ function R:_EnsureBuilt()
     self:_CreatePiecePool()
     self:_CreateDiceButton()
     self:_CreateDebugOverlay()
+    self:_CreateDevPosLayer()
+    self:RefreshDevPosOverlay()
     self:_CreateControls()
     self:CreateStatusBar()
     self:_UpdateAssetWarning()
@@ -219,6 +225,7 @@ function R:_CreateMainFrame()
     f:SetScript("OnShow", function()
         R:_EnsureBuilt()
         R:_UpdateAssetWarning()
+        R:RefreshDevPosOverlay()
         local Npc = ArcadiaNexus.LOA_NpcData
         if Npc then Npc:WarmupCache() end
     end)
@@ -398,8 +405,17 @@ function R:_CreateDiceButton()
         icon:Show()
     end
 
-    local resultFS = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+    -- Eigene Ebene über der 2D-Würfeltextur, sonst überdeckt das Icon die Zahl.
+    local resultLayer = CreateFrame("Frame", nil, btn)
+    resultLayer:SetAllPoints(btn)
+    resultLayer:SetFrameLevel(btn:GetFrameLevel() + 10)
+    resultLayer:EnableMouse(false)
+
+    local resultFS = resultLayer:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     resultFS:SetPoint("CENTER", btn, "CENTER", 0, 2)
+    resultFS:SetDrawLayer("OVERLAY", 7)
+    local fontPath = resultFS:GetFont()
+    resultFS:SetFont(fontPath, CFG.dice_result_font, "OUTLINE")
     resultFS:SetTextColor(1, 0.88, 0.15)
     resultFS:SetShadowOffset(2, -2)
     resultFS:Hide()
@@ -437,11 +453,113 @@ function R:SetDebugOverlay(enabled)
             self:_SetBoardVisible(true)
         else
             self._debugOverlay:Hide()
-            if self.state == "IDLE" then
+            if self.state == "IDLE" and not self:_IsDevPosOverlayActive() then
                 self:_SetBoardVisible(false)
             end
         end
     end
+    self:RefreshDevPosOverlay()
+end
+
+-- ============================================================
+-- DevMode – Positions-Overlay (Arcadia Settings)
+-- ============================================================
+local WHITE8X8 = "Interface\\Buttons\\WHITE8X8"
+
+function R:_IsDevPosOverlayActive()
+    return ArcadiaNexus.IsDevMode and ArcadiaNexus.IsDevMode() == true
+end
+
+function R:_CreateDevPosLayer()
+    if self._devPosLayer then return end
+    local pf = self._fieldFrame
+    if not pf then return end
+    local layer = CreateFrame("Frame", nil, pf)
+    layer:SetAllPoints(pf)
+    layer:SetFrameLevel(pf:GetFrameLevel() + 40)
+    layer:EnableMouse(false)
+    layer:Hide()
+    self._devPosLayer = layer
+    self._devPosMarkers = {}
+end
+
+function R:_AcquireDevMarker()
+    local pool = self._devPosMarkers
+    for i = 1, #pool do
+        local m = pool[i]
+        if not m._inUse then
+            m._inUse = true
+            return m
+        end
+    end
+
+    local m = CreateFrame("Frame", nil, self._devPosLayer)
+    m:SetSize(CFG.dev_mark_size, CFG.dev_mark_size)
+    m:EnableMouse(false)
+
+    local tex = m:CreateTexture(nil, "OVERLAY")
+    tex:SetAllPoints()
+    tex:SetTexture(WHITE8X8)
+    m.tex = tex
+
+    m._inUse = true
+    pool[#pool + 1] = m
+    return m
+end
+
+function R:_PlaceDevMarker(pos, r, g, b, a)
+    if not pos then return end
+    local m = self:_AcquireDevMarker()
+    m:ClearAllPoints()
+    m:SetPoint("CENTER", self._fieldFrame, "TOPLEFT", pos.x, -pos.y)
+    m.tex:SetVertexColor(r, g, b, a or 0.85)
+    m:Show()
+end
+
+function R:RefreshDevPosOverlay()
+    self:_CreateDevPosLayer()
+    if not self._devPosLayer then return end
+
+    local pool = self._devPosMarkers
+    for i = 1, #pool do
+        pool[i]._inUse = false
+        pool[i]:Hide()
+    end
+
+    if not self:_IsDevPosOverlayActive() then
+        self._devPosLayer:Hide()
+        return
+    end
+
+    local Pos = ArcadiaNexus.LOA_Positions
+    if not Pos then
+        self._devPosLayer:Hide()
+        return
+    end
+
+    self._devPosLayer:Show()
+    if self._fieldFrame then
+        self:_SetBoardVisible(true)
+    end
+    if self.state == "IDLE" then
+        self:_SetLogoVisible(false)
+    end
+
+    for i = 1, 40 do
+        self:_PlaceDevMarker(Pos:GetMain(i), 0.25, 0.95, 1.0, 0.9)
+    end
+
+    local theme = ArcadiaNexus.LOA_Themes and ArcadiaNexus.LOA_Themes:GetTheme()
+    local colors = theme and theme.colors
+    for c = 1, 4 do
+        local col = colors and colors[c] or { 1, 1, 1 }
+        for s = 1, 4 do
+            self:_PlaceDevMarker(Pos:GetHome(c, s), col[1], col[2], col[3], 0.95)
+            self:_PlaceDevMarker(Pos:GetBase(c, s), col[1], col[2], col[3], 0.55)
+        end
+    end
+
+    self:_PlaceDevMarker(Pos:GetDice(), 1.0, 0.35, 1.0, 0.95)
 end
 
 -- ============================================================
@@ -476,12 +594,12 @@ function R:RenderAllPieces(game)
                 local hit   = self._pieceHitBtns[slot]
                 if not model or not hit then break end
 
-                if piece.finished then
+                local pos = Positions:GetPixelPos(player.colorIdx, piece.relPos, pieceIdx)
+                if not pos then
                     if model:IsShown() then model:Hide() end
                     if hit:IsShown() then hit:Hide() end
                 else
                     activeSlots[slot] = true
-                    local pos = Positions:GetPixelPos(player.colorIdx, piece.relPos, pieceIdx)
                     self:PositionAtFrame(model, pos)
                     self:PositionAtFrame(hit, pos)
 
@@ -594,6 +712,7 @@ function R:OnGameStarted(game)
     self:_UpdateControlsForPlay()
 
     self:PositionDice(game)
+    self:RefreshDevPosOverlay()
 
     local function renderPieces(forceReload)
         if self._game ~= game then return end
@@ -636,6 +755,20 @@ function R:OnDiceRolled(game, val)
             fn()
         end
     end)
+end
+
+function R:OnRollAgain(game)
+    local loc = L()
+    local Logic = ArcadiaNexus.LOA_Logic
+    local maxA = Logic and Logic:MaxRollAttempts(game) or 3
+    local used = game.rollAttempts or 0
+    self:UpdateStatus(game, string.format(
+        loc["status_reroll"] or "Keine 6 – nochmal würfeln (%d/%d)",
+        used, maxA))
+    if self._diceBtn then
+        self._diceBtn:EnableMouse(game.current == game.humanID)
+        self._diceBtn:SetAlpha(1.0)
+    end
 end
 
 function R:OnTurnStart(game)
@@ -718,9 +851,7 @@ function R:UpdateStatus(game, extraMsg)
     local loc       = L()
 
     local function countDone(p)
-        local n = 0
-        for _, pc in ipairs(p.pieces) do if pc.finished then n = n + 1 end end
-        return n
+        return ArcadiaNexus.LOA_Logic:CountHomePieces(p)
     end
 
     if self.statusLeft then
@@ -978,12 +1109,13 @@ function R:EnterIdleState()
 
     local Dbg = ArcadiaNexus.LOA_Debug
     local debugActive = Dbg and Dbg.active
-    if debugActive then
+    if debugActive or self:_IsDevPosOverlayActive() then
         self:_SetBoardVisible(true)
     else
         self:_SetBoardVisible(false)
     end
-    self:_SetLogoVisible(true)
+    self:RefreshDevPosOverlay()
+    self:_SetLogoVisible(not self:_IsDevPosOverlayActive())
 
     local Npc = ArcadiaNexus.LOA_NpcData
     for _, model in ipairs(self._pieceModels) do

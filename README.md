@@ -27,6 +27,7 @@ World of Warcraft und Blizzard Entertainment sind Marken beziehungsweise
 Eigentum von Blizzard Entertainment. Arcadia Nexus ist kein offizielles
 Produkt von Blizzard Entertainment und wird von Blizzard nicht unterstützt.
 
+
 ---
 
 # Arcadia Nexus

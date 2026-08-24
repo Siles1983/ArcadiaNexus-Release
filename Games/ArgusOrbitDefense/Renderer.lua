@@ -693,11 +693,8 @@ function R:_CreateSlotMenu()
         formatInfo    = function(save, loc)
             local score = (ArcadiaNexus.Format and ArcadiaNexus.Format.Score(save.score or 0))
                 or tostring(save.score or 0)
-            local modeLabel = (save.mode == "endless")
-                and (loc.mode_endless or "Endless")
-                or string.format(loc.slot_info or "Level %d", save.level or 1)
             if save.mode == "endless" then
-                return string.format("%s · %s", modeLabel, score)
+                return string.format("%s · %s", loc.mode_endless or "Endless", score)
             end
             return string.format(loc.slot_info or "Level %d · %s", save.level or 1, score)
         end,
