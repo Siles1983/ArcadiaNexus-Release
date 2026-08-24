@@ -98,6 +98,7 @@ function E:_StopTick()
     _gameLoop:Stop()
 end
 
+-- Catch-up nur beim Öffnen/Start (kein Hintergrund-Tick bei geschlossenem UI).
 function E:_ApplyCatchup(gs)
     local Logic = GetLogic()
     if not Logic or not gs then return gs end
@@ -310,6 +311,33 @@ function E:DoAction(action)
     E:_RefreshUI()
 end
 
+function E:DevAdvanceStage()
+    if not (ArcadiaNexus.IsDevMode and ArcadiaNexus.IsDevMode()) then return end
+    if E.state ~= "PLAYING" or not E.gameState then return end
+    if E.phase ~= "ACTIVE" and E.phase ~= "SLEEPING" then return end
+
+    local Logic = GetLogic()
+    local S     = GetSettings()
+    local gs    = E.gameState
+    if not Logic or not S or not Logic.DevAdvanceStage then return end
+
+    local newStage = Logic:DevAdvanceStage(gs)
+    if not newStage then return end
+    S:SaveLivingPet(gs)
+
+    local R = GetRenderer()
+    if R then R._appliedModelKey = nil end
+
+    if newStage == "YOUTH" or newStage == "ADULT" then
+        if R and R.OnEvolved then R:OnEvolved(gs) end
+        E:_BeginEvolving(EVOLVE_DURATION)
+        self:PlaySoundEvent("evolve")
+    else
+        E:_SetPhase("ACTIVE")
+        self:_RefreshUI()
+    end
+end
+
 function E:CanRetire()
     local Logic = GetLogic()
     return Logic and Logic:CanRetire(E.gameState, E.phase)
@@ -397,7 +425,37 @@ function E:EnterHub()
     CheckATGAchievements()
 end
 
+function E:TryEnterAdopting()
+    local S = GetSettings()
+    if S and S.IsPetLimitReached and S:IsPetLimitReached() then
+        local R = GetRenderer()
+        if R and R.ShowPetLimitPopup then R:ShowPetLimitPopup() end
+        return
+    end
+    self:EnterAdopting()
+end
+
+function E:ReleasePet(petId)
+    local S = GetSettings()
+    if not S or not petId then return end
+    if E.gameState and E.gameState.id == petId then
+        self:_StopTick()
+        E.gameState = nil
+        E._returnToCare = false
+    end
+    S:RemovePet(petId)
+    local R = GetRenderer()
+    if R and R.HideStallDetail then R:HideStallDetail() end
+    if R and R.RefreshStallList then R:RefreshStallList() end
+end
+
 function E:EnterAdopting()
+    local S = GetSettings()
+    if S and S.IsPetLimitReached and S:IsPetLimitReached() then
+        local R = GetRenderer()
+        if R and R.ShowPetLimitPopup then R:ShowPetLimitPopup() end
+        return
+    end
     self:_StopTick()
     if E.state == "PLAYING" then
         self:_ParkActivePet()
@@ -462,6 +520,12 @@ function E:AdoptPet(petType, name)
     if E.state ~= "PLAYING" then
         self:_EnsureSession()
         E.state = "PLAYING"
+    end
+
+    if S.IsPetLimitReached and S:IsPetLimitReached() then
+        local R = GetRenderer()
+        if R and R.ShowPetLimitPopup then R:ShowPetLimitPopup() end
+        return
     end
 
     local gs = Logic:NewPetState(petType, name)

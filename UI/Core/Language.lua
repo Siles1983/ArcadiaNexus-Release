@@ -49,7 +49,7 @@ ArcadiaNexus.RegisterLocale("UI", "deDE", {
     welcome_new_games_header     = "Neue Spiele",
     welcome_new_games_placeholder = "Demnächst verfügbar – stay tuned!",
     welcome_changelog_header     = "Changelog",
-    welcome_changelog_text       = "v1.1.0 – Launch\n• 23 Spiele verfügbar\n• Achievement-System\n• Bestenliste\n• Tägliche & wöchentliche Herausforderungen\n• Suchfunktion\n• Custom Spiel des Tages Button",
+    welcome_changelog_text       = "v1.1.3 – Launch\n• 34 Spiele verfügbar\n• Achievement-System\n• Bestenliste\n• Tägliche & wöchentliche Herausforderungen\n• Suchfunktion\n• Custom Spiel des Tages Button",
     -- Leaderboard-UI
     lb_highscores   = "Bestscores",
     lb_wins         = "Siege",
@@ -135,6 +135,8 @@ ArcadiaNexus.RegisterLocale("UI", "deDE", {
     hubsettings_dev_section       = "Entwickler",
     hubsettings_dev_devmode       = "Developer-Modus aktivieren",
     hubsettings_dev_devmode_desc  = "Aktiviert detaillierte Debug-Logs im Chat. Nur für Entwicklungszwecke.",
+    hubsettings_dev_locked        = "Developer-Modus ist an deine Charaktere gebunden. Dieser Charakter steht nicht auf der Allowlist.",
+    hubsettings_dev_allowlist_hint = "DevMode ist noch nicht verriegelt. Im Chat /andevwho eingeben und den Key in Core/DevAccess.lua unter ALLOW_CHARS eintragen.",
 
     -- Hub Settings Sub-Tabs
     -- Hub Settings UI Scaling
@@ -281,7 +283,7 @@ ArcadiaNexus.RegisterLocale("UI", "enUS", {
     welcome_new_games_header     = "New Games",
     welcome_new_games_placeholder = "Coming soon – stay tuned!",
     welcome_changelog_header     = "Changelog",
-    welcome_changelog_text       = "v1.0.0 – Launch\n• 23 games available\n• Achievement system\n• Leaderboard\n• Daily & weekly challenges\n• Searchbar\n• Custom Game of Day Button",
+    welcome_changelog_text       = "v1.1.3 – Launch\n• 34 games available\n• Achievement system\n• Leaderboard\n• Daily & weekly challenges\n• Searchbar\n• Custom Game of Day Button",
 
     -- Leaderboard-UI
     lb_highscores   = "Best Scores",
@@ -368,6 +370,8 @@ ArcadiaNexus.RegisterLocale("UI", "enUS", {
     hubsettings_dev_section       = "Developer",
     hubsettings_dev_devmode       = "Enable Developer Mode",
     hubsettings_dev_devmode_desc  = "Enables detailed debug logs in chat. For development purposes only.",
+    hubsettings_dev_locked        = "Developer Mode is bound to your characters. This character is not on the allowlist.",
+    hubsettings_dev_allowlist_hint = "DevMode is not locked yet. Type /andevwho in chat and add the key to ALLOW_CHARS in Core/DevAccess.lua.",
 
     -- Hub Settings Sub-Tabs
     -- Hub Settings UI Scaling

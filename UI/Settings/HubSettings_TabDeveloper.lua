@@ -57,6 +57,28 @@ function HubSettings:_BuildTabDeveloper(parent)
             end
         )
     end)
+    local locked = ArcadiaNexus.DevAccessLocked and ArcadiaNexus.DevAccessLocked()
+    local allowed = not ArcadiaNexus.CanAccessDevMode or ArcadiaNexus.CanAccessDevMode()
+    if locked and not allowed then
+        local lockFS = devContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        lockFS:SetPoint("TOPLEFT", devCB, "BOTTOMLEFT", 0, -10)
+        lockFS:SetPoint("RIGHT", devContent, "RIGHT", 0, 0)
+        lockFS:SetJustifyH("LEFT")
+        lockFS:SetWordWrap(true)
+        lockFS:SetTextColor(0.85, 0.45, 0.35)
+        lockFS:SetText(L("hubsettings_dev_locked") or
+            "Developer-Modus ist an eine Charakter-Allowlist gebunden.")
+        devCB:SetEnabled(false)
+    elseif not locked then
+        local hintFS = devContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        hintFS:SetPoint("TOPLEFT", devCB, "BOTTOMLEFT", 0, -10)
+        hintFS:SetPoint("RIGHT", devContent, "RIGHT", 0, 0)
+        hintFS:SetJustifyH("LEFT")
+        hintFS:SetWordWrap(true)
+        hintFS:SetTextColor(0.70, 0.65, 0.50)
+        hintFS:SetText(L("hubsettings_dev_allowlist_hint") or
+            "Noch nicht verriegelt. /andevwho ausführen und den Key in Core/DevAccess.lua eintragen.")
+    end
     self._devModeCB = devCB
 end
 
@@ -69,6 +91,9 @@ ArcadiaNexus.RegisterHubSettingsTab({
     labelKey      = "hubsettings_tab_developer",
     labelFallback = "Entwickler",
     order         = 40,
+    isVisible     = function()
+        return not ArcadiaNexus.CanAccessDevMode or ArcadiaNexus.CanAccessDevMode()
+    end,
     buildContent  = function(parent)
         HubSettings:_BuildTabDeveloper(parent)
     end,

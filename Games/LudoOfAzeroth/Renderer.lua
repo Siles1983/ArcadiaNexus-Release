@@ -35,6 +35,7 @@ local CFG = {
     piece_model_w   = 44,
     piece_model_h   = 56,
     hit_size        = 20,
+    stack_gap_x     = 16,
     dev_mark_size   = 10,
     dice_w          = 40,
     dice_h          = 40,
@@ -578,11 +579,17 @@ function R:_PieceSlot(playerID, pieceIdx)
     return (tonumber(playerID) - 1) * 4 + pieceIdx
 end
 
+function R:_StackOffsetX(index, count)
+    if count <= 1 then return 0 end
+    return (index - (count + 1) / 2) * CFG.stack_gap_x
+end
+
 function R:RenderAllPieces(game)
     if not game then return end
     local Npc = ArcadiaNexus.LOA_NpcData
     local Positions = ArcadiaNexus.LOA_Positions
     local activeSlots = {}
+    local placed = {}
 
     local playerCount = game.playerCount or 2
     for playerID = 1, playerCount do
@@ -600,21 +607,58 @@ function R:RenderAllPieces(game)
                     if hit:IsShown() then hit:Hide() end
                 else
                     activeSlots[slot] = true
-                    self:PositionAtFrame(model, pos)
-                    self:PositionAtFrame(hit, pos)
-
                     hit.pieceIdx = pieceIdx
                     hit.playerID = player.id
-
-                    if Npc:ApplyModel(model, player.colorIdx) then
-                        Npc:PlayAnim(model, "idle")
-                        if not model:IsShown() then model:Show() end
-                    elseif model:IsShown() then
-                        model:Hide()
-                    end
-                    if not hit:IsShown() then hit:Show() end
+                    placed[#placed + 1] = {
+                        slot  = slot,
+                        model = model,
+                        hit   = hit,
+                        pos   = pos,
+                        color = player.colorIdx,
+                    }
                 end
             end
+        end
+    end
+
+    local groups = {}
+    local groupOrder = {}
+    for _, item in ipairs(placed) do
+        local key = string.format("%d:%d:%d", item.color, item.pos.x, item.pos.y)
+        if not groups[key] then
+            groups[key] = {}
+            groupOrder[#groupOrder + 1] = key
+        end
+        groups[key][#groups[key] + 1] = item
+    end
+
+    local layer = self._playLayer
+    local baseModelLevel = layer and (layer:GetFrameLevel() + 2) or 2
+    local baseHitLevel   = layer and (layer:GetFrameLevel() + 4) or 4
+
+    for _, key in ipairs(groupOrder) do
+        local group = groups[key]
+        local count = #group
+        for i, item in ipairs(group) do
+            local drawPos = item.pos
+            if count > 1 then
+                drawPos = {
+                    x = item.pos.x + self:_StackOffsetX(i, count),
+                    y = item.pos.y,
+                }
+            end
+            self:PositionAtFrame(item.model, drawPos)
+            self:PositionAtFrame(item.hit, drawPos)
+            item.model:SetFrameLevel(baseModelLevel + i)
+            item.hit:SetFrameLevel(baseHitLevel + i)
+
+            if Npc:ApplyModel(item.model, item.color) then
+                Npc:PlayAnim(item.model, "idle")
+                if not item.model:IsShown() then item.model:Show() end
+            elseif item.model:IsShown() then
+                item.model:Hide()
+            end
+            if not item.hit:IsShown() then item.hit:Show() end
         end
     end
 

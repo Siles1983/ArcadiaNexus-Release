@@ -15,6 +15,7 @@ Core/CategoryRegistry.lua
 Core/TabRegistry.lua
 Core/HubSettingsTabRegistry.lua
 
+Core/DevAccess.lua
 Core/Debug.lua
 Core/Persistence.lua
 Core/EventBus.lua
@@ -331,6 +332,7 @@ Games/AzerothsTinyGuardians/Settings.lua
 Games/AzerothsTinyGuardians/Logic.lua
 Games/AzerothsTinyGuardians/Engine.lua
 Games/AzerothsTinyGuardians/Renderer.lua
+Games/AzerothsTinyGuardians/DevLayout.lua
 Games/AzerothsTinyGuardians/AzerothsTinyGuardians_Achievements.lua
 Games/AzerothsTinyGuardians/AzerothsTinyGuardians_Leaderboard.lua
 

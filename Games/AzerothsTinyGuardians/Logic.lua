@@ -53,7 +53,9 @@ L.TRAIT_RULES = {
 
 L.BALANCED_MAX_COUNTER = 15
 L.NEEDS_INTERVAL = 60
-L.OFFLINE_MAX_SEC = 3600
+L.OFFLINE_MAX_SEC = 1800
+L.OFFLINE_SCALE   = 0.15
+L.MAX_PETS        = 24
 
 local function ClampNeed(val)
     if val < 0 then return 0 end
@@ -244,8 +246,9 @@ function L:ApplyOfflineTime(state, elapsedSec)
         elapsedSec = self.OFFLINE_MAX_SEC
     end
     local ticks = math.floor(elapsedSec / self.NEEDS_INTERVAL)
+    local scale = self.OFFLINE_SCALE or 0.15
     for _ = 1, ticks do
-        self:TickNeeds(state)
+        self:TickNeeds(state, scale)
     end
     self:TickCooldowns(state, elapsedSec)
     return elapsedSec
@@ -321,6 +324,22 @@ function L:_Evolve(state, newStage)
         })
     end
     return newStage
+end
+
+function L:DevAdvanceStage(state)
+    if not state then return nil end
+    if state.stage == "BABY" then
+        state.xp = self.STAGE_XP.BABY
+        return self:_Evolve(state, "YOUTH")
+    end
+    if state.stage == "YOUTH" then
+        state.xp = self.STAGE_XP.YOUTH
+        return self:_Evolve(state, "ADULT")
+    end
+    state.xp = 0
+    state.stage = "BABY"
+    self:_RecalcPersonality(state)
+    return "BABY"
 end
 
 function L:CanPerformAction(state, action, phase)
@@ -403,26 +422,28 @@ function L:ApplyAction(state, action)
     }
 end
 
-function L:TickNeeds(state)
+function L:TickNeeds(state, scale)
     if not state or not state.needs then return end
     local n = state.needs
+    scale = tonumber(scale) or 1
+    if scale < 0 then scale = 0 end
 
-    n.hunger    = ClampNeed(n.hunger    - self:_GetDecayRate(state, "hunger"))
-    n.happiness = ClampNeed(n.happiness - self:_GetDecayRate(state, "happiness"))
-    n.energy    = ClampNeed(n.energy    - self:_GetDecayRate(state, "energy"))
-    n.hygiene   = ClampNeed(n.hygiene   - self:_GetDecayRate(state, "hygiene"))
+    n.hunger    = ClampNeed(n.hunger    - self:_GetDecayRate(state, "hunger")    * scale)
+    n.happiness = ClampNeed(n.happiness - self:_GetDecayRate(state, "happiness") * scale)
+    n.energy    = ClampNeed(n.energy    - self:_GetDecayRate(state, "energy")    * scale)
+    n.hygiene   = ClampNeed(n.hygiene   - self:_GetDecayRate(state, "hygiene")   * scale)
 
     if n.hunger < 20 then
-        n.health = ClampNeed(n.health - 1)
+        n.health = ClampNeed(n.health - 1 * scale)
     end
     if self:HasTrait(state, "HYPOCHONDRIAC") and n.health > MIN_HEALTH and n.health < 50 then
-        n.health = ClampNeed(n.health - 1)
+        n.health = ClampNeed(n.health - 1 * scale)
     end
     if n.hygiene < 15 then
-        n.happiness = ClampNeed(n.happiness - 2)
+        n.happiness = ClampNeed(n.happiness - 2 * scale)
     end
     if n.health < 20 then
-        n.happiness = ClampNeed(n.happiness - 3)
+        n.happiness = ClampNeed(n.happiness - 3 * scale)
     end
 
     if n.health < MIN_HEALTH then

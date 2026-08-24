@@ -67,19 +67,49 @@ local CFG = {
     bubble_w       = 150,
     stall_btn_w    = 88,
     stall_btn_h    = 26,
-    stall_row_h    = 50,
-    stall_row_max  = 8,
-    stall_list_y   = -56,
+    stall_row_h      = 50,
+    stall_row_max    = 24,
+    stall_scroll_gutter = 28,
+    stall_list       = { point = "TOP", x = 0, y = -72, w = 554, h = 340 },
     stall_model_w  = 160,
     stall_model_h  = 160,
     cam_reset_sec  = 10,
+    need_icon_sz   = 32,
+    adopt_boxes = {
+        { point = "TOP", x = -84, y = -78,  w = 150, h = 86 },
+        { point = "TOP", x =  84, y = -78,  w = 150, h = 86 },
+        { point = "TOP", x = -84, y = -172, w = 150, h = 86 },
+        { point = "TOP", x =  84, y = -172, w = 150, h = 86 },
+        { point = "TOP", x = -84, y = -266, w = 150, h = 86 },
+        { point = "TOP", x =  84, y = -266, w = 150, h = 86 },
+    },
+    play_model   = { point = "TOP", x = 0, y = -25,  w = 450, h = 200 },
+    play_name    = { point = "BOTTOM", relativePoint = "BOTTOM", x = 0, y = -20, w = 180, h = 28 },
+    play_needs   = { point = "TOP", x = 0, y = -248, w = 450, h = 168 },
+    stall_model  = { point = "TOP", x = 0, y = -25,  w = 450, h = 200 },
+    stall_name   = { point = "BOTTOM", relativePoint = "BOTTOM", x = 0, y = -20, w = 180, h = 28 },
+    stall_detail = { point = "TOP", x = 0, y = -248, w = 525, h = 170 },
+    stall_btn_care = { point = "TOP", x = -110, y = -428, w = 110, h = 26 },
+    stall_btn_new  = { point = "TOP", x = 0,    y = -428, w = 110, h = 26 },
+    stall_btn_back = { point = "TOP", x = 110,  y = -428, w = 110, h = 26 },
+    dev_evolve_btn = { point = "TOPRIGHT", relativePoint = "TOPRIGHT", x = -8, y = -8, w = 140, h = 26 },
 }
 
+R.CFG = CFG
+
 local ATG_PATH = "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothsTinyGuardians\\assets\\"
+local ATG_TILES = "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothsTinyGuardians\\assets\\Tiles\\"
 local ATG_ASSETS = {
     logo       = ATG_PATH .. "logo\\logo_atg",
     border     = ATG_PATH .. "border\\border_atg",
     background = ATG_PATH .. "background\\background_atg",
+}
+local NEED_ICONS = {
+    hunger    = ATG_TILES .. "meat",
+    happiness = ATG_TILES .. "shamrock",
+    energy    = ATG_TILES .. "bed",
+    health    = ATG_TILES .. "heart",
+    hygiene   = ATG_TILES .. "poo",
 }
 
 local EMOTE_DURATION   = 2.5
@@ -147,6 +177,7 @@ R._startBtn       = nil
 R._controlsFrame  = nil
 R._retireBtn      = nil
 R._retireConfirm  = nil
+R._goldPopup      = nil
 R._nameDialog     = nil
 R._nameEdit       = nil
 R._pendingAdoptType = nil
@@ -195,6 +226,42 @@ local function FormatTraits(traits)
     return table.concat(parts, ", ")
 end
 
+local function MakeGoldBox(parent, spec, opts)
+    opts = opts or {}
+    local UI = ArcadiaNexus.UI
+    if not UI or not UI.CreateHudStatBox or not spec then return nil, nil end
+    local box, fs = UI.CreateHudStatBox(parent, {
+        w             = spec.w,
+        h             = spec.h,
+        point         = spec.point or "TOP",
+        relativePoint = spec.relativePoint or spec.point or "TOP",
+        relativeTo    = spec.relativeTo or parent,
+        x             = spec.x or 0,
+        y             = spec.y or 0,
+        alpha         = spec.alpha or 0.75,
+        text          = opts.text or "",
+        font          = opts.font,
+        shown         = opts.shown,
+    })
+    return box, fs
+end
+
+local function PlaceOnField(frame, spec, field)
+    if not frame or not spec or not field then return end
+    frame:ClearAllPoints()
+    frame:SetSize(spec.w or frame:GetWidth(), spec.h or frame:GetHeight())
+    frame:SetPoint(spec.point or "TOP", field, spec.relativePoint or spec.point or "TOP", spec.x or 0, spec.y or 0)
+end
+
+local function StallWheel(scroll, delta)
+    if not scroll then return end
+    local max = (scroll.GetVerticalScrollRange and scroll:GetVerticalScrollRange()) or 0
+    local cur = scroll:GetVerticalScroll() or 0
+    local nextVal = cur - delta * 40
+    if nextVal < 0 then nextVal = 0 elseif nextVal > max then nextVal = max end
+    scroll:SetVerticalScroll(nextVal)
+end
+
 function R:Init()
     if self._initialized then return end
     self._initialized = true
@@ -207,8 +274,12 @@ function R:Init()
     self:_CreatePlayPanel()
     self:_CreateStallPanel()
     self:_CreateNameDialog()
+    self:_CreateGoldPopup()
     self:_CreateControls()
     self:EnterIdleState()
+    if ArcadiaNexus.ATG_DevLayout then
+        ArcadiaNexus.ATG_DevLayout:Attach(self)
+    end
 end
 
 function R:_CreateMainFrame()
@@ -242,6 +313,9 @@ function R:_CreateMainFrame()
 
     f:SetScript("OnShow", function()
         R:EnterIdleState()
+        if ArcadiaNexus.ATG_DevLayout then
+            ArcadiaNexus.ATG_DevLayout:Refresh()
+        end
     end)
 end
 
@@ -286,6 +360,16 @@ function R:_CreateControls()
         if Eng then Eng:OpenStall() end
     end)
     self._stallBtn = stallBtn
+
+    local retireBtn = UI.CreateArcadiaButton(cf, L("btn_retire"), CFG.ctrl_btn_w, CFG.ctrl_btn_h)
+    retireBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[1], bar.y.button)
+    retireBtn:SetLabel(L("btn_retire"))
+    retireBtn:Hide()
+    retireBtn:SetScript("OnClick", function()
+        local Eng = ArcadiaNexus.ATG_Engine
+        if Eng then Eng:BeginRetire() end
+    end)
+    self._retireBtn = retireBtn
     self:_RefreshControls()
 end
 
@@ -311,6 +395,11 @@ function R:_RefreshControls()
             self._stallBtn:Show()
         end
     end
+
+    if self._retireBtn and stallOpen then
+        self._retireBtn:Hide()
+    end
+    self:RefreshDevEvolveButton()
 end
 
 function R:_EnsureCamGuard()
@@ -490,6 +579,133 @@ function R:ConfirmAdoptName()
     end
 end
 
+function R:_CreateGoldPopup()
+    local pf = self._fieldFrame
+    local UI = ArcadiaNexus.UI
+    if not pf or not UI or self._goldPopup then return end
+
+    local dlg = CreateFrame("Frame", nil, pf, "BackdropTemplate")
+    dlg:SetSize(340, 150)
+    dlg:SetPoint("CENTER", pf, "CENTER", 0, 16)
+    dlg:SetFrameStrata("DIALOG")
+    dlg:SetFrameLevel(pf:GetFrameLevel() + 80)
+    dlg:EnableMouse(true)
+    dlg:SetBackdrop({
+        bgFile   = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile     = true,
+        tileEdge = true,
+        tileSize = 16,
+        edgeSize = 16,
+        insets   = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    dlg:SetBackdropColor(0.08, 0.07, 0.12, 0.94)
+    dlg:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], GOLD[4])
+    dlg:Hide()
+    self._goldPopup = dlg
+
+    local titleFS = dlg:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    titleFS:SetPoint("TOP", dlg, "TOP", 0, -14)
+    titleFS:SetTextColor(GOLD[1], GOLD[2], GOLD[3], 1)
+    self._goldPopupTitle = titleFS
+
+    local bodyFS = dlg:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    bodyFS:SetPoint("TOP", titleFS, "BOTTOM", 0, -10)
+    bodyFS:SetWidth(300)
+    bodyFS:SetWordWrap(true)
+    bodyFS:SetJustifyH("CENTER")
+    self._goldPopupBody = bodyFS
+
+    local okBtn = UI.CreateArcadiaButton(dlg, L("btn_confirm"), 110, CFG.btn_h)
+    okBtn:SetPoint("BOTTOMLEFT", dlg, "BOTTOMLEFT", 24, 16)
+    self._goldPopupOk = okBtn
+
+    local cancelBtn = UI.CreateArcadiaButton(dlg, L("btn_cancel"), 110, CFG.btn_h)
+    cancelBtn:SetPoint("BOTTOMRIGHT", dlg, "BOTTOMRIGHT", -24, 16)
+    self._goldPopupCancel = cancelBtn
+end
+
+function R:HideGoldPopup()
+    self._goldPopupOnConfirm = nil
+    if self._goldPopup then self._goldPopup:Hide() end
+end
+
+function R:ShowGoldPopup(opts)
+    opts = opts or {}
+    self:_CreateGoldPopup()
+    local dlg = self._goldPopup
+    if not dlg then return end
+
+    if self._goldPopupTitle then
+        self._goldPopupTitle:SetText(opts.title or "")
+    end
+    if self._goldPopupBody then
+        self._goldPopupBody:SetText(opts.body or "")
+    end
+
+    local hideCancel = opts.hideCancel == true
+    local ok = self._goldPopupOk
+    local cancel = self._goldPopupCancel
+    if ok then
+        ok:SetLabel(opts.confirmLabel or L("btn_confirm"))
+        ok:ClearAllPoints()
+        if hideCancel then
+            ok:SetPoint("BOTTOM", dlg, "BOTTOM", 0, 16)
+        else
+            ok:SetPoint("BOTTOMLEFT", dlg, "BOTTOMLEFT", 24, 16)
+        end
+        ok:SetScript("OnClick", function()
+            local fn = opts.onConfirm
+            R:HideGoldPopup()
+            if fn then fn() end
+        end)
+    end
+    if cancel then
+        if hideCancel then
+            cancel:Hide()
+        else
+            cancel:Show()
+            cancel:SetLabel(opts.cancelLabel or L("btn_cancel"))
+            cancel:SetScript("OnClick", function()
+                local fn = opts.onCancel
+                R:HideGoldPopup()
+                if fn then fn() end
+            end)
+        end
+    end
+    dlg:Show()
+end
+
+function R:ShowReleaseConfirm(entry)
+    if not entry then return end
+    local name = entry.title or entry.name or "?"
+    self:ShowGoldPopup({
+        title         = L("title_release"),
+        body          = string.format(L("confirm_release"), name),
+        confirmLabel  = L("btn_confirm"),
+        cancelLabel   = L("btn_cancel"),
+        onConfirm     = function()
+            local Eng = ArcadiaNexus.ATG_Engine
+            if Eng and Eng.ReleasePet then Eng:ReleasePet(entry.id) end
+        end,
+    })
+end
+
+function R:ShowPetLimitPopup()
+    local S = ArcadiaNexus.ATG_Settings
+    local maxPets = (S and S.GetMaxPets and S:GetMaxPets())
+        or (S and S.GetMaxPets and S:GetMaxPets())
+        or 24
+    self:ShowGoldPopup({
+        title        = L("title_pet_limit"),
+        body         = string.format(L("msg_pet_limit"), maxPets),
+        confirmLabel = L("btn_ok"),
+        hideCancel   = true,
+    })
+end
+R.ShowPetLimitPopup = R.ShowPetLimitPopup
+R.ShowPetLimitPopup = R.ShowPetLimitPopup
+
 function R:ClearStallModel()
     if self._stallModel then
         if self._stallModel.ClearModel then self._stallModel:ClearModel() end
@@ -513,6 +729,7 @@ function R:_ApplyStallModel(entry)
         self._stallRotation = self._stallRotDefault
         if ok then
             self._stallModel:Show()
+            if P.ApplyCamera and def then P:ApplyCamera(self._stallModel, def) end
             if self._stallModelIcon then self._stallModelIcon:Hide() end
             return
         end
@@ -525,14 +742,11 @@ function R:_ApplyStallModel(entry)
 end
 
 function R:_AnchorNeedsBox()
-    if not self._needsBox or not self._nameFS then return end
-    if self._phaseFS and self._phaseFS:IsShown() then
-        self._needsBox:SetPoint("TOP", self._phaseFS, "BOTTOM", 0, -CFG.needs_box_gap)
-    else
-        self._needsBox:SetPoint("TOP", self._nameFS, "BOTTOM", 0, -CFG.needs_box_gap)
-    end
-    if self._xpFS then
-        self._xpFS:SetPoint("TOP", self._needsBox, "TOP", 0, -CFG.needs_box_pad)
+    local pf = self._fieldFrame
+    if not self._needsBox or not pf then return end
+    local spec = CFG.play_needs
+    if spec then
+        PlaceOnField(self._needsBox, spec, pf)
     end
 end
 
@@ -621,48 +835,58 @@ function R:_CreateAdoptPanel()
     local P = ArcadiaNexus.ATG_PetData
     if not P then return end
 
-    local cols = CFG.adopt_cols
-    for i, petType in ipairs(P.adoptionOrder) do
-        local col = (i - 1) % cols
-        local row = math.floor((i - 1) / cols)
-        local xOff = -CFG.adopt_col_gap / 2 + col * CFG.adopt_col_gap
-        local yOff = CFG.adopt_start_y - row * CFG.adopt_row_gap
+    self._adoptCards = {}
+    for i, petType in ipairs(P.adoptionOrder or P.adoptionOrder or {}) do
+        local spec = CFG.adopt_boxes and CFG.adopt_boxes[i]
+        if not spec then
+            local cols = CFG.adopt_cols or 2
+            local col = (i - 1) % cols
+            local row = math.floor((i - 1) / cols)
+            spec = {
+                point = "TOP",
+                x = -(CFG.adopt_col_gap or 168) / 2 + col * (CFG.adopt_col_gap or 168),
+                y = (CFG.adopt_start_y or -78) - row * (CFG.adopt_row_gap or 94),
+                w = CFG.adopt_card_w or 150,
+                h = CFG.adopt_card_h or 86,
+            }
+        end
+        spec = {
+            point = spec.point or "TOP", relativePoint = spec.relativePoint or "TOP",
+            relativeTo = pf, x = spec.x, y = spec.y, w = spec.w, h = spec.h, alpha = spec.alpha,
+        }
 
-        local card = CreateFrame("Button", nil, panel, "BackdropTemplate")
-        card:SetSize(CFG.adopt_card_w, CFG.adopt_card_h)
-        card:SetPoint("TOP", pf, "TOP", xOff, yOff)
-        card:SetBackdrop({
-            bgFile   = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
-        })
-        card:SetBackdropColor(0.14, 0.13, 0.18, 0.95)
-        card:SetBackdropBorderColor(0.45, 0.40, 0.55, 1)
+        local card, titleFS = MakeGoldBox(panel, spec, { text = "" })
+        if not card then break end
+        if titleFS then titleFS:Hide() end
+        card:EnableMouse(true)
 
         local icon = card:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(CFG.adopt_icon_sz, CFG.adopt_icon_sz)
+        icon:SetSize(CFG.adopt_icon_sz or 44, CFG.adopt_icon_sz or 44)
         icon:SetPoint("TOP", card, "TOP", 0, -8)
         icon:SetTexture(P:GetIcon(petType, "BABY"))
 
-        local info = P.types[petType]
+        local info = P.types and P.types[petType] or (P.types and P.types[petType])
         local nameFS = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         nameFS:SetPoint("TOP", icon, "BOTTOM", 0, -4)
-        nameFS:SetText(info and L(info.localeKey) or petType)
+        nameFS:SetText(info and L(info.localeKey or info.localeKey) or petType)
 
         local adoptFS = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         adoptFS:SetPoint("BOTTOM", card, "BOTTOM", 0, 6)
-        adoptFS:SetTextColor(0.85, 0.75, 0.35, 1)
+        adoptFS:SetTextColor(0.95, 0.85, 0.40, 1)
         adoptFS:SetText(L("btn_adopt"))
 
-        card:SetScript("OnEnter", function(self)
-            self:SetBackdropBorderColor(0.75, 0.65, 0.25, 1)
+        card:SetScript("OnEnter", function(selfBox)
+            selfBox:SetBackdropBorderColor(1, 0.92, 0.45, 1)
         end)
-        card:SetScript("OnLeave", function(self)
-            self:SetBackdropBorderColor(0.45, 0.40, 0.55, 1)
+        card:SetScript("OnLeave", function(selfBox)
+            selfBox:SetBackdropBorderColor(0.9, 0.75, 0.3, 1)
         end)
-        card:SetScript("OnClick", function()
-            R:ShowAdoptNameDialog(petType)
+        card:SetScript("OnMouseUp", function(_, button)
+            if button == "LeftButton" then
+                R:ShowAdoptNameDialog(petType)
+            end
         end)
+        self._adoptCards[i] = card
     end
 end
 
@@ -677,8 +901,8 @@ function R:_CreatePlayPanel()
     self._playPanel = panel
 
     local displayFrame = CreateFrame("Frame", nil, panel)
-    displayFrame:SetSize(CFG.pet_model_w, CFG.pet_model_h)
-    displayFrame:SetPoint("TOP", pf, "TOP", 0, CFG.pet_icon_y)
+    local modelSpec = CFG.play_model or { w = CFG.pet_model_w, h = CFG.pet_model_h, x = 0, y = CFG.pet_icon_y, point = "TOP" }
+    PlaceOnField(displayFrame, modelSpec, pf)
     self._petIconFrame = displayFrame
 
     local model = CreateFrame("PlayerModel", nil, displayFrame)
@@ -695,30 +919,37 @@ function R:_CreatePlayPanel()
 
     self:_EnsureCommUI(panel, displayFrame)
 
-    local nameFS = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    nameFS:SetPoint("TOP", displayFrame, "BOTTOM", 0, -6)
+    local nameSpec = CFG.play_name or { w = 180, h = 28, x = 0, y = 10, point = "BOTTOM", relativePoint = "BOTTOM" }
+    local nameBox, nameFS = MakeGoldBox(displayFrame, {
+        w = nameSpec.w, h = nameSpec.h,
+        point = nameSpec.point or "BOTTOM",
+        relativePoint = nameSpec.relativePoint or "BOTTOM",
+        relativeTo = displayFrame,
+        x = nameSpec.x or 0, y = nameSpec.y or 10,
+        alpha = nameSpec.alpha or 0.85,
+    }, { text = "", font = "GameFontNormal" })
+    self._nameBox = nameBox
     self._nameFS = nameFS
+    if nameFS then
+        nameFS:ClearAllPoints()
+        nameFS:SetPoint("CENTER", nameBox, "CENTER", 0, 0)
+    end
 
-    local phaseFS = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    phaseFS:SetPoint("TOP", nameFS, "BOTTOM", 0, -2)
+    local phaseFS = displayFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    phaseFS:SetPoint("TOP", displayFrame, "TOP", 0, -6)
     phaseFS:Hide()
     self._phaseFS = phaseFS
 
-    local needsBox = CreateFrame("Frame", nil, panel, "BackdropTemplate")
-    needsBox:SetWidth(CFG.needs_box_w)
-    needsBox:SetPoint("TOP", nameFS, "BOTTOM", 0, -CFG.needs_box_gap)
-    needsBox:SetBackdrop({
-        bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile     = true,
-        tileEdge = true,
-        tileSize = 16,
-        edgeSize = 16,
-        insets   = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-    needsBox:SetBackdropColor(0, 0, 0, 0.45)
-    needsBox:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], GOLD[4])
+    local needsSpec = CFG.play_needs or { w = CFG.needs_box_w, h = 168, x = 0, y = -248, point = "TOP" }
+    needsSpec = {
+        w = needsSpec.w, h = needsSpec.h or 168,
+        point = needsSpec.point or "TOP", relativePoint = needsSpec.relativePoint or "TOP",
+        relativeTo = pf, x = needsSpec.x, y = needsSpec.y, alpha = needsSpec.alpha or 0.75,
+    }
+    local needsBox, needsTitle = MakeGoldBox(panel, needsSpec, { text = "" })
+    if needsTitle then needsTitle:Hide() end
     self._needsBox = needsBox
+    if not needsBox then return end
 
     local pad = CFG.needs_box_pad
     local xpFS = needsBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -750,9 +981,14 @@ function R:_CreatePlayPanel()
 
     local prevBar = xpBg
     for i, needKey in ipairs(NEED_KEYS) do
+        local iconSz = CFG.need_icon_sz or 32
+        local icon = needsBox:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(iconSz, iconSz)
+        icon:SetTexture(NEED_ICONS[needKey])
+
         local lbl = needsBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         lbl:SetWidth(72)
-        lbl:SetJustifyH("RIGHT")
+        lbl:SetJustifyH("LEFT")
         lbl:SetText(L(NEED_LABEL_KEYS[needKey]))
 
         local barBg = CreateFrame("Frame", nil, needsBox, "BackdropTemplate")
@@ -779,6 +1015,7 @@ function R:_CreatePlayPanel()
         else
             barBg:SetPoint("TOPLEFT", prevBar, "BOTTOMLEFT", 0, -CFG.bar_gap)
         end
+        icon:SetPoint("RIGHT", lbl, "LEFT", -4, 0)
         lbl:SetPoint("RIGHT", barBg, "LEFT", -8, 0)
         valFS:SetPoint("LEFT", barBg, "RIGHT", 6, 0)
         prevBar = barBg
@@ -787,6 +1024,7 @@ function R:_CreatePlayPanel()
             fill = barFill,
             bg   = barBg,
             val  = valFS,
+            icon = icon,
         }
     end
 
@@ -820,18 +1058,19 @@ function R:_CreatePlayPanel()
         end
     end
 
+    local evoSpec = CFG.dev_evolve_btn or { w = 140, h = 26, x = -8, y = -8 }
+    local evoBtn = UI.CreateArcadiaButton(panel, L("btn_dev_evolve"), evoSpec.w or 140, evoSpec.h or CFG.btn_h)
+    evoBtn:SetPoint(evoSpec.point or "TOPRIGHT", pf, evoSpec.relativePoint or "TOPRIGHT", evoSpec.x or -8, evoSpec.y or -8)
+    evoBtn:SetLabel(L("btn_dev_evolve"))
+    evoBtn:Hide()
+    evoBtn:SetScript("OnClick", function()
+        local Eng = ArcadiaNexus.ATG_Engine
+        if Eng and Eng.DevAdvanceStage then Eng:DevAdvanceStage() end
+    end)
+    self._devEvolveBtn = evoBtn
+
     if UI then
         traitsFS:SetPoint("TOP", actionBlock, "BOTTOM", 0, -CFG.traits_gap)
-
-        local retireBtn = UI.CreateArcadiaButton(panel, L("btn_retire"), CFG.btn_w + 20, CFG.btn_h)
-        retireBtn:SetPoint("TOP", traitsFS, "BOTTOM", 0, -CFG.retire_gap)
-        retireBtn:SetLabel(L("btn_retire"))
-        retireBtn:Hide()
-        retireBtn:SetScript("OnClick", function()
-            local E = ArcadiaNexus.ATG_Engine
-            if E then E:BeginRetire() end
-        end)
-        self._retireBtn = retireBtn
 
         local confirm = CreateFrame("Frame", nil, panel, "BackdropTemplate")
         confirm:SetSize(280, 120)
@@ -884,55 +1123,117 @@ function R:_CreateStallPanel()
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", pf, "TOP", 0, -36)
     title:SetText(L("lbl_stall"))
+    self._stallTitleFS = title
 
     local countFS = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     countFS:SetPoint("TOP", title, "BOTTOM", 0, -4)
     self._stallCountFS = countFS
 
     local emptyFS = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    emptyFS:SetPoint("CENTER", pf, "CENTER", 0, 0)
+    emptyFS:SetPoint("CENTER", pf, "CENTER", 0, 20)
     emptyFS:SetText(L("lbl_stall_empty"))
     emptyFS:Hide()
     self._stallEmptyFS = emptyFS
 
-    local listArea = CreateFrame("Frame", nil, panel)
-    listArea:SetSize(CFG.field_w - 40, CFG.stall_row_max * CFG.stall_row_h)
-    listArea:SetPoint("TOP", pf, "TOP", 0, CFG.stall_list_y)
-    self._stallListArea = listArea
+    local listSpec = CFG.stall_list or { point = "TOP", x = 0, y = -72, w = 554, h = 340 }
+    local gutter = CFG.stall_scroll_gutter or 28
+    local holder = CreateFrame("Frame", nil, panel)
+    PlaceOnField(holder, listSpec, pf)
+    self._stallListHolder = holder
+    self._stallListArea = holder
+
+    local scroll = CreateFrame("ScrollFrame", nil, holder)
+    scroll:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0)
+    scroll:SetPoint("BOTTOMRIGHT", holder, "BOTTOMRIGHT", -gutter, 0)
+    scroll:EnableMouse(true)
+    self._stallScroll = scroll
+
+    local childW = (listSpec.w or 554) - gutter
+    local listChild = CreateFrame("Frame", nil, scroll)
+    listChild:SetSize(childW, listSpec.h or 340)
+    scroll:SetScrollChild(listChild)
+    self._stallListChild = listChild
+
+    if CreateNexusScrollbar then
+        CreateNexusScrollbar(scroll, holder)
+        if scroll.ScrollBar then
+            scroll.ScrollBar:Hide()
+            if scroll.ScrollBar.Thumb then scroll.ScrollBar.Thumb:Hide() end
+            if scroll.ScrollBar.Track then scroll.ScrollBar.Track:Hide() end
+            if scroll.ScrollBar.TrackBG then scroll.ScrollBar.TrackBG:Hide() end
+        end
+    else
+        scroll:EnableMouseWheel(true)
+        scroll:SetScript("OnMouseWheel", function(selfScroll, delta)
+            StallWheel(selfScroll, delta)
+        end)
+    end
 
     self._stallRows = {}
-    for i = 1, CFG.stall_row_max do
-        local row = CreateFrame("Button", nil, listArea, "BackdropTemplate")
-        row:SetSize(CFG.field_w - 48, CFG.stall_row_h - 4)
-        row:SetPoint("TOP", listArea, "TOP", 0, -(i - 1) * CFG.stall_row_h)
-        row:SetBackdrop({
-            bgFile   = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
-        })
-        row:SetBackdropColor(0.14, 0.13, 0.18, 0.92)
-        row:SetBackdropBorderColor(0.40, 0.36, 0.48, 1)
+    local rowMax = CFG.stall_row_max or 24
+    local rowH = CFG.stall_row_h or 50
+    local rowW = childW
+    local innerH = rowH - 4
+    for i = 1, rowMax do
+        local spec = {
+            point = "TOP", relativePoint = "TOP", relativeTo = listChild,
+            x = 0, y = -(i - 1) * rowH, w = rowW, h = innerH, alpha = 0.8,
+        }
+        local row, rowFS = MakeGoldBox(listChild, spec, { text = "", shown = false })
+        if not row then break end
+        if rowFS then rowFS:Hide() end
+        row:EnableMouse(true)
+        row:EnableMouseWheel(true)
         row:Hide()
 
         local icon = row:CreateTexture(nil, "ARTWORK")
         icon:SetSize(36, 36)
-        icon:SetPoint("LEFT", row, "LEFT", 8, 0)
+        icon:SetPoint("LEFT", row, "LEFT", 10, 0)
 
         local nameFS = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         nameFS:SetPoint("TOPLEFT", icon, "TOPRIGHT", 8, -2)
-        nameFS:SetWidth(280)
+        nameFS:SetWidth((spec.w or 400) - 86)
         nameFS:SetJustifyH("LEFT")
 
         local metaFS = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         metaFS:SetPoint("TOPLEFT", nameFS, "BOTTOMLEFT", 0, -2)
-        metaFS:SetWidth(280)
+        metaFS:SetWidth((spec.w or 400) - 86)
         metaFS:SetJustifyH("LEFT")
 
-        row:SetScript("OnEnter", function(self)
-            self:SetBackdropBorderColor(0.70, 0.62, 0.28, 1)
+        local xBtn = CreateFrame("Button", nil, row)
+        xBtn:SetSize(20, 20)
+        xBtn:SetPoint("TOPRIGHT", row, "TOPRIGHT", -6, -4)
+        xBtn:SetFrameLevel(row:GetFrameLevel() + 6)
+        local xFS = xBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        xFS:SetPoint("CENTER", xBtn, "CENTER", 0, 1)
+        xFS:SetText("X")
+        xFS:SetTextColor(GOLD[1], GOLD[2], GOLD[3], 1)
+        xBtn:SetScript("OnEnter", function()
+            xFS:SetTextColor(1, 0.35, 0.28, 1)
         end)
-        row:SetScript("OnLeave", function(self)
-            self:SetBackdropBorderColor(0.40, 0.36, 0.48, 1)
+        xBtn:SetScript("OnLeave", function()
+            xFS:SetTextColor(GOLD[1], GOLD[2], GOLD[3], 1)
+        end)
+        xBtn:SetScript("OnMouseDown", function()
+            R._ignoreStallRowClick = true
+        end)
+        xBtn:SetScript("OnClick", function()
+            R:ShowReleaseConfirm(row.entry)
+        end)
+
+        row:SetScript("OnEnter", function(selfRow)
+            selfRow:SetBackdropBorderColor(1, 0.92, 0.45, 1)
+        end)
+        row:SetScript("OnLeave", function(selfRow)
+            selfRow:SetBackdropBorderColor(0.9, 0.75, 0.3, 1)
+        end)
+        row:SetScript("OnMouseWheel", function(_, delta)
+            local handler = scroll.GetScript and scroll:GetScript("OnMouseWheel")
+            if handler then
+                handler(scroll, delta)
+            else
+                StallWheel(scroll, delta)
+            end
         end)
 
         self._stallRows[i] = {
@@ -940,22 +1241,18 @@ function R:_CreateStallPanel()
             icon   = icon,
             nameFS = nameFS,
             metaFS = metaFS,
+            xBtn   = xBtn,
         }
     end
 
     local detail = CreateFrame("Frame", nil, panel)
-    detail:SetSize(CFG.field_w - 60, 300)
-    detail:SetPoint("CENTER", pf, "CENTER", 0, -10)
+    detail:SetAllPoints(pf)
     detail:Hide()
     self._stallDetail = detail
 
-    local detailTitle = detail:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    detailTitle:SetPoint("TOP", detail, "TOP", 0, -4)
-    self._stallDetailTitle = detailTitle
-
+    local modelSpec = CFG.stall_model or CFG.play_model or { point = "TOP", x = 0, y = -38, w = 200, h = 200 }
     local modelFrame = CreateFrame("Frame", nil, detail)
-    modelFrame:SetSize(CFG.stall_model_w, CFG.stall_model_h)
-    modelFrame:SetPoint("TOPLEFT", detail, "TOPLEFT", 8, -28)
+    PlaceOnField(modelFrame, modelSpec, pf)
     self._stallModelFrame = modelFrame
 
     local stallModel = CreateFrame("PlayerModel", nil, modelFrame)
@@ -969,32 +1266,78 @@ function R:_CreateStallPanel()
     stallIcon:Hide()
     self._stallModelIcon = stallIcon
 
-    local detailBody = detail:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    detailBody:SetPoint("TOPLEFT", modelFrame, "TOPRIGHT", 12, 0)
-    detailBody:SetPoint("BOTTOMRIGHT", detail, "BOTTOMRIGHT", -8, 40)
-    detailBody:SetWordWrap(true)
-    detailBody:SetJustifyH("LEFT")
-    self._stallDetailBody = detailBody
+    local nameSpec = CFG.stall_name or { w = 180, h = 28, x = 0, y = 10, point = "BOTTOM", relativePoint = "BOTTOM" }
+    local nameBox, nameFS = MakeGoldBox(modelFrame, {
+        w = nameSpec.w, h = nameSpec.h,
+        point = nameSpec.point or "BOTTOM",
+        relativePoint = nameSpec.relativePoint or "BOTTOM",
+        relativeTo = modelFrame,
+        x = nameSpec.x or 0, y = nameSpec.y or 10,
+        alpha = nameSpec.alpha or 0.85,
+    }, { text = "", font = "GameFontNormal" })
+    self._stallNameBox = nameBox
+    self._stallDetailTitle = nameFS
+
+    local dSpec = CFG.stall_detail or { point = "TOP", x = 0, y = -248, w = 400, h = 170 }
+    dSpec = {
+        w = dSpec.w, h = dSpec.h, point = dSpec.point or "TOP",
+        relativePoint = dSpec.relativePoint or "TOP", relativeTo = pf,
+        x = dSpec.x, y = dSpec.y, alpha = dSpec.alpha or 0.8,
+    }
+    local detailBox, detailTitleFS = MakeGoldBox(detail, dSpec, { text = "" })
+    if detailTitleFS then detailTitleFS:Hide() end
+    self._stallDetailBox = detailBox
+    self._stallDetailRows = {}
+    if detailBox then
+        local y = -10
+        for i = 1, 8 do
+            local fs = detailBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            fs:SetPoint("TOPLEFT", detailBox, "TOPLEFT", 14, y)
+            fs:SetPoint("TOPRIGHT", detailBox, "TOPRIGHT", -14, y)
+            fs:SetJustifyH("LEFT")
+            fs:SetText("")
+            local div
+            if i < 8 and ArcadiaNexus.UI and ArcadiaNexus.UI.CreateDivider then
+                div = ArcadiaNexus.UI.CreateDivider(detailBox, "H", {
+                    w = (dSpec.w or 400) - 28, h = 2, anchor = "TOP", relAnchor = "TOP",
+                    x = 0, y = y - 16,
+                })
+            end
+            self._stallDetailRows[i] = { fs = fs, div = div }
+            y = y - 20
+        end
+    end
 
     local UI = ArcadiaNexus.UI
     if UI then
+        local function PlaceBtn(btn, spec)
+            if not spec then return end
+            btn:ClearAllPoints()
+            btn:SetSize(spec.w or (CFG.stall_btn_w + 20), spec.h or CFG.stall_btn_h)
+            btn:SetPoint(spec.point or "TOP", pf, spec.relativePoint or spec.point or "TOP", spec.x or 0, spec.y or 0)
+        end
+
         local careBtn = UI.CreateArcadiaButton(detail, L("btn_care"), CFG.stall_btn_w + 20, CFG.stall_btn_h)
-        careBtn:SetPoint("BOTTOM", detail, "BOTTOM", 0, 4)
+        PlaceBtn(careBtn, CFG.stall_btn_care)
         careBtn:SetLabel(L("btn_care"))
         careBtn:Hide()
         self._stallCareBtn = careBtn
 
         local newBtn = UI.CreateArcadiaButton(panel, L("btn_new_pet"), CFG.stall_btn_w + 24, CFG.stall_btn_h)
-        newBtn:SetPoint("BOTTOM", pf, "BOTTOM", -90, 24)
+        PlaceBtn(newBtn, CFG.stall_btn_new)
+        newBtn:SetFrameLevel(panel:GetFrameLevel() + 40)
         newBtn:SetLabel(L("btn_new_pet"))
         newBtn:SetScript("OnClick", function()
             local Eng = ArcadiaNexus.ATG_Engine
-            if Eng then Eng:EnterAdopting() end
+            if Eng then
+                if Eng.TryEnterAdopting then Eng:TryEnterAdopting() else Eng:EnterAdopting() end
+            end
         end)
         self._stallNewBtn = newBtn
 
         local backBtn = UI.CreateArcadiaButton(panel, L("btn_back"), CFG.stall_btn_w + 16, CFG.stall_btn_h)
-        backBtn:SetPoint("BOTTOM", pf, "BOTTOM", 90, 24)
+        PlaceBtn(backBtn, CFG.stall_btn_back)
+        backBtn:SetFrameLevel(panel:GetFrameLevel() + 40)
         backBtn:SetLabel(L("btn_back"))
         backBtn:SetScript("OnClick", function()
             if R._stallDetail and R._stallDetail:IsShown() then
@@ -1010,6 +1353,7 @@ end
 
 function R:OpenStall()
     self:HideAdoptNameDialog()
+    self:HideGoldPopup()
     if self._retireConfirm then self._retireConfirm:Hide() end
     if self._adoptPanel then self._adoptPanel:Hide() end
     if self._playPanel then self._playPanel:Hide() end
@@ -1022,16 +1366,48 @@ function R:OpenStall()
 end
 
 function R:CloseStall()
+    self:HideGoldPopup()
     if self._stallPanel then self._stallPanel:Hide() end
     self:HideStallDetail()
     self:_UpdateBrandingVisibility()
+end
+
+function R:_UpdateStallScrollbar()
+    local sf = self._stallScroll
+    local sc = self._stallListChild
+    if not sf then return end
+    local UI = ArcadiaNexus.UI
+    if UI and UI.UpdateScrollbar and sc then
+        UI.UpdateScrollbar(sf, sc)
+        return
+    end
+    local sb = sf.ScrollBar
+    if not sb then return end
+    local contentH = sc and sc:GetHeight() or 0
+    local viewH = sf:GetHeight() or 0
+    local show = contentH > viewH + 1
+    if show then
+        sb:Show()
+        if sb.Thumb then sb.Thumb:Show() end
+        if sb.Track then sb.Track:Show() end
+        if sb.TrackBG then sb.TrackBG:Show() end
+    else
+        sb:Hide()
+        if sb.Thumb then sb.Thumb:Hide() end
+        if sb.Track then sb.Track:Hide() end
+        if sb.TrackBG then sb.TrackBG:Hide() end
+    end
 end
 
 function R:HideStallDetail()
     if self._stallDetail then self._stallDetail:Hide() end
     if self._stallCareBtn then self._stallCareBtn:Hide() end
     self:ClearStallModel()
+    if self._stallListHolder then self._stallListHolder:Show() end
+    if self._stallScroll then self._stallScroll:Show() end
     if self._stallListArea then self._stallListArea:Show() end
+    if self._stallTitleFS then self._stallTitleFS:Show() end
+    if self._stallCountFS then self._stallCountFS:Show() end
     if self._stallEmptyFS and self._stallEmptyFS:IsShown() then
         -- keep empty visible
     elseif self._stallRows then
@@ -1041,15 +1417,21 @@ function R:HideStallDetail()
             end
         end
     end
+    self:_UpdateStallScrollbar()
 end
 
 function R:ShowStallDetail(entry)
     if not entry or not self._stallDetail then return end
+    self:HideGoldPopup()
+    if self._stallListHolder then self._stallListHolder:Hide() end
+    if self._stallScroll then self._stallScroll:Hide() end
     if self._stallListArea then self._stallListArea:Hide() end
     for _, row in ipairs(self._stallRows) do
         if row.frame then row.frame:Hide() end
     end
     if self._stallEmptyFS then self._stallEmptyFS:Hide() end
+    if self._stallTitleFS then self._stallTitleFS:Hide() end
+    if self._stallCountFS then self._stallCountFS:Hide() end
 
     local P = ArcadiaNexus.ATG_PetData
     local title = entry.title or entry.name or "?"
@@ -1061,28 +1443,50 @@ function R:ShowStallDetail(entry)
     local petLabel = entry.petType or "?"
     if P and P.types and P.types[entry.petType] then
         petLabel = L(P.types[entry.petType].localeKey)
+    elseif P and P.types and P.types[entry.petType] then
+        petLabel = L(P.types[entry.petType].localeKey)
     end
 
     local statusKey = (entry.status == "retired") and "lbl_retired" or "lbl_living"
+    local counters = entry.traitCounters or {}
     local lines = {
-        string.format("%s: %s", L("lbl_stall_detail"), petLabel),
-        string.format("%s: %s", L(statusKey), StageLabel(entry.stage or (entry.status == "retired" and "ADULT" or "BABY"))),
+        string.format("%s: %s", L("lbl_species"), petLabel),
+        string.format("%s: %s", L("lbl_status"), L(statusKey)),
+        string.format("%s: %s", L("lbl_stage"), StageLabel(entry.stage or (entry.status == "retired" and "ADULT" or "BABY"))),
         string.format("%s: %s", L("lbl_traits"), traitText),
-        string.format("XP: %d", entry.xp or 0),
+        string.format("%s: %d", L("lbl_xp_full"), entry.xp or 0),
     }
     if entry.status == "retired" then
         lines[#lines + 1] = string.format("%s: %s", L("lbl_retired_on"), entry.retiredAtText or "-")
     end
-    if entry.traitCounters then
-        lines[#lines + 1] = string.format(
-            "fed:%d wash:%d train:%d pet:%d heal:%d sleep:%d",
-            entry.traitCounters.fed or 0, entry.traitCounters.washed or 0,
-            entry.traitCounters.trained or 0, entry.traitCounters.petted or 0,
-            entry.traitCounters.healed or 0, entry.traitCounters.slept or 0
-        )
-    end
+    lines[#lines + 1] = string.format(
+        "%s: %s %d · %s %d · %s %d · %s %d · %s %d · %s %d",
+        L("lbl_care"),
+        L("lbl_fed"), counters.fed or 0,
+        L("lbl_washed"), counters.washed or 0,
+        L("lbl_trained"), counters.trained or 0,
+        L("lbl_petted"), counters.petted or 0,
+        L("lbl_healed"), counters.healed or 0,
+        L("lbl_slept"), counters.slept or 0
+    )
 
-    if self._stallDetailBody then
+    if self._stallDetailRows then
+        for i, row in ipairs(self._stallDetailRows) do
+            local text = lines[i]
+            if row.fs then
+                if text then
+                    row.fs:SetText(text)
+                    row.fs:Show()
+                else
+                    row.fs:SetText("")
+                    row.fs:Hide()
+                end
+            end
+            if row.div then
+                if text and lines[i + 1] then row.div:Show() else row.div:Hide() end
+            end
+        end
+    elseif self._stallDetailBody then
         self._stallDetailBody:SetText(table.concat(lines, "\n"))
     end
 
@@ -1109,8 +1513,9 @@ function R:RefreshStallList()
     if not S or not self._stallRows then return end
 
     local stall = S:GetStall() or {}
+    local maxPets = (S.GetMaxPets and S:GetMaxPets()) or (CFG.stall_row_max or 24)
     if self._stallCountFS then
-        self._stallCountFS:SetText(string.format("%s: %d", L("lbl_stall_count"), #stall))
+        self._stallCountFS:SetText(string.format("%s: %d / %d", L("lbl_stall_count"), #stall, maxPets))
     end
 
     for _, row in ipairs(self._stallRows) do
@@ -1120,13 +1525,26 @@ function R:RefreshStallList()
         end
     end
 
+    local listSpec = CFG.stall_list or { w = 554, h = 340 }
+    local gutter = CFG.stall_scroll_gutter or 28
+    local rowH = CFG.stall_row_h or 50
+    local shown = math.min(#stall, CFG.stall_row_max or maxPets)
+    if self._stallListChild then
+        local contentH = math.max(listSpec.h or 340, shown * rowH)
+        self._stallListChild:SetWidth((listSpec.w or 554) - gutter)
+        self._stallListChild:SetHeight(contentH)
+    end
+    if self._stallScroll then
+        self._stallScroll:SetVerticalScroll(0)
+    end
+    self:_UpdateStallScrollbar()
+
     if #stall == 0 then
         if self._stallEmptyFS then self._stallEmptyFS:Show() end
         return
     end
     if self._stallEmptyFS then self._stallEmptyFS:Hide() end
 
-    local shown = math.min(#stall, CFG.stall_row_max)
     for i = 1, shown do
         local entry = stall[#stall - i + 1]
         local row = self._stallRows[i]
@@ -1146,11 +1564,37 @@ function R:RefreshStallList()
             entry.xp or 0
         ))
 
-        row.frame:SetScript("OnClick", function()
-            R:ShowStallDetail(entry)
+        row.frame:SetScript("OnMouseUp", function(selfRow, button)
+            if button ~= "LeftButton" then return end
+            if R._ignoreStallRowClick then
+                R._ignoreStallRowClick = nil
+                return
+            end
+            if selfRow.entry then
+                R:ShowStallDetail(selfRow.entry)
+            end
         end)
         row.frame:Show()
     end
+end
+
+function R:RefreshDevEvolveButton()
+    if not self._devEvolveBtn then return end
+    local Eng = ArcadiaNexus.ATG_Engine
+    local dev = ArcadiaNexus.IsDevMode and ArcadiaNexus.IsDevMode()
+    local playing = Eng and Eng.state == "PLAYING" and Eng.gameState
+    local playOpen = self._playPanel and self._playPanel:IsShown()
+    if not dev or not playing or not playOpen then
+        self._devEvolveBtn:Hide()
+        return
+    end
+    local stage = Eng.gameState.stage
+    if stage == "ADULT" then
+        self._devEvolveBtn:SetLabel(L("btn_dev_evolve_reset"))
+    else
+        self._devEvolveBtn:SetLabel(L("btn_dev_evolve"))
+    end
+    self._devEvolveBtn:Show()
 end
 
 function R:RefreshRetireButton(gs, phase)
@@ -1316,6 +1760,7 @@ function R:_ApplyPetModel(gs)
     if ok then
         self._petModel:Show()
         self._petModel:SetAlpha(1)
+        if P.ApplyCamera and def then P:ApplyCamera(self._petModel, def) end
         if self._petIcon then self._petIcon:Hide() end
         local idle = P.ANIM and P.ANIM.idle or 0
         self:PlayPetAnimation(idle)
@@ -1679,6 +2124,7 @@ function R:RefreshHUD(gs)
     end
     local E = ArcadiaNexus.ATG_Engine
     self:RefreshRetireButton(gs, E and E.phase or "ACTIVE")
+    self:RefreshDevEvolveButton()
 end
 
 function R:RefreshActionButtons(gs, phase)
@@ -1709,6 +2155,7 @@ function R:EnterAdopting()
     self:HideComm()
     self:ClearPetModel()
     self:HideAdoptNameDialog()
+    self:HideGoldPopup()
     self:ShowRetireConfirm(false)
     if self._stallPanel then self._stallPanel:Hide() end
     if self._adoptPanel then self._adoptPanel:Show() end
@@ -1722,6 +2169,7 @@ function R:EnterIdleState()
     self:ClearPetModel()
     self:ClearStallModel()
     self:HideAdoptNameDialog()
+    self:HideGoldPopup()
     self:ShowRetireConfirm(false)
     if self._camGuard then self._camGuard:Cancel() end
     if self._stallPanel then self._stallPanel:Hide() end

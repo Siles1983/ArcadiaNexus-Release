@@ -177,8 +177,21 @@ function L:WouldCapture(game, player, pieceIdx, destRel)
     if destRel < 1 or destRel > 40 then return false end
     local board = GetBoard()
     local gridIdx = board:GetGridIndex(player.colorIdx, destRel)
-    local occ = self:OccupantAtGrid(game, gridIdx, player.id, pieceIdx)
-    return occ ~= nil
+    return self:HasEnemyAtGrid(game, gridIdx, player.id)
+end
+
+function L:HasEnemyAtGrid(game, gridIdx, movingPlayerID)
+    if not gridIdx then return false end
+    for _, player in pairs(game.players) do
+        if player.id ~= movingPlayerID then
+            for _, piece in ipairs(player.pieces) do
+                if piece.relPos > 0 and piece.relPos <= 40 and piece.gridIdx == gridIdx then
+                    return true
+                end
+            end
+        end
+    end
+    return false
 end
 
 function L:IsAI(game, playerID)
@@ -216,11 +229,9 @@ function L:GetValidMoves(game)
     local moves  = {}
     if not player or not dice or dice < 1 then return moves end
 
-    local startBlocked = HasOwnAtRel(player, 1)
-
     for i, piece in ipairs(player.pieces) do
         if piece.relPos == 0 then
-            if dice == 6 and not startBlocked then
+            if dice == 6 then
                 moves[#moves + 1] = { pieceIdx = i, steps = 0, action = "enter" }
             end
         elseif piece.relPos <= 44 then
@@ -279,14 +290,16 @@ function L:CheckCapture(game, movingPlayer, movedPiece, movedIdx)
     if movedPiece.relPos < 1 or movedPiece.relPos > 40 then return false end
 
     local captured = false
-    while true do
-        local occPlayer, occPiece = self:OccupantAtGrid(
-            game, movedPiece.gridIdx, movingPlayer.id, movedIdx)
-        if not occPiece then break end
-        if self:SendToBase(occPlayer, occPiece) then
-            captured = true
-        else
-            break
+    for _, player in pairs(game.players) do
+        if player.id ~= movingPlayer.id then
+            for _, piece in ipairs(player.pieces) do
+                if piece.relPos > 0 and piece.relPos <= 40
+                        and piece.gridIdx == movedPiece.gridIdx then
+                    if self:SendToBase(player, piece) then
+                        captured = true
+                    end
+                end
+            end
         end
     end
     return captured

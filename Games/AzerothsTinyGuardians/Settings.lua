@@ -107,6 +107,32 @@ function S:HasAnyPets()
     return pets ~= nil and #pets > 0
 end
 
+function S:CountPets()
+    return #(EnsureDB().pets or {})
+end
+
+function S:GetMaxPets()
+    local Logic = ArcadiaNexus.ATG_Logic
+    return (Logic and Logic.MAX_PETS) or 24
+end
+
+function S:IsPetLimitReached()
+    return self:CountPets() >= self:GetMaxPets()
+end
+S.IsPetLimitReached = S.IsPetLimitReached
+S.GetMaxPets = S.GetMaxPets
+
+function S:RemovePet(id)
+    local idx = self:_FindPetIndex(id)
+    if not idx then return false end
+    local db = EnsureDB()
+    table.remove(db.pets, idx)
+    if db.activePetId == id then
+        db.activePetId = nil
+    end
+    return true
+end
+
 function S:HasLivingPets()
     local pets = EnsureDB().pets or {}
     for _, p in ipairs(pets) do

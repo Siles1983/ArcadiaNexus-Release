@@ -23,7 +23,7 @@ P.icons = {
         ADULT = "Interface\\Icons\\INV_Misc_MonsterHead_04",
     },
     DRAGON = {
-        BABY  = "Interface\\Icons\\Ability_Dragonkin_Dragonbreath",
+        BABY  = "Interface\\Icons\\INV_Misc_Head_Dragon_Red",
         YOUTH = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
         ADULT = "Interface\\Icons\\Spell_Fire_Fireball02",
     },
@@ -38,9 +38,9 @@ P.icons = {
         ADULT = "Interface\\Icons\\INV_Misc_EngGizmos_05",
     },
     FROSTWOLF = {
-        BABY  = "Interface\\Icons\\Ability_Racial_WarStompTauren",
+        BABY  = "Interface\\Icons\\Ability_Hunter_Pet_Wolf",
         YOUTH = "Interface\\Icons\\Ability_Mount_WhiteDireWolf",
-        ADULT = "Interface\\Icons\\Ability_Hunter_Pet_Wolf",
+        ADULT = "Interface\\Icons\\INV_Misc_MonsterFang_01",
     },
     QUILBOAR = {
         BABY  = "Interface\\Icons\\Ability_Warrior_Charge",
@@ -57,34 +57,34 @@ P.adoptionOrder = { "MURLOC", "DRAGON", "UNDEAD", "MECHAGNOME", "FROSTWOLF", "QU
 -- zoom / camScale / rotation sind Feintuning-Werte
 P.models = {
     MURLOC = {
-        BABY  = { speciesID = 107,  creatureID = 15186,  displayID = 15369, rotation = 0.40, zoom = 0.85, camScale = 0.90 }, -- Murky
-        YOUTH = { speciesID = 1940, creatureID = 113983, displayID = 73351, rotation = 0.40, zoom = 0.80, camScale = 0.95 }, -- Knight-Captain Murky
-        ADULT = { speciesID = 1939, creatureID = 113984, displayID = 73352, rotation = 0.40, zoom = 0.72, camScale = 1.05 }, -- Legionnaire Murky
+        BABY  = { speciesID = 107,  creatureID = 15186,  displayID = 15369, rotation = 0.40, zoom = 0.25, camScale = 1.2 }, -- Murky
+        YOUTH = { speciesID = 1940, creatureID = 113983, displayID = 73351, rotation = 0.40, zoom = 0.25, camScale = 1.2 }, -- Knight-Captain Murky
+        ADULT = { speciesID = 1939, creatureID = 113984, displayID = 73352, rotation = 0.40, zoom = 0.25, camScale = 1.2 }, -- Legionnaire Murky
     },
     DRAGON = {
-        BABY  = { speciesID = 819,  creatureID = 65321,  displayID = 43874,  rotation = 0.35, zoom = 0.20, camScale = 0.85 }, -- Wild Crimson Hatchling
-        YOUTH = { speciesID = 320,  creatureID = 54027,  displayID = 38614,  rotation = 0.35, zoom = 0.20, camScale = 0.95 }, -- Lil' Tarecgosa
-        ADULT = { speciesID = 4261, creatureID = 208637, displayID = 113664, rotation = 0.35, zoom = 0.05, camScale = 1.10 }, -- Obsidian Warwhelp
+        BABY  = { speciesID = 819,  creatureID = 65321,  displayID = 43874,  rotation = 0.35, zoom = 0.25, camScale = 1.35 }, -- Wild Crimson Hatchling
+        YOUTH = { speciesID = 320,  creatureID = 54027,  displayID = 38614,  rotation = 0.35, zoom = 0.25, camScale = 1.20 }, -- Lil' Tarecgosa
+        ADULT = { speciesID = 4261, creatureID = 208637, displayID = 113664, rotation = 0.35, zoom = 0.20, camScale = 2.50 }, -- Obsidian Warwhelp
     },
     UNDEAD = {
-        BABY  = { speciesID = 264,  creatureID = 45128,  displayID = 34262, rotation = 0.40, zoom = 0.85, camScale = 0.75 }, -- Crawling Claw
-        YOUTH = { speciesID = 188,  creatureID = 28883,  displayID = 28456, rotation = 0.40, zoom = 0.55, camScale = 0.85 }, -- Frosty
+        BABY  = { speciesID = 264,  creatureID = 45128,  displayID = 34262, rotation = 0.40, zoom = 0.85, camScale = 1.25 }, -- Crawling Claw
+        YOUTH = { speciesID = 188,  creatureID = 28883,  displayID = 28456, rotation = 0.40, zoom = 0.55, camScale = 1.25 }, -- Frosty
         ADULT = { speciesID = 1871, creatureID = 105499, displayID = 48650, rotation = 0.40, zoom = 0.25, camScale = 1.00 }, -- Harbinger of Dark
     },
     MECHAGNOME = {
-        BABY  = { speciesID = 1142, creatureID = 68601,  displayID = 46882, rotation = 0.35, zoom = 0.10, camScale = 0.85 }, -- Clock'em
-        YOUTH = { speciesID = 3077, creatureID = 175785, displayID = 92192, rotation = 0.35, zoom = 0.10, camScale = 0.92 }, -- Kostos
-        ADULT = { speciesID = 923,  creatureID = 66445,  displayID = 45586, rotation = 0.35, zoom = 0.10, camScale = 1.05 }, -- Hatewalker
+        BABY  = { speciesID = 1142, creatureID = 68601,  displayID = 46882, rotation = 0.35, zoom = 0.10, camScale = 1.5 }, -- Clock'em
+        YOUTH = { speciesID = 3077, creatureID = 175785, displayID = 92192, rotation = 0.35, zoom = 0.10, camScale = 1.25 }, -- Kostos
+        ADULT = { speciesID = 923,  creatureID = 66445,  displayID = 45586, rotation = 0.35, zoom = 0.10, camScale = 1.9 }, -- Hatewalker
     },
     FROSTWOLF = {
-        BABY  = { speciesID = 3070, creatureID = 175778, displayID = 93750, rotation = 0.80, zoom = 0.15, camScale = 0.85 }, -- Briarpaw
+        BABY  = { speciesID = 3070, creatureID = 175778, displayID = 93750, rotation = 0.80, zoom = 0.15, camScale = 1.10 }, -- Briarpaw
         YOUTH = { speciesID = 928,  creatureID = 66469,  displayID = 45637, rotation = 0.50, zoom = 0.10, camScale = 0.95 }, -- Frostmaw
-        ADULT = { speciesID = 1266, creatureID = 71942,  displayID = 49846, rotation = 0.80, zoom = 0.70, camScale = 1.08 }, -- Xu-Fu
+        ADULT = { speciesID = 1266, creatureID = 71942,  displayID = 49846, rotation = 0.80, zoom = 0.70, camScale = 1.80 }, -- Xu-Fu
     },
     QUILBOAR = {
-        BABY  = { speciesID = 226,  creatureID = 33529,  displayID = 25384, rotation = 0.60, zoom = 0.15, camScale = 0.80 }, -- Curious Wolvar Pup
-        YOUTH = { speciesID = 2417, creatureID = 143197, displayID = 76383, rotation = 0.60, zoom = 0.15, camScale = 0.92 }, -- Ranishu Runt
-        ADULT = { speciesID = 1688, creatureID = 94927,  displayID = 64222, rotation = 0.60, zoom = 0.15, camScale = 1.05 }, -- Crusher
+        BABY  = { speciesID = 226,  creatureID = 33529,  displayID = 25384, rotation = 0.60, zoom = 0.15, camScale = 1.8 }, -- Curious Wolvar Pup
+        YOUTH = { speciesID = 2417, creatureID = 143197, displayID = 76383, rotation = 0.60, zoom = 0.15, camScale = 1.65 }, -- Ranishu Runt
+        ADULT = { speciesID = 1688, creatureID = 94927,  displayID = 64222, rotation = 0.60, zoom = 0.15, camScale = 1.3 }, -- Crusher
     },
 }
 
@@ -373,6 +373,42 @@ function P:ResolveModelIds(def)
     return displayID, companionID
 end
 
+-- Viewport-Größe (CFG play_model / stall_model w/h) skaliert nur das Widget.
+-- zoom / camScale steuern den Kamerausschnitt unabhängig davon.
+-- zoom     SetPortraitZoom: kleiner = mehr Körper, größer = Portrait/Kopf
+-- camScale SetCamDistanceScale: größer = Kamera weiter weg, Pet wirkt kleiner
+-- zoom = 0 ist gültig (nicht mit `if def.zoom` prüfen — 0 ist in Lua falsch).
+function P:ApplyCamera(modelFrame, def)
+    if not modelFrame or not def then return end
+
+    -- RefreshCamera zuerst, sonst überschreibt es die Feintuning-Werte.
+    if modelFrame.RefreshCamera then
+        modelFrame:RefreshCamera()
+    end
+    if def.rotation ~= nil and modelFrame.SetRotation then
+        modelFrame:SetRotation(def.rotation)
+    end
+    if def.zoom ~= nil and modelFrame.SetPortraitZoom then
+        modelFrame:SetPortraitZoom(def.zoom)
+    end
+    if def.camScale ~= nil and modelFrame.SetCamDistanceScale then
+        modelFrame:SetCamDistanceScale(def.camScale)
+    end
+end
+
+function P:_EnsureCameraHook(modelFrame)
+    if not modelFrame or modelFrame._atgCamHooked then return end
+    modelFrame._atgCamHooked = true
+    pcall(function()
+        modelFrame:HookScript("OnModelLoaded", function(self)
+            local PD = ArcadiaNexus.ATG_PetData
+            if PD and PD.ApplyCamera and self._atgCamDef then
+                PD:ApplyCamera(self, self._atgCamDef)
+            end
+        end)
+    end)
+end
+
 function P:ApplyModel(modelFrame, petType, stage)
     if not modelFrame then return false end
     local def = self:GetModelDef(petType, stage)
@@ -398,18 +434,9 @@ function P:ApplyModel(modelFrame, petType, stage)
         return false
     end
 
-    if def.rotation and modelFrame.SetRotation then
-        modelFrame:SetRotation(def.rotation)
-    end
-    if def.zoom and modelFrame.SetPortraitZoom then
-        modelFrame:SetPortraitZoom(def.zoom)
-    end
-    if def.camScale and modelFrame.SetCamDistanceScale then
-        modelFrame:SetCamDistanceScale(def.camScale)
-    end
-    if modelFrame.RefreshCamera then
-        modelFrame:RefreshCamera()
-    end
+    modelFrame._atgCamDef = def
+    self:_EnsureCameraHook(modelFrame)
+    self:ApplyCamera(modelFrame, def)
 
     return true
 end

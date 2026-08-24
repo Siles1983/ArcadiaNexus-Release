@@ -44,7 +44,17 @@ end
 -- INTERNE HILFSFUNKTIONEN
 -- ============================================================
 
+local function _IsAllowlisted()
+    if ArcadiaNexus.CanAccessDevMode then
+        return ArcadiaNexus.CanAccessDevMode() == true
+    end
+    return true
+end
+
 local function _IsDevMode()
+    if not _IsAllowlisted() then
+        return false
+    end
     return ArcadiaNexusDB
         and ArcadiaNexusDB.dev
         and ArcadiaNexusDB.dev.devMode
@@ -160,10 +170,14 @@ SLASH_ANDEVCHECK1 = "/andevcheck"
 SlashCmdList["ANDEVCHECK"] = function()
     local active = _IsDevMode()
     local raw    = ArcadiaNexusDB and ArcadiaNexusDB.dev and ArcadiaNexusDB.dev.devMode
+    local allowed = _IsAllowlisted()
     if active then
         print("|cff00ff88[GH]|r Developer-Modus ist |cff00ff88AKTIV|r. (DB-Wert: " .. tostring(raw) .. ")")
     else
         print("|cffffaa00[GH]|r Developer-Modus ist |cffffaa00INAKTIV|r. (DB-Wert: " .. tostring(raw) .. ")")
+        if not allowed then
+            print("|cffffaa00[GH]|r Dieser Charakter steht nicht auf der DevAccess-Allowlist. /andevwho")
+        end
     end
         print("|cff7ec8e3[GH]|r Log-Einträge: " .. _logIndex .. "/" .. LOG_MAX)
 end

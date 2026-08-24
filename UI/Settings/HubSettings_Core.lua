@@ -96,13 +96,19 @@ function HubSettings:_BuildSettingsTabBar(tabBar, sc)
         tf:Hide()
     end
 
-    for i, tab in ipairs(HSTR.GetAll()) do
+    local slot = 0
+    for _, tab in ipairs(HSTR.GetAll()) do
+        if tab.isVisible and not tab.isVisible() then
+            if oldBtns[tab.id] then oldBtns[tab.id]:Hide() end
+            if oldFrames[tab.id] then oldFrames[tab.id]:Hide() end
+        else
+        slot = slot + 1
         local btn = oldBtns[tab.id]
         if btn then
             btn:SetParent(tabBar)
             btn:ClearAllPoints()
             btn:SetSize(TAB_W, TAB_H)
-            btn:SetPoint("TOPLEFT", tabBar, "TOPLEFT", (i - 1) * (TAB_W + TAB_GAP), 0)
+            btn:SetPoint("TOPLEFT", tabBar, "TOPLEFT", (slot - 1) * (TAB_W + TAB_GAP), 0)
             if btn._lbl then btn._lbl:SetText(ResolveTabLabel(tab)) end
             btn._tabID = tab.id
             btn:SetScript("OnClick", function() HubSettings:SetActiveTab(tab.id) end)
@@ -110,7 +116,7 @@ function HubSettings:_BuildSettingsTabBar(tabBar, sc)
         else
             btn = CreateFrame("Button", nil, tabBar, "BackdropTemplate")
             btn:SetSize(TAB_W, TAB_H)
-            btn:SetPoint("TOPLEFT", tabBar, "TOPLEFT", (i - 1) * (TAB_W + TAB_GAP), 0)
+            btn:SetPoint("TOPLEFT", tabBar, "TOPLEFT", (slot - 1) * (TAB_W + TAB_GAP), 0)
             btn:SetBackdrop({
                 bgFile   = "Interface\\Buttons\\WHITE8X8",
                 edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -154,13 +160,14 @@ function HubSettings:_BuildSettingsTabBar(tabBar, sc)
             pcall(tab.buildContent, tf)
         end
         self._tabFrames[tab.id] = tf
+        end
     end
 end
 
 function HubSettings:RebuildTabBar()
     if not self._tabBar or not self._sc then return end
     self:_BuildSettingsTabBar(self._tabBar, self._sc)
-    if self._activeTab and self._tabBtns[self._activeTab] then
+    if self._activeTab and self._tabBtns[self._activeTab] and self._tabBtns[self._activeTab]:IsShown() then
         self:SetActiveTab(self._activeTab)
     else
         local HSTR = GetSettingsTabRegistry()

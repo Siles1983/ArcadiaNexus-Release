@@ -1,19 +1,66 @@
+### Arcadia Nexus 1.1.3 Changelog
+
+### English
+
+- Ludo of Azeroth
+- Capturing: no safe squares (including start). Landing on an opponent sends them back to base. Your own pieces are never captured.
+- Stacking: pieces of the same color may share a square. Stacked pieces are offset left/right so they can be selected separately.
+- Home squares: pieces stay visible and occupy the four home fields one by one (exact count, no stacking on the same home square). Win when all four are home.
+- Dice result number is larger and no longer covered by the 2D dice texture.
+
+- Azeroth's Tiny Guardians (overhaul)
+- Stable rows and the six adoption cards now use the gold HUD boxes (same look as Blackjack capital).
+- Each box, the 3D viewer, needs panel, name overlay, and stall buttons have their own CFG so layout can be tuned without playing through the game.
+- Developer Mode shows all ATG layout frames at once as an overlay.
+- Needs decay as usual while you play. If ATG is closed but WoW is still running, catch-up on open uses 15% of the normal decay and is capped at 30 minutes. No background tick while the UI is hidden.
+- Dragon whelp and Frostwolf pup now have proper species icons.
+- Sleeping no longer shifts the HUD downward; the name stays as an overlay on the 3D viewer and the needs box stays fixed.
+- The Retire button sits in control-bar segment 1 and only appears when the pet is eligible.
+- Need bars show 32×32 icons (hunger, happiness, energy, health, hygiene) in front of the labels.
+- Opening a pet in the stable uses the same 3D viewer position as active play. Name overlay on the model, translated DE/EN detail rows with dividers, and Care / New Pet / Back in one row under the box.
+- Model widget size (play_model / stall_model) no longer overrides camera zoom and scale from PetData, so framing can be adjusted per species and stage.
+- Developer Mode adds a button to jump to the next evolution stage (or back to baby on adult) to review all models.
+- Developer Mode is locked to a character allowlist. Other characters do not see the Developer tab, and flipping the saved flag is not enough. `/andevwho` prints the Name-Realm key to add.
+- The stable list is scrollable so New Pet and Back stay visible. The shared Nexus scrollbar appears only when the list is long enough to scroll.
+- Pets can be released from the stable overview via an X on each card, with a gold confirmation popup.
+- A stable holds at most 24 pets. Adopting another while full shows an info popup asking you to release one first.
+
+### Deutsch
+
+- Ludo of Azeroth
+- Schlagen: keine Safe-Zone (auch nicht am Startfeld). Landen auf einem Gegner schickt ihn zurück ins Haus. Eigene Figuren werden nie geschlagen.
+- Stapeln: Figuren derselben Farbe dürfen auf einem Feld stehen. Gestapelte Figuren werden nach links/rechts versetzt, damit sie einzeln wählbar sind.
+- Die Würfelzahl ist größer und wird nicht mehr von der 2D-Würfeltextur überdeckt.
+
+- Azeroth's Tiny Guardians (Umbau)
+- Stall-Zeilen und die sechs Adopt-Karten nutzen jetzt die goldenen HUD-Boxen (wie die Blackjack-Kapitalanzeige).
+- Jede Box, der 3D-Viewer, die Bedürfnis-Leiste, das Namens-Overlay und die Stall-Buttons haben eigene CFG-Werte und lassen sich ohne Spielablauf justieren.
+- Der Developer-Modus zeigt alle ATG-Layout-Rahmen gleichzeitig als Overlay.
+- Bedürfnisse sinken im aktiven Spiel unverändert. Ist ATG geschlossen, WoW aber noch offen, gilt beim Öffnen Catch-up mit 15 % der normalen Rate, maximal 30 Minuten. Kein Hintergrund-Tick bei ausgeblendeter UI.
+- Drachenwelpe und Frostwolf-Welpe haben jetzt passende Art-Icons.
+- Schlafen verschiebt das HUD nicht mehr nach unten; der Name bleibt Overlay auf dem 3D-Viewer, die Bedürfnisbox bleibt fest.
+- Der Ruhestand-Button sitzt in Segment 1 der Controls-Leiste und erscheint nur, wenn das Pet den Status hat.
+- Vor den Bedürfnis-Labels stehen 32×32-Icons (Hunger, Glück, Energie, Gesundheit, Sauberkeit).
+- Ein Pet im Stall öffnet denselben 3D-Viewer wie im aktiven Spiel. Namens-Overlay auf dem Modell, übersetzte DE/EN-Details mit Trennlinien, Pflegen / Neues Pet / Zurück in einer Reihe unter der Box.
+- Die Widget-Größe von play_model / stall_model überschreibt Zoom und Scale aus PetData nicht mehr; die Kameras können pro Art und Stufe eingestellt werden.
+- Im Developer-Modus springt ein Button zur nächsten Evolutionsstufe (bzw. zurück zum Baby), um alle Modelle zu prüfen.
+- Der Developer-Modus ist an eine Charakter-Allowlist gebunden. Andere Charaktere sehen den Entwickler-Tab nicht, das Setzen des Saved-Flags reicht nicht. `/andevwho` gibt den Name-Realm-Schlüssel aus.
+- Die Stall-Liste ist scrollbar, damit Neues Pet und Zurück sichtbar bleiben. Der gemeinsame Nexus-Scrollbalken erscheint nur, wenn die Liste lang genug zum Scrollen ist.
+- Pets können in der Stall-Übersicht über ein X an der Karte freigelassen werden, mit goldenem Bestätigungs-Popup.
+- Maximal 24 Pets gleichzeitig. Ist das Limit erreicht, erscheint beim Adoptieren ein Hinweis, zuerst eines freizulassen.
+
+---
+
 ### Arcadia Nexus 1.1.2 Changelog
 
 ### English
 
 - Login streaks now use consecutive calendar days instead of fixed 24-hour intervals.
-
 - Daily rewards now reset correctly when the calendar day changes.
-
 - Fixed an error when displaying Argus Orbit Defense save slots.
-
 - Game renderers are now initialized independently with per-game error isolation.
-
 - A broken game can no longer interrupt the initialization of the entire hub.
-
 - Renderer initialization was removed from the minimap module and moved into the central hub bootstrap.
-
 - BlockBreaker HUD positions fixed
 
 - Hangman
@@ -43,17 +90,11 @@
 ### Deutsch
 
 - Login-Streak zählt jetzt auf Basis aufeinanderfolgender Kalendertage statt starrer 24-Stunden-Zeiträume.
-
 - Tägliche Belohnungen werden beim Tageswechsel korrekt zurückgesetzt.
-
 - Fehler beim Anzeigen von Argus-Orbit-Defense-Spielständen behoben.
-
 - Spiel-Renderer werden nun unabhängig und fehlerisoliert initialisiert.
-
 - Ein fehlerhaftes Spiel kann nicht mehr die Initialisierung des gesamten Hubs unterbrechen.
-
 - Renderer-Initialisierung aus dem Minimap-Modul entfernt und dem zentralen Hub-Bootstrap zugeordnet.
-
 - BlockBreaker HUD Positionen korrigiert
 
 - Hangman

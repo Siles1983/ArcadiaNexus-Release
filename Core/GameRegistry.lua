@@ -94,9 +94,7 @@ function GR.IsVisible(info, opts)
         if not opts.includeDevOnly then
             return false
         end
-        local isDevMode = ArcadiaNexusDB and
-                          ArcadiaNexusDB.dev and
-                          ArcadiaNexusDB.dev.devMode == true
+        local isDevMode = ArcadiaNexus.IsDevMode and ArcadiaNexus.IsDevMode() == true
         if not isDevMode then
             return false
         end
