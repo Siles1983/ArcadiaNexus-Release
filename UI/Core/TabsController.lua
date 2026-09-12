@@ -83,6 +83,10 @@ local function DefaultRefreshVisibility(tab, active)
 end
 
 function NexusTabs.SetActive(id)
+    local Shell = ArcadiaNexus.MatchShell
+    if Shell and Shell.ShouldDeferTab and Shell.ShouldDeferTab(id) then
+        return
+    end
     local TR = ArcadiaNexus.TabRegistry
     local tab = TR and TR.GetById(id)
     if not tab then return end

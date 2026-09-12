@@ -17,26 +17,32 @@ local function BuildCategoryPanel(parent)
     local function ActivateGame(catID)
         local gameShown = false
         NexusTabState.activeCategory = catID
-        for _, b in ipairs(F.catBtns) do b.Refresh() end
+        if F.catBtns then
+            for _, b in ipairs(F.catBtns) do b.Refresh() end
+        end
         NexusTabs.RefreshPanelVisibility()
         if ArcadiaNexus and ArcadiaNexus.GameRegistry then
             local GR = ArcadiaNexus.GameRegistry
+            local eng = GR.GetEngine(catID)
+            local engRunning = eng and eng.state and eng.state ~= "IDLE"
             GR.HideAllContainers()
-            NexusTabs.StopAllGames()
+            if not engRunning then
+                NexusTabs.StopAllGames()
+            end
             local info = GR.GetById(catID)
             if info then
                 local shown = GR.ShowContainer(catID)
                 if shown then
                     gameShown = true
                     local rnd = GR.GetRenderer(catID)
-                    local eng = GR.GetEngine(catID)
-                    local engRunning = eng and eng.state and eng.state ~= "IDLE"
                     if rnd and rnd.EnterIdleState and not engRunning then
                         local ok, err = pcall(rnd.EnterIdleState, rnd)
                         if not ok then
                             GH_LogError("GamesPanel", "EnterIdleState fehlgeschlagen ["
                                 .. tostring(catID) .. "]: " .. tostring(err))
                         end
+                    elseif rnd and rnd.Render and engRunning then
+                        pcall(rnd.Render, rnd)
                     end
                 end
             end
@@ -68,6 +74,37 @@ local function BuildCategoryPanel(parent)
             return
         end
         ArcadiaNexus.UI._pendingGameOpen = gameId
+        NexusTabs.SetActive("GAMES")
+    end
+
+    --- Hotseat: laufendes Spiel auf dem Spiele-Canvas. MP-Brett hängt an MatchShell.PresentBoard.
+    function ArcadiaNexus.UI.RevealRunningGame(gameId)
+        if not gameId then return end
+        local GR = ArcadiaNexus.GameRegistry
+        if not GR then return end
+        NexusTabState.activeCategory = gameId
+        if F.catBtns then
+            for _, b in ipairs(F.catBtns) do b.Refresh() end
+        end
+        NexusTabs.RefreshPanelVisibility()
+        GR.HideAllContainers()
+        GR.ShowContainer(gameId)
+        if ArcadiaNexus.UI.WelcomePanel then
+            ArcadiaNexus.UI.WelcomePanel:Hide()
+        end
+        local rnd = GR.GetRenderer(gameId)
+        if rnd and rnd.Render then
+            pcall(rnd.Render, rnd)
+        end
+    end
+
+    function ArcadiaNexus.UI.PresentRunningGame(gameId)
+        if not gameId then return end
+        if not (_G.NexusTabs and NexusTabs.GetActive) or NexusTabs.GetActive() == "GAMES" then
+            ArcadiaNexus.UI.RevealRunningGame(gameId)
+            return
+        end
+        ArcadiaNexus.UI._presentRunningGame = gameId
         NexusTabs.SetActive("GAMES")
     end
 

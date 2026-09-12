@@ -2,7 +2,7 @@
 ## Title: Arcadia Nexus
 ## Notes: Arcadia Nexus - Mini-Game Framework
 ## Author: Siles
-## Version: 1.1.3
+## Version: 1.1.4
 ## IconTexture: Interface\Icons\INV_Misc_Dice_01
 ## SavedVariables: ArcadiaNexusDB
 
@@ -37,6 +37,16 @@ Core/TavernGold.lua
 Core/ChallengeManager.lua
 Core/GameResultProcessor.lua
 Core/Engine.lua
+
+Core/Match/Protocol.lua
+Core/Match/Transport_Loopback.lua
+Core/Match/Transport_WoW.lua
+Core/Match/Dummy.lua
+Core/Match/Runtime.lua
+Core/Match/SelfTest.lua
+Core/Match/Live.lua
+Core/Match/Browser.lua
+Core/Match/API.lua
 
 Games/TicTacToe/Language.lua
 Games/TicTacToe/Logic.lua
@@ -187,6 +197,15 @@ Games/Hangman/Renderer.lua
 Games/Hangman/Hangman_Achievements.lua
 Games/Hangman/Hangman_Leaderboard.lua
 
+Games/SI7/Settings.lua
+Games/SI7/Language.lua
+Games/SI7/Words.lua
+Games/SI7/Logic.lua
+Games/SI7/Engine.lua
+Games/SI7/Renderer.lua
+Games/SI7/SI7_Achievements.lua
+Games/SI7/SI7_Leaderboard.lua
+
 Games/Match3/Language.lua
 Games/Match3/Settings.lua
 Games/Match3/Themes.lua
@@ -272,6 +291,7 @@ Games/ShellGame/Renderer.lua
 Games/ShellGame/ShellGame_Achievements.lua
 Games/ShellGame/ShellGame_Leaderboard.lua
 
+# Tavern Cards - UNO (Karten)
 Games/TavernCards/Language.lua
 Games/TavernCards/Settings.lua
 Games/TavernCards/Deck.lua
@@ -301,6 +321,12 @@ Games/BarrelBrawl/Settings.lua
 Games/BarrelBrawl/Renderer.lua
 Games/BarrelBrawl/BarrelBrawl_Achievements.lua
 Games/BarrelBrawl/BarrelBrawl_Leaderboard.lua
+
+Dev/LevelEditor/Language.lua
+Dev/LevelEditor/Catalog.lua
+Dev/LevelEditor/Serialize.lua
+Dev/LevelEditor/Sample_Showcase.lua
+Dev/LevelEditor/Editor.lua
 
 Games/AlchemistsSort/Language.lua
 Games/AlchemistsSort/Settings.lua
@@ -358,6 +384,10 @@ Games/AzerothJewels/Renderer.lua
 Games/AzerothJewels/AzerothJewels_Achievements.lua
 Games/AzerothJewels/AzerothJewels_Leaderboard.lua
 
+# -----------------------------------------------------------------------------
+# UI - Framework-Infrastruktur (Core)
+# UIHelpers MUSS als erstes UI-Modul geladen werden
+# -----------------------------------------------------------------------------
 UI/Core/UIHelpers.lua
 UI/Core/LayoutConfig.lua
 UI/Core/GameViewport.lua
@@ -367,12 +397,17 @@ UI/Dialogs/GameResultHelpers.lua
 UI/Dialogs/SaveSlotMenu.lua
 UI/Core/TabsController.lua
 UI/HubTabs/HubTab_Games.lua
+UI/HubTabs/HubTab_Match.lua
 UI/HubTabs/HubTab_Scoreboard.lua
 UI/HubTabs/HubTab_Achievements.lua
 UI/HubTabs/HubTab_Profil.lua
 UI/HubTabs/HubTab_Settings.lua
+UI/Match/MatchShell.lua
+UI/Match/MatchBrowser_UI.lua
 UI/Core/ContentPanel.lua
 
+# GamesPanel-Module
+# Ladereihenfolge: Deps -> Core (BuildSidebarPanel) -> Panel-Submodule
 UI/GamesPanel/FavoritesManager.lua
 UI/GamesPanel/CategoryBuilder.lua
 UI/GamesPanel/StarButton.lua
@@ -392,6 +427,9 @@ UI/Core/Language.lua
 UI/Panels/WelcomePanel_Logo.lua
 UI/Panels/WelcomePanel.lua
 
+# Achievement-Module
+# Spiel-eigene *_Achievements.lua und *_Leaderboard.lua werden oben in den Spiel-Bloecken geladen.
+# Hier: globale Achievements + Index (immer zuletzt)
 UI/Achievements/Achievement_Global.lua
 UI/Achievements/Achievement_Index.lua
 UI/Achievements/Achievement_Summary_Helpers.lua
@@ -405,6 +443,8 @@ UI/Achievements/Achievement_Summary.lua
 
 UI/Core/ToastManager.lua
 UI/Panels/Stats_UI.lua
+# Settings-Module
+# Ladereihenfolge: Core (HubSettings-Table) -> Tabs (General/Games/Stats/Developer)
 UI/Settings/HubSettings_Core.lua
 UI/Settings/HubSettings_TabGeneral.lua
 UI/Settings/HubSettings_TabGames.lua
@@ -415,6 +455,7 @@ UI/Core/HUD.lua
 UI/Core/MinimapButton.lua
 UI/Panels/Leaderboard_UI.lua
 
+# GameSettings - Spiel-spezifische Settings Panels
 UI/GameSettings/GameSettingsBuilder.lua
 UI/GameSettings/SymbolBackgroundSettingsBuilder.lua
 UI/GameSettings/TicTacToe_SettingsPanel.lua
@@ -432,6 +473,7 @@ UI/GameSettings/LOA_SettingsPanel.lua
 UI/GameSettings/Blockdrop_SettingsPanel.lua
 UI/GameSettings/WhackAMole_SettingsPanel.lua
 UI/GameSettings/Hangman_SettingsPanel.lua
+UI/GameSettings/SI7_SettingsPanel.lua
 UI/GameSettings/Match3_SettingsPanel.lua
 UI/GameSettings/BlockBreaker_SettingsPanel.lua
 UI/GameSettings/AlienDefense_SettingsPanel.lua

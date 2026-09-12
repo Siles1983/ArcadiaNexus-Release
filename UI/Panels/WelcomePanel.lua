@@ -153,7 +153,7 @@ function WP:Build(parent)
     newFS:SetWordWrap(true)
     newFS:SetText(L("welcome_new_games_placeholder"))
     newFS:SetTextColor(0.75, 0.70, 0.55)
-    curY = curY + 30 -- Abstand Neue Spiele zu Divider
+    curY = curY + 44 -- Abstand Neue Spiele zu Divider
 
     -- 4. DIVIDER
     MakeDivider(sc, curY, innerW)
@@ -174,7 +174,7 @@ function WP:Build(parent)
     clFS:SetWordWrap(true)
     clFS:SetText(L("welcome_changelog_text"))
     clFS:SetTextColor(0.75, 0.70, 0.55)
-    curY = curY + 80   -- feste Reserve für mehrzeiligen Text
+    curY = curY + 110   -- feste Reserve für mehrzeiligen Text
 	
 	-- 6. DIVIDER
     MakeDivider(sc, curY, innerW)

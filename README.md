@@ -14,7 +14,6 @@ Fehlerberichte und Vorschläge sind über die GitHub Issues dieses Projekts
 willkommen. Bitte beschreibe das Problem, die verwendete Spielversion und die
 Schritte, mit denen es reproduziert werden kann.
 
-Pull Requests werden nur nach vorheriger Absprache angenommen.
 
 ## Lizenz
 
@@ -43,8 +42,6 @@ The released version can be installed via CurseForge. For manual installation, c
 ## Reporting Issues
 
 Bug reports and suggestions are welcome via this project's GitHub Issues. Please describe the problem, the game version you are using, and the steps required to reproduce it.
-
-Pull requests are accepted only by prior arrangement.
 
 ## License
 

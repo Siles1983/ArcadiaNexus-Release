@@ -5,14 +5,16 @@
 
     Stellt bereit:
       ArcadiaNexus.UI.CreateBox(parent, title, x, y, w, h)
+      ArcadiaNexus.UI.StyleHudStatFrame(frame, alpha)
       ArcadiaNexus.UI.CreateHudStatBox(parent, config)
       ArcadiaNexus.UI.CreateGoldGridFrame(parent, anchor, config)
       ArcadiaNexus.UI.CreateCheckbox(parent, label, x, y)
       ArcadiaNexus.UI.SetCheckboxValue(checkbox, value)
       ArcadiaNexus.UI.GetCheckboxValue(checkbox)
       ArcadiaNexus.UI.BindCheckboxToDB(checkbox, settings, key)
-      ArcadiaNexus.UI.CreateSimpleDropdown(parent, x, y, w, label, options, getCurrent, onChange)
+      ArcadiaNexus.UI.CreateSimpleDropdown(parent, x, y, w, label, options, getCurrent, onChange, tooltip)
       – Modern: DropdownButton / WowStyle1DropdownTemplate
+      – options[].tooltip und 9. Argument tooltip (String oder {title, text})
 
     Alle SettingsPanels sollen diese Funktionen nutzen statt
     lokale Duplikate zu pflegen.
@@ -235,15 +237,59 @@ end
 -- Erstellt ein Dropdown im modernen Midnight-Stil.
 -- Externe API bleibt identisch zu allen Aufrufstellen.
 --
--- options: { { key = "xyz", label = "Anzeige" }, ... }
+-- options: { { key = "xyz", label = "Anzeige", tooltip = "..." }, ... }
 -- getCurrent: function() return currentKey end
 -- onChange:   function(selectedKey) ... end
+-- tooltip:    optional, String oder { title = "...", text = "..." }
+--             Hover auf dem geschlossenen Dropdown. Eintraege nutzen opt.tooltip.
 --
 -- Rückgabe: DropdownButton frame
 --   :SetEnabled(bool)  — aktiviert/deaktiviert das Dropdown
 --   :SetText(str)      — überschreibt den angezeigten Text
 
-function UI.CreateSimpleDropdown(parent, x, y, w, label, options, getCurrent, onChange)
+local function TooltipTitleAndText(tooltip)
+    if type(tooltip) == "table" then
+        return tooltip.title or tooltip.label, tooltip.text or tooltip.tooltip
+    end
+    if type(tooltip) == "string" and tooltip ~= "" then
+        return nil, tooltip
+    end
+    return nil, nil
+end
+
+function UI.ShowFrameTooltip(owner, title, text)
+    if not owner or not GameTooltip then return end
+    if (not title or title == "") and (not text or text == "") then return end
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:ClearLines()
+    if title and title ~= "" then
+        GameTooltip:SetText(title, 1, 0.82, 0, 1, true)
+        if text and text ~= "" then
+            GameTooltip:AddLine(text, 0.92, 0.90, 0.82, true)
+        end
+    else
+        GameTooltip:SetText(text, 0.92, 0.90, 0.82, 1, true)
+    end
+    GameTooltip:Show()
+end
+
+function UI.HideFrameTooltip()
+    if GameTooltip then GameTooltip:Hide() end
+end
+
+local function FillMenuTooltip(tooltip, title, text)
+    if not tooltip then return end
+    if title and title ~= "" then
+        tooltip:SetText(title, 1, 0.82, 0, 1, true)
+        if text and text ~= "" and tooltip.AddLine then
+            tooltip:AddLine(text, 0.92, 0.90, 0.82, true)
+        end
+    elseif text and text ~= "" then
+        tooltip:SetText(text, 0.92, 0.90, 0.82, 1, true)
+    end
+end
+
+function UI.CreateSimpleDropdown(parent, x, y, w, label, options, getCurrent, onChange, tooltip)
     if label and label ~= "" then
         local lbl = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         lbl:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -y)
@@ -260,17 +306,22 @@ function UI.CreateSimpleDropdown(parent, x, y, w, label, options, getCurrent, on
         for _, opt in ipairs(options) do
             local optKey = opt.key
             local optLabel = opt.label
-            root:CreateRadio(optLabel,
+            local item = root:CreateRadio(optLabel,
                 function() return getCurrent() == optKey end,
                 function()
                     onChange(optKey)
                     dd:SetText(optLabel)
                 end
             )
+            local tip = opt.tooltip
+            if item and item.SetTooltip and tip and tip ~= "" then
+                item:SetTooltip(function(tt)
+                    FillMenuTooltip(tt, optLabel, tip)
+                end)
+            end
         end
     end)
 
-    -- Initialen Text setzen
     local function RefreshDisplay()
         local cur = getCurrent()
         for _, opt in ipairs(options) do
@@ -283,6 +334,35 @@ function UI.CreateSimpleDropdown(parent, x, y, w, label, options, getCurrent, on
     end
     RefreshDisplay()
     dd.RefreshDisplay = RefreshDisplay
+
+    function dd:SetEnabled(on)
+        if on then
+            if self.Enable then self:Enable() end
+            self:SetAlpha(1)
+        else
+            if self.Disable then self:Disable() end
+            self:SetAlpha(0.38)
+        end
+    end
+
+    local tipTitle, tipText = TooltipTitleAndText(tooltip)
+    if not tipTitle and not tipText then
+        for _, opt in ipairs(options) do
+            if opt.tooltip and opt.tooltip ~= "" then
+                tipTitle = (label and label ~= "") and label or "Auswahl"
+                tipText = "Die Eintraege im Menue erklaeren jede Option."
+                break
+            end
+        end
+    end
+    if tipTitle or tipText then
+        dd:HookScript("OnEnter", function(self)
+            UI.ShowFrameTooltip(self, tipTitle, tipText)
+        end)
+        dd:HookScript("OnLeave", function()
+            UI.HideFrameTooltip()
+        end)
+    end
 
     return dd
 end
@@ -694,6 +774,16 @@ local HUD_STAT_BACKDROP = {
     insets = { left = 3, right = 3, top = 3, bottom = 3 },
 }
 
+--- Halbtransparente Box mit goldenem Tooltip-Rahmen (HUD / Listenzeilen).
+function UI.StyleHudStatFrame(frame, alpha)
+    if not frame or not frame.SetBackdrop then return frame end
+    if alpha == nil then alpha = 0.75 end
+    frame:SetBackdrop(HUD_STAT_BACKDROP)
+    frame:SetBackdropColor(0.05, 0.05, 0.05, alpha)
+    frame:SetBackdropBorderColor(0.9, 0.75, 0.3, 1)
+    return frame
+end
+
 function UI.CreateHudStatBox(parent, config)
     if not parent or not config or not config.w or not config.h then
         return nil, nil
@@ -705,11 +795,9 @@ function UI.CreateHudStatBox(parent, config)
     local rel      = config.relativeTo or parent
     local relPoint = config.relativePoint or point
     box:SetPoint(point, rel, relPoint, config.x or 0, config.y or 0)
-    box:SetBackdrop(HUD_STAT_BACKDROP)
     local alpha = config.alpha
     if alpha == nil then alpha = 0.75 end
-    box:SetBackdropColor(0.05, 0.05, 0.05, alpha)
-    box:SetBackdropBorderColor(0.9, 0.75, 0.3, 1)
+    UI.StyleHudStatFrame(box, alpha)
     box:SetFrameLevel(config.frameLevel or ((parent.GetFrameLevel and parent:GetFrameLevel()) or 1) + 20)
     box:EnableMouse(false)
 

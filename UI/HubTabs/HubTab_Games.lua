@@ -25,13 +25,32 @@ ArcadiaNexus.RegisterHubTab({
     end,
 
     onSelect = function(tab, prevTab)
-        local pending = ArcadiaNexus.UI and ArcadiaNexus.UI._pendingGameOpen
+        local UI = ArcadiaNexus.UI
+        local pendingRun = UI and UI._presentRunningGame
+        if pendingRun then
+            UI._presentRunningGame = nil
+            if UI.RevealRunningGame then
+                pcall(UI.RevealRunningGame, pendingRun)
+            end
+            return
+        end
+        local pending = UI and UI._pendingGameOpen
         if pending then
-            ArcadiaNexus.UI._pendingGameOpen = nil
-            local fn = ArcadiaNexus.UI._ActivateGameFn
+            UI._pendingGameOpen = nil
+            local fn = UI._ActivateGameFn
             if fn then
                 pcall(fn, pending)
             end
+            return
+        end
+        local GR = ArcadiaNexus.GameRegistry
+        local cat = NexusTabState.activeCategory
+        local eng = cat and GR and GR.GetEngine and GR.GetEngine(cat)
+        if eng and eng.state and eng.state ~= "IDLE" and eng.mode == "hotseat" then
+            local wp = UI and UI.WelcomePanel
+            if wp then wp:Hide() end
+            if GR.HideAllContainers then GR.HideAllContainers() end
+            if GR.ShowContainer then GR.ShowContainer(cat) end
             return
         end
         NexusTabState.activeCategory = nil
@@ -42,7 +61,7 @@ ArcadiaNexus.RegisterHubTab({
     end,
 
     onDeselect = function(tab, nextTab)
-        if nextTab and nextTab.id ~= "GAMES" then
+        if nextTab and nextTab.id ~= "GAMES" and nextTab.id ~= "MATCH" then
             NexusTabs.StopAllGames()
         end
         local wp = ArcadiaNexus.UI.WelcomePanel

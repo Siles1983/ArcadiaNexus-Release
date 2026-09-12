@@ -119,6 +119,24 @@ function W:RegisterLocale(locale, data)
     ArcadiaNexus.RegisterLocale("HANGMAN_WORDS", locale, data)
 end
 
+--- Stable, locale-independent IDs for consumers such as SI:7.
+--- Return a copy so no caller can change Hangman's internal catalogue.
+function W:GetIds()
+    local ids = {}
+    for i, entry in ipairs(entries) do
+        ids[i] = entry.id
+    end
+    return ids
+end
+
+--- Resolve a stable ID to the word shown in the requested client locale.
+function W:GetLocalizedWord(id, locale)
+    local data = localeData[locale or ArcadiaNexus.ActiveLocale or "enUS"]
+        or localeData.enUS
+    local entry = data and data[id]
+    return entry and entry.word or nil
+end
+
 function W:IsValidCategory(category)
     return category == "all" or CATEGORY_SET[category] == true
 end

@@ -314,18 +314,32 @@ function GS.BuildSoundSection(content, settings, locale, soundCfg)
     local cbMain = UI.CreateCheckbox(content, masterLabel, 0, yStart)
     cbMain:SetChecked(settings:Get(masterKey) and true or false)
 
+    local function ItemChecked(item)
+        if item.notfalse then
+            return settings:Get(item.key) ~= false
+        end
+        return settings:Get(item.key) and true or false
+    end
+
     local subCBs = {}
     for i, item in ipairs(soundCfg.items or {}) do
         local cb = UI.CreateCheckbox(content, item.label, 0, yStart + i * spacing)
-        cb:SetChecked(settings:Get(item.key) and true or false)
+        cb:SetChecked(ItemChecked(item))
         cb._key = item.key
+        cb._item = item
         subCBs[#subCBs + 1] = cb
     end
 
     local function RefreshSubs(enabled)
         for _, cb in ipairs(subCBs) do
-            cb:SetAlpha(enabled and 1 or 0.4)
-            cb:SetEnabled(enabled)
+            local item = cb._item
+            if item and item.independent then
+                cb:SetAlpha(1)
+                cb:SetEnabled(true)
+            else
+                cb:SetAlpha(enabled and 1 or 0.4)
+                cb:SetEnabled(enabled)
+            end
         end
     end
     RefreshSubs(settings:Get(masterKey))
@@ -333,7 +347,7 @@ function GS.BuildSoundSection(content, settings, locale, soundCfg)
     GS.RegisterRefresh(content, function()
         cbMain:SetChecked(settings:Get(masterKey) and true or false)
         for _, cb in ipairs(subCBs) do
-            cb:SetChecked(settings:Get(cb._key) and true or false)
+            cb:SetChecked(ItemChecked(cb._item))
         end
         RefreshSubs(settings:Get(masterKey))
     end)
@@ -343,7 +357,10 @@ function GS.BuildSoundSection(content, settings, locale, soundCfg)
         settings:Set(masterKey, v)
         if not v then
             for _, cb in ipairs(subCBs) do
-                cb:SetChecked(false)
+                local item = cb._item
+                if not (item and item.independent) then
+                    cb:SetChecked(false)
+                end
             end
         end
         RefreshSubs(v)
@@ -353,7 +370,11 @@ function GS.BuildSoundSection(content, settings, locale, soundCfg)
         cb:SetScript("OnClick", function(self)
             local checked = self:GetChecked()
             settings:Set(self._key, checked)
-            if checked then
+            local item = self._item
+            if item and item.onClick then
+                item.onClick(checked, settings)
+            end
+            if checked and not (item and item.independent) then
                 cbMain:SetChecked(true)
                 settings:Set(masterKey, true)
                 RefreshSubs(true)

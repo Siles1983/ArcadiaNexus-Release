@@ -27,6 +27,7 @@ local F = {
     settingsCatPanel=nil, settingsCatBtns={},
     lbCatPanel=nil, lbCatBtns={},
     achCatPanel=nil, achCatBtns={},
+    matchSidebar=nil, matchCatBtns={},
     content=nil, feed=nil, profile=nil, settings=nil,
     profil=nil,
     streakFS=nil, goldFS=nil, gotdBox=nil,

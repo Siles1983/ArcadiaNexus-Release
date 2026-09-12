@@ -16,14 +16,21 @@ local frame = CreateFrame("Frame")
 
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
+frame:RegisterEvent("PLAYER_LOGOUT")
+frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-frame:SetScript("OnEvent", function(self, event, arg1)
+frame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
+        local arg1 = ...
         if arg1 == ADDON_NAME then
             ArcadiaNexus:OnAddonLoaded()
         end
     elseif event == "PLAYER_LOGIN" then
         ArcadiaNexus:OnPlayerLogin()
+    elseif event == "PLAYER_LOGOUT" then
+        ArcadiaNexus:OnPlayerLogout()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        ArcadiaNexus:OnPlayerEnteringWorld(...)
     end
 end)
 
@@ -89,6 +96,24 @@ function ArcadiaNexus:OnPlayerLogin()
         local ok, err = pcall(function() self.ToastManager:Init() end)
         if ok then GH_LogInfo("Bootstrap", "ToastManager initialisiert") else GH_LogError("Bootstrap", "ToastManager Init fehlgeschlagen: " .. tostring(err)) end
     end
+    -- Match (optional, TOC-Block Core/Match/*)
+    if self.Match and self.Match.Init then
+        local ok, err = pcall(function() self.Match.Init() end)
+        if ok then GH_LogInfo("Bootstrap", "Match initialisiert")
+        else GH_LogError("Bootstrap", "Match Init fehlgeschlagen: " .. tostring(err)) end
+    end
+end
+
+function ArcadiaNexus:OnPlayerLogout()
+    if self.Match and self.Match.OnUnload then
+        pcall(self.Match.OnUnload)
+    end
+end
+
+function ArcadiaNexus:OnPlayerEnteringWorld(isLogin, isReload)
+    if self.Match and self.Match.OnEnteringWorld then
+        pcall(self.Match.OnEnteringWorld, isLogin, isReload)
+    end
 end
 
 -- ==========================================
@@ -150,6 +175,13 @@ end
 
 -- Suchfilter-State (wird von SearchBar geschrieben, von GamesPanel gelesen)
 ArcadiaNexus._filterState = { query = "" }
+
+--- Multiplayer-Capability. Games dürfen nur diese Funktion fragen,
+--- nie TOC-Pfade oder Comms-Typen. False, wenn Core/Match auskommentiert ist.
+function ArcadiaNexus.HasMultiplayer()
+    local M = ArcadiaNexus.Match
+    return M ~= nil and M._ready == true
+end
 
 function ArcadiaNexus.RegisterGame(info)
     if ArcadiaNexus.GameRegistry and ArcadiaNexus.GameRegistry.Register then

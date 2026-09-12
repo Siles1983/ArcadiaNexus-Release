@@ -92,11 +92,14 @@ ArcadiaNexus.UI.ShouldShowGame = ShouldShowGame
         onEnterTooltipKey fn(id)  -- optional: Tooltip-Key-Funktion für OnEnter
         initialHide      bool     -- ob cp nach Aufbau versteckt wird (default true)
         afterBuild       fn(cp,sf,sc,groups,RelayoutAll)  -- optional: mode-spezifische Extras
+        filterGame       fn(info) → bool  -- optional, zusätzlich zu Sichtbarkeit
+        shouldShowGame   fn(game) → bool  -- optional, Relayout-Filter (sonst Sidebar-Suche)
+        suffixForId      fn(id) → string  -- optional, Text rechts am Namen z. B. "(2)"
     }
 ]]
 local function BuildSidebarPanel(parent, cfg)
     local cp, sf, sc = BuildCategoryPanelFrame(parent, cfg.frameName, cfg.scrollName)
-    local groups     = GetCategoryGroups(cfg.includeGeneral)
+    local groups     = GetCategoryGroups(cfg.includeGeneral, cfg.filterGame)
     local favEmptyHintFrame = cfg.favEmptyHintFrame or (cfg.grpFramePrefix .. "FAV_EMPTY")
 
     local function GetEmptyHintFrame()
@@ -135,10 +138,16 @@ local function BuildSidebarPanel(parent, cfg)
         for _, grp in ipairs(groups) do
             local open = GetGroupOpen(grp.id)
 
-            -- Prüfen ob die Gruppe nach Filter überhaupt sichtbare Buttons hat
+            local function ButtonVisible(gbtn)
+                if cfg.shouldShowGame then
+                    return cfg.shouldShowGame({ id = gbtn.catID, label = gbtn._labelText })
+                end
+                return ShouldShowGame({ id = gbtn.catID, label = gbtn._labelText })
+            end
+
             local anyVisible = false
             for _, gbtn in ipairs(grp[cfg.gameBtnsKey] or {}) do
-                if ShouldShowGame({ id = gbtn.catID, label = gbtn._labelText }) then
+                if ButtonVisible(gbtn) then
                     anyVisible = true
                     break
                 end
@@ -160,7 +169,7 @@ local function BuildSidebarPanel(parent, cfg)
                 if open then
                     local anyBtn = false
                     for _, gbtn in ipairs(grp[cfg.gameBtnsKey] or {}) do
-                        local show = ShouldShowGame({ id = gbtn.catID, label = gbtn._labelText })
+                        local show = ButtonVisible(gbtn)
                         if show then
                             gbtn:ClearAllPoints()
                             gbtn:SetPoint("TOP", sc, "TOP", 0, -yOff)
@@ -168,6 +177,9 @@ local function BuildSidebarPanel(parent, cfg)
                             yOff = yOff + 24
                             anyBtn = true
                             if gbtn._star and gbtn._star.RefreshStar then gbtn._star.RefreshStar() end
+                            if cfg.suffixForId and gbtn.SetSuffix then
+                                gbtn.SetSuffix(cfg.suffixForId(gbtn.catID))
+                            end
                         else
                             gbtn:Hide()
                         end
@@ -184,12 +196,11 @@ local function BuildSidebarPanel(parent, cfg)
         UpdateScrollbar(sf, sc)
     end
 
-    -- SearchBox einbauen wenn gewünscht (Games, LB, ACH – nicht Settings)
     cp._relayout = RelayoutAll
+    if cfg.relayoutKey then
+        ArcadiaNexus.UI[cfg.relayoutKey] = RelayoutAll
+    end
     if cfg.withSearchBar then
-        if cfg.relayoutKey then
-            ArcadiaNexus.UI[cfg.relayoutKey] = RelayoutAll
-        end
         ArcadiaNexus.UI.CreateSidebarSearchBox(cp, sf, function()
             if cp._relayout then cp._relayout() end
         end)
@@ -270,7 +281,7 @@ local function BuildSidebarPanel(parent, cfg)
         RebuildFavButtons(
             sc, cfg.favBtnPrefix, favGrp[cfg.gameBtnsKey],
             function(id) return cfg.getActiveId() == id end,
-            cfg.activateCallback, cfg.btnListRef
+            cfg.activateCallback, cfg.btnListRef, cfg.filterGame
         )
         RelayoutAll()
         for _, b in ipairs(cfg.btnListRef) do b.Refresh() end
@@ -303,6 +314,7 @@ local RELAYOUT_KEYS = {
     "SettingsPanelRelayout",
     "LBPanelRelayout",
     "AchPanelRelayout",
+    "MatchPanelRelayout",
 }
 
 local function ClearBtnList(list)
@@ -332,16 +344,19 @@ function ArcadiaNexus.UI.RebuildCategorySidebars()
     ClearBtnList(Frefs.settingsCatBtns)
     ClearBtnList(Frefs.lbCatBtns)
     ClearBtnList(Frefs.achCatBtns)
+    ClearBtnList(Frefs.matchCatBtns)
 
     DestroyPanel(Frefs.catPanel)
     DestroyPanel(Frefs.settingsCatPanel)
     DestroyPanel(Frefs.lbCatPanel)
     DestroyPanel(Frefs.achCatPanel)
+    DestroyPanel(Frefs.matchSidebar)
 
     Frefs.catPanel         = nil
     Frefs.settingsCatPanel = nil
     Frefs.lbCatPanel       = nil
     Frefs.achCatPanel      = nil
+    Frefs.matchSidebar     = nil
 
     for _, key in ipairs(RELAYOUT_KEYS) do
         ArcadiaNexus.UI[key] = nil
@@ -363,6 +378,10 @@ function ArcadiaNexus.UI.RebuildCategorySidebars()
     end
     if ArcadiaNexus.UI.BuildAchievementCategoryPanel then
         ArcadiaNexus.UI.BuildAchievementCategoryPanel(parent)
+    end
+    local MB = ArcadiaNexus.MatchBrowserUI
+    if MB and MB.BuildSidebar then
+        Frefs.matchSidebar = MB.BuildSidebar(parent)
     end
 
     if NexusTabs and NexusTabs.RefreshPanelVisibility then

@@ -25,7 +25,7 @@ function HubSettings:_BuildTabDeveloper(parent)
     local P = UI.BOX_PAD
     local devBox, devContent = UI.CreateBox(parent,
         L("hubsettings_dev_section") or "Entwickler",
-        P, 0, 0, 120, P)
+        P, 0, 0, 200, P)
 
     local devDesc = devContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     devDesc:SetPoint("TOPLEFT", devContent, "TOPLEFT", 0, 0)
@@ -80,6 +80,20 @@ function HubSettings:_BuildTabDeveloper(parent)
             "Noch nicht verriegelt. /andevwho ausführen und den Key in Core/DevAccess.lua eintragen.")
     end
     self._devModeCB = devCB
+
+    local editorBtn = UI.CreateArcadiaButton(devContent,
+        L("hubsettings_dev_leveleditor") or "Level-Editor", 160, 28)
+    editorBtn:ClearAllPoints()
+    editorBtn:SetPoint("TOPLEFT", devCB, "BOTTOMLEFT", 0, -42)
+    editorBtn:SetScript("OnClick", function()
+        if ArcadiaNexus.LevelEditor and ArcadiaNexus.LevelEditor.Toggle then
+            ArcadiaNexus.LevelEditor.Toggle()
+        end
+    end)
+    local editorHint = devContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    editorHint:SetPoint("LEFT", editorBtn, "RIGHT", 10, 0)
+    editorHint:SetTextColor(0.70, 0.65, 0.50)
+    editorHint:SetText(L("hubsettings_dev_leveleditor_hint") or "/anledit  –  Phase 15: Erde / Treppen / Emitter (AA)")
 end
 
 -- ============================================================

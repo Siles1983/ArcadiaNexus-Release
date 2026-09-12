@@ -14,6 +14,7 @@ TM._queue     = {}
 TM._active    = {}
 TM._pool      = {}
 TM._pumping   = false
+TM._pumpGen   = 0
 
 local TOAST_W   = 300
 local TOAST_H   = 101
@@ -390,23 +391,31 @@ function TM:_Pump()
     if self._pumping then return end
     if #self._queue == 0 or #self._active >= MAX_VISIBLE then return end
     self._pumping = true
-    local gen = (self._pumpGen or 0)
-
-    for _, rec in ipairs(self._active) do
-        rec.slot = (rec.slot or 0) + 1
-        AnimateToSlot(rec.frame, rec.slot, PUSH_DUR)
-    end
+    local gen = self._pumpGen or 0
 
     local item = table.remove(self._queue, 1)
     local f = AcquireFrame()
-    f._item = item
-    ApplyItem(f, item)
-    SetToastPoint(f, 0)
-    table.insert(self._active, 1, { frame = f, item = item, slot = 0 })
-    PlayToast(f)
+    local ok, err = pcall(function()
+        for _, rec in ipairs(self._active) do
+            rec.slot = (rec.slot or 0) + 1
+            AnimateToSlot(rec.frame, rec.slot, PUSH_DUR)
+        end
+
+        f._item = item
+        ApplyItem(f, item)
+        SetToastPoint(f, 0)
+        table.insert(self._active, 1, { frame = f, item = item, slot = 0 })
+        PlayToast(f)
+    end)
+    if not ok then
+        RecycleFrame(f)
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff4444ArcadiaNexus|r Toast error: " .. tostring(err))
+        end
+    end
 
     C_Timer.After(PUSH_DUR, function()
-        if TM._pumpGen ~= gen then return end
+        if (TM._pumpGen or 0) ~= gen then return end
         TM._pumping = false
         TM:_Pump()
     end)

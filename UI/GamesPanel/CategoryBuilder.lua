@@ -46,8 +46,9 @@ local function ResolveCategoryLabel(catId)
 end
 
 --[[
-    GetCategoryGroups(includeAllgemein)
+    GetCategoryGroups(includeAllgemein, filterFn?)
 
+    filterFn(info) optional — false überspringt das Spiel (z. B. nur matchSeats).
     Gibt geordnete Liste von Kategorien mit ihren Spielen zurück:
     {
         { id="DENKSPIELE", label="Denkspiele", games={ {id, label}, ... } },
@@ -58,7 +59,7 @@ end
     Kategorien ohne Spiele werden nicht angezeigt.
     includeAllgemein = true → fügt ALLGEMEIN-Gruppe ein (für Achievements-Tab)
 ]]
-local function GetCategoryGroups(includeAllgemein)
+local function GetCategoryGroups(includeAllgemein, filterFn)
     local FM        = FavMgr()
     local groups    = {}
     local gameMap   = {}  -- catID -> { games }
@@ -68,7 +69,8 @@ local function GetCategoryGroups(includeAllgemein)
 
     for _, info in ipairs(registry) do
         local GR = GameRegistry()
-        if GR and GR.IsVisible(info, GR.FILTER_SIDEBAR) then
+        if GR and GR.IsVisible(info, GR.FILTER_SIDEBAR)
+            and (not filterFn or filterFn(info)) then
             local catID = info.category or "SONSTIGE"
             gameMap[catID] = gameMap[catID] or {}
             table.insert(gameMap[catID], { id = info.id, label = info.label })

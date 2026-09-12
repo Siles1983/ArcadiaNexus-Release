@@ -19,6 +19,17 @@ function ArcadiaNexus.UI.BuildGameButton(sc, game, namePrefix)
     local btn, reused = ArcadiaNexus.UI.AcquireNamedFrame("Button", namePrefix .. game.id, sc)
     btn:SetSize(CAT_W - 38, 22)
     btn.catID = game.id
+    local function SetSuffix(text)
+        if not btn.suffixFS then return end
+        if text and text ~= "" then
+            btn.suffixFS:SetText(text)
+            btn.suffixFS:Show()
+        else
+            btn.suffixFS:SetText("")
+            btn.suffixFS:Hide()
+        end
+    end
+    btn.SetSuffix = SetSuffix
     if reused then
         if btn.lbl then btn.lbl:SetText(game.label) end
         return btn
@@ -56,8 +67,6 @@ function ArcadiaNexus.UI.BuildGameButton(sc, game, namePrefix)
     btn.accent = accent
 
     local lbl = btn:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    lbl:SetPoint("LEFT",  btn, "LEFT",  10, 0)
-    lbl:SetPoint("RIGHT", btn, "RIGHT", -22, 0)
     lbl:SetText(game.label)
     lbl:SetWordWrap(false)
     lbl:SetJustifyH("LEFT")
@@ -65,6 +74,16 @@ function ArcadiaNexus.UI.BuildGameButton(sc, game, namePrefix)
 
     local star = MakeStarButton(btn, game.id)
     btn._star = star
+
+    local suffix = btn:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    suffix:SetPoint("RIGHT", star, "LEFT", -2, 0)
+    suffix:SetTextColor(0.75, 0.70, 0.55)
+    suffix:SetJustifyH("RIGHT")
+    suffix:Hide()
+    btn.suffixFS = suffix
+
+    lbl:SetPoint("LEFT",  btn, "LEFT",  10, 0)
+    lbl:SetPoint("RIGHT", suffix, "LEFT", -4, 0)
 
     -- Rechtsklick auf den gesamten Button öffnet Favoriten-Kontextmenü
     btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")

@@ -19,7 +19,7 @@ local ArcadiaNexus = _G.ArcadiaNexus
 
 -- Keys wie /andevwho sie ausgibt, kleingeschrieben.
 -- Beispiel: ["siles-stormrage"] = true,
-local ALLOW_CHARS = {
+local ALLOW_CHARS = {["aleria-aleria"] = true,
 }
 
 local function NormalizeKey(name, realm)

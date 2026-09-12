@@ -14,13 +14,14 @@
 local function FavMgr()         return ArcadiaNexus.UI.FavMgr end
 local function BuildGameButton(sc, game, prefix) return ArcadiaNexus.UI.BuildGameButton(sc, game, prefix) end
 
-function ArcadiaNexus.UI.RebuildFavButtons(sc, namePrefix, btnsKey, refreshConditionFn, clickFn, btnListRef)
+function ArcadiaNexus.UI.RebuildFavButtons(sc, namePrefix, btnsKey, refreshConditionFn, clickFn, btnListRef, filterFn)
     local FM = FavMgr()
     local GR = ArcadiaNexus.GameRegistry
     local favIds = FM and FM:GetList() or {}
     for _, id in ipairs(favIds) do
         local info = GR and GR.GetById(id)
-        if GR and info and GR.IsVisible(info, GR.FILTER_SIDEBAR) then
+        if GR and info and GR.IsVisible(info, GR.FILTER_SIDEBAR)
+            and (not filterFn or filterFn(info)) then
             local label = GR.GetLabel(id)
             local btn = BuildGameButton(sc, { id = id, label = label }, namePrefix)
             local function Refresh()

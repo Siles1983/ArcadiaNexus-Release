@@ -1,3 +1,25 @@
+### Arcadia Nexus 1.1.4 Changelog
+
+### English
+
+- Multiplayer (new hub tab)
+- Host or join a session with players in your party or raid. Discovery stays in the group — no LFG.
+- Join can be open, locked with a PIN, or limited to players the host allows. The PIN is never shown in the session list.
+- First title: Azeroth Intelligence. Four players play classic 2v2 (one role each). Two players can play as a duo (each client plays a full pair).
+- Ready in the lobby, then the host starts. After a round you can rematch with the same host.
+- Guests can rejoin after a /reload. If the host reloads, the session ends for everyone.
+
+### Deutsch
+
+- Mehrspieler (neuer Hub-Tab)
+- Sitzung hosten oder in der Party/Raid teilnehmen. Entdeckung nur in der Gruppe — kein LFG.
+- Beitritt offen, per PIN oder nur für vom Host freigegebene Spieler. Die PIN steht nicht in der Sitzungsliste.
+- Erstes Spiel: Azeroth Intelligence. Vier Spieler Klassik 2v2 (eine Rolle pro Client). Zwei Spieler Duo (jedes Paar auf einem Client).
+- In der Lobby auf Bereit klicken, der Host startet. Danach Rematch mit demselben Host.
+- Gäste können nach einem /reload wieder einsteigen. Lädt der Host neu, endet die Sitzung für alle.
+
+---
+
 ### Arcadia Nexus 1.1.3 Changelog
 
 ### English
@@ -11,6 +33,7 @@
 - Azeroth's Tiny Guardians (overhaul)
 - Stable rows and the six adoption cards now use the gold HUD boxes (same look as Blackjack capital).
 - Each box, the 3D viewer, needs panel, name overlay, and stall buttons have their own CFG so layout can be tuned without playing through the game.
+- Developer Mode shows all ATG layout frames at once as an overlay.
 - Needs decay as usual while you play. If ATG is closed but WoW is still running, catch-up on open uses 15% of the normal decay and is capped at 30 minutes. No background tick while the UI is hidden.
 - Dragon whelp and Frostwolf pup now have proper species icons.
 - Sleeping no longer shifts the HUD downward; the name stays as an overlay on the 3D viewer and the needs box stays fixed.
@@ -31,12 +54,14 @@
 - Azeroth's Tiny Guardians (Umbau)
 - Stall-Zeilen und die sechs Adopt-Karten nutzen jetzt die goldenen HUD-Boxen (wie die Blackjack-Kapitalanzeige).
 - Jede Box, der 3D-Viewer, die Bedürfnis-Leiste, das Namens-Overlay und die Stall-Buttons haben eigene CFG-Werte und lassen sich ohne Spielablauf justieren.
+- Der Developer-Modus zeigt alle ATG-Layout-Rahmen gleichzeitig als Overlay.
 - Bedürfnisse sinken im aktiven Spiel unverändert. Ist ATG geschlossen, WoW aber noch offen, gilt beim Öffnen Catch-up mit 15 % der normalen Rate, maximal 30 Minuten. Kein Hintergrund-Tick bei ausgeblendeter UI.
 - Drachenwelpe und Frostwolf-Welpe haben jetzt passende Art-Icons.
 - Schlafen verschiebt das HUD nicht mehr nach unten; der Name bleibt Overlay auf dem 3D-Viewer, die Bedürfnisbox bleibt fest.
 - Der Ruhestand-Button sitzt in Segment 1 der Controls-Leiste und erscheint nur, wenn das Pet den Status hat.
 - Vor den Bedürfnis-Labels stehen 32×32-Icons (Hunger, Glück, Energie, Gesundheit, Sauberkeit).
 - Ein Pet im Stall öffnet denselben 3D-Viewer wie im aktiven Spiel. Namens-Overlay auf dem Modell, übersetzte DE/EN-Details mit Trennlinien, Pflegen / Neues Pet / Zurück in einer Reihe unter der Box.
+- Der Developer-Modus ist an eine Charakter-Allowlist gebunden. Andere Charaktere sehen den Entwickler-Tab nicht, das Setzen des Saved-Flags reicht nicht. `/andevwho` gibt den Name-Realm-Schlüssel aus.
 - Die Stall-Liste ist scrollbar, damit Neues Pet und Zurück sichtbar bleiben. Der gemeinsame Nexus-Scrollbalken erscheint nur, wenn die Liste lang genug zum Scrollen ist.
 - Pets können in der Stall-Übersicht über ein X an der Karte freigelassen werden, mit goldenem Bestätigungs-Popup.
 - Maximal 24 Pets gleichzeitig. Ist das Limit erreicht, erscheint beim Adoptieren ein Hinweis, zuerst eines freizulassen.
