@@ -2,6 +2,12 @@
 
 ### English
 
+- Gamepad (ConsolePort)
+- Optional ConsolePort support: the hub cursor works on menus, boards, and buttons. Toggle it under Hub Settings → General.
+- Arcade titles that need hold or analog input (BlockBreaker, pinball, shooters, Snake, Blockdrop, and others) map the stick, D-pad, and face buttons onto the existing keyboard controls.
+- Click games keep the cursor. Circle / B leaves a round; Square / X is right-click (flag, rotate, notes). Options pauses when the game has a pause button.
+- Result dialogs, save-slot menus, and choice popups are fully usable without a mouse. DualSense: Circle backs out.
+
 - Arcane Barrage (new)
 - Hex-field shooter: aim with the mouse, match three connected orbs, hanging clusters drop for big points.
 - Modes: Endless (new top row after misses), Time (120 seconds, large groups add time back), Campaign (100 shot-limit levels with save slots).
@@ -95,6 +101,12 @@
 - New achievements, including series wins, 5×5, draws vs Hard, and multiplayer wins.
 
 ### Deutsch
+
+- Gamepad (ConsolePort)
+- Optionale ConsolePort-Unterstützung: der Hub-Cursor bedient Menüs, Bretter und Buttons. Schalter unter Hub-Einstellungen → Allgemein.
+- Arcade-Titel mit Halten oder Analog (BlockBreaker, Pinball, Shooter, Snake, Blockdrop und weitere) legen Stick, D-Pad und Aktionstasten auf die bestehende Tastatursteuerung.
+- Klickspiele behalten den Cursor. Circle / B beendet eine Runde; Square / X ist Rechtsklick (Flagge, Drehen, Notizen). Options pausiert, wenn es einen Pause-Button gibt.
+- Result-Dialoge, Speicher-Slots und Auswahl-Popups gehen ohne Maus. DualSense: Circle geht zurück.
 
 - Arcane Barrage (neu)
 - Hex-Feld-Shooter: mit der Maus zielen, drei verbundene Energien matchen, hängende Cluster fallen für viele Punkte.
