@@ -728,4 +728,6 @@ ArcadiaNexus.RegisterGame({
     engine    = "SDK_Engine",
     container = "_sdkContainer",
     category  = "DENKSPIELE",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\Sudoku\\assets\\logo\\logo_sudoku",
+    xp        = 18,
 })

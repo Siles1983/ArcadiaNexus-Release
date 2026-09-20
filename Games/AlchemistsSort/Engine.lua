@@ -39,10 +39,10 @@ E._undoStack  = {}
 E._selected   = nil      -- Index der gewählten Quell-Röhre (nil = keine)
 E._startTime  = nil
 E._elapsed    = 0
-E._ticker     = nil
 
-local _timerGuard = ArcadiaNexus.TimerGuard.New()
-E._timerGuard     = _timerGuard
+local _timerGuard   = ArcadiaNexus.TimerGuard.New()
+local _elapsedGuard = ArcadiaNexus.TimerGuard.New()
+E._timerGuard       = _timerGuard
 
 -- Sounds
 local SND_BASE    = "Interface\\AddOns\\ArcadiaNexus\\Games\\AlchemistsSort\\Assets\\sounds\\"
@@ -108,8 +108,8 @@ end
 function E:_StartTimer(fromElapsed)
     self._elapsed   = fromElapsed or 0
     self._startTime = GetTime() - self._elapsed
-    if self._ticker then self._ticker:Cancel() end
-    self._ticker = C_Timer.NewTicker(1, function()
+    _elapsedGuard:Cancel()
+    _elapsedGuard:EveryTicker(1, function()
         if self.state == "IDLE" or self.state == "WIN" then return end
         self._elapsed = GetTime() - self._startTime
         local R = ArcadiaNexus.ALS_Renderer
@@ -118,10 +118,7 @@ function E:_StartTimer(fromElapsed)
 end
 
 function E:_StopTimer()
-    if self._ticker then
-        self._ticker:Cancel()
-        self._ticker = nil
-    end
+    _elapsedGuard:Cancel()
     if self._startTime then
         self._elapsed = GetTime() - self._startTime
     end
@@ -196,7 +193,7 @@ function E:StartLevel(levelNum)
 
         elseif attempt < maxAttempts then
             -- Nächsten Versuch im nächsten Frame
-            C_Timer.After(0, tryGenerate)
+            _timerGuard:After(0, tryGenerate)
         else
             -- Fallback: Overlay ausblenden, Fallback-Level laden
             if R and R.HideLoading then R:HideLoading() end
@@ -233,7 +230,7 @@ function E:StartLevel(levelNum)
     end
 
     -- Ersten Versuch im nächsten Frame starten (Overlay soll erst rendern)
-    C_Timer.After(0, tryGenerate)
+    _timerGuard:After(0, tryGenerate)
 end
 
 -- ── Klick-Verarbeitung ────────────────────────────────────────

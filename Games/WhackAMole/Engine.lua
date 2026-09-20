@@ -8,8 +8,9 @@ E._sessionId = nil
 
 E.state         = "IDLE"
 E._board        = nil
-E._ticker       = nil
-E._spawnTicker  = nil
+
+local _timerGuard = ArcadiaNexus.TimerGuard.New()
+E._timerGuard     = _timerGuard
 
 -- ============================================================
 -- StartGame
@@ -30,9 +31,10 @@ function E:StartGame(difficulty)
     R:EnterPlayState(self._board)
 
     -- 1s Countdown-Ticker
-    self._ticker = C_Timer.NewTicker(1, function()
+    _timerGuard:EveryTicker(1, function()
         if E.state ~= "PLAYING" then return end
         local b = E._board
+        if not b then return end
         b.timeLeft = b.timeLeft - 1
         R:UpdateHUD(b)
         if b.timeLeft <= 0 then
@@ -42,13 +44,13 @@ function E:StartGame(difficulty)
 
     -- Spawn-Ticker
     local spawnInterval = L:GetSpawnInterval(self._board)
-    self._spawnTicker = C_Timer.NewTicker(spawnInterval, function()
+    _timerGuard:EveryTicker(spawnInterval, function()
         if E.state ~= "PLAYING" then return end
         E:_spawnMole()
         -- Doppel-Spawn bei wenig Zeit
         if E._board and E._board.timeLeft <= 15 then
             if math.random(100) <= 35 then
-                C_Timer.After(0.25, function()
+                _timerGuard:After(0.25, function()
                     if E.state == "PLAYING" then E:_spawnMole() end
                 end)
             end
@@ -66,8 +68,7 @@ function E:StopGame()
         ArcadiaNexus.Lifecycle:EndGame("WHACKAMOLE", E._sessionId)
         E._sessionId = nil
     end
-    if self._ticker      then self._ticker:Cancel();      self._ticker      = nil end
-    if self._spawnTicker then self._spawnTicker:Cancel(); self._spawnTicker = nil end
+    _timerGuard:Cancel()
     self.state  = "IDLE"
     self._board = nil
 end
@@ -95,8 +96,9 @@ function E:_spawnMole()
     R:ShowMole(r, c, icon, isBomb)
 
     -- Auto-hide nach moleSpeed
-    C_Timer.After(b.moleSpeed, function()
+    _timerGuard:After(b.moleSpeed, function()
         if E.state ~= "PLAYING" then return end
+        if E._board ~= b then return end
         if b.holes[r] and b.holes[r][c] and b.holes[r][c].active then
             L:MoleMissed(b, r, c)
             R:HideMole(r, c)
@@ -123,8 +125,9 @@ function E:OnMoleClick(r, c)
         R:HideMole(r, c)
         R:ShowBoomEffect(r, c)
         if S:Get("soundEnabled") ~= false and S:Get("soundOnBomb") ~= false then PlaySound(8959) end
-        C_Timer.After(0.6, function()
+        _timerGuard:After(0.6, function()
             if E.state ~= "PLAYING" then return end
+            if E._board ~= b then return end
             E:_gameOver(true)
         end)
     elseif result == "hit" then
@@ -139,8 +142,7 @@ end
 -- _gameOver
 -- ============================================================
 function E:_gameOver(hitBomb)
-    if self._ticker      then self._ticker:Cancel();      self._ticker      = nil end
-    if self._spawnTicker then self._spawnTicker:Cancel(); self._spawnTicker = nil end
+    _timerGuard:Cancel()
     self.state = "GAMEOVER"
 
     local b = self._board

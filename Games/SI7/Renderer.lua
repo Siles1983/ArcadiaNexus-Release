@@ -34,6 +34,14 @@ local CFG = {
     logo_h       = 360,
     logo_ofs_x   = 0,
     logo_ofs_y   = 8,
+    -- Zughistorie: frei fuer Layout-Feintuning.
+    history_w       = 120,
+    history_h       = 58,
+    history_point   = "RIGHT",
+    history_rel     = "RIGHT",
+    history_ofs_x   = 60,
+    history_ofs_y   = 121,
+    history_alpha   = 0.88,
 }
 
 local SI7_ASSETS = {
@@ -157,6 +165,9 @@ function R:_CreateBoard()
         local col = (i - 1) % 5
         local b = CreateFrame("Button", nil, holder, "BackdropTemplate")
         b:SetSize(cw, ch)
+        -- Karten sind ausserhalb eines erlaubten Ratezuges deaktiviert. Hover
+        -- bleibt dennoch aktiv, damit abgeschnittene Begriffe immer lesbar sind.
+        if b.SetMotionScriptsWhileDisabled then b:SetMotionScriptsWhileDisabled(true) end
         b:SetPoint("TOPLEFT", holder, "TOPLEFT", col * (cw + gap), -row * (ch + gap))
         b:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -170,6 +181,23 @@ function R:_CreateBoard()
         fs:SetTextColor(0.95, 0.92, 0.82)
         fs:SetWidth(cw - 6)
         b._label = fs
+        local mark = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        mark:SetPoint("TOPRIGHT", b, "TOPRIGHT", -3, -2)
+        mark:SetTextColor(1, 1, 1, 0.9)
+        b._mark = mark
+        b:SetScript("OnEnter", function(self)
+            if self._fullWord and self._fullWord ~= "" and GameTooltip then
+                GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+                -- GameTooltip:SetText nutzt in aktuellen WoW-Versionen keine
+                -- einzelnen RGBA-Werte mehr. Der Standardstil ist lesbar und
+                -- vermeidet einen Lua-Fehler beim Mouseover.
+                GameTooltip:SetText(self._fullWord)
+                GameTooltip:Show()
+            end
+        end)
+        b:SetScript("OnLeave", function()
+            if GameTooltip then GameTooltip:Hide() end
+        end)
         local idx = i
         b:SetScript("OnClick", function()
             local Eng = Engine()
@@ -218,6 +246,19 @@ function R:_CreateHud()
     self._hudTurn, self._hudTurnFS = UI.CreateHudStatBox(ff, {
         w = 170, h = 22, x = 8, y = -8, text = "",
     })
+    local turnFlash = self._hudTurn:CreateTexture(nil, "OVERLAY")
+    turnFlash:SetAllPoints(self._hudTurn)
+    turnFlash:SetTexture("Interface\\Buttons\\WHITE8x8")
+    turnFlash:SetBlendMode("ADD")
+    turnFlash:SetVertexColor(1, 0.78, 0.12, 0.8)
+    turnFlash:SetAlpha(0)
+    local turnPulse = turnFlash:CreateAnimationGroup()
+    local fade = turnPulse:CreateAnimation("Alpha")
+    fade:SetFromAlpha(0.75)
+    fade:SetToAlpha(0)
+    fade:SetDuration(0.65)
+    turnPulse:SetScript("OnFinished", function() turnFlash:SetAlpha(0) end)
+    self._turnFlash, self._turnPulse = turnFlash, turnPulse
     self._hudLeft, self._hudLeftFS = UI.CreateHudStatBox(ff, {
         w = 200, h = 22, point = "TOP", relativePoint = "TOP",
         x = 0, y = -8, text = "",
@@ -229,6 +270,17 @@ function R:_CreateHud()
     self._noticeFS = ff:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     self._noticeFS:SetPoint("BOTTOM", ff, "BOTTOM", 0, 40)
     self._noticeFS:SetTextColor(1, 0.85, 0.4)
+    self._historyBox, self._historyFS = UI.CreateHudStatBox(ff, {
+        w = CFG.history_w, h = CFG.history_h,
+        point = CFG.history_point, relativePoint = CFG.history_rel,
+        x = CFG.history_ofs_x, y = CFG.history_ofs_y,
+        alpha = CFG.history_alpha, font = "GameFontNormalSmall",
+        textColor = { 0.86, 0.9, 1 }, text = "",
+    })
+    if self._historyFS then
+        self._historyFS:SetWidth(CFG.history_w - 12)
+        self._historyFS:SetJustifyH("CENTER")
+    end
 end
 
 function R:_CreateClueRow()
@@ -256,6 +308,18 @@ function R:_CreateClueRow()
     eb:SetBackdropBorderColor(0.9, 0.75, 0.3, 0.8)
     eb:SetTextInsets(6, 6, 0, 0)
     self._clueBox = eb
+    local placeholder = eb:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    placeholder:SetPoint("LEFT", eb, "LEFT", 7, 0)
+    placeholder:SetPoint("RIGHT", eb, "RIGHT", -7, 0)
+    placeholder:SetJustifyH("LEFT")
+    placeholder:SetText(loc.clue_placeholder or "")
+    local function RefreshPlaceholder()
+        if eb:HasFocus() or eb:GetText() ~= "" then placeholder:Hide() else placeholder:Show() end
+    end
+    eb:SetScript("OnEditFocusGained", RefreshPlaceholder)
+    eb:SetScript("OnEditFocusLost", RefreshPlaceholder)
+    eb:SetScript("OnTextChanged", RefreshPlaceholder)
+    self._cluePlaceholder = RefreshPlaceholder
 
     local nOpts = {}
     for n = 0, 9 do
@@ -319,7 +383,7 @@ function R:_CreateControls()
     self._controlsFrame = cf
     self._mode = "hotseat"
 
-    local startBtn = UI.CreateArcadiaButton(cf, loc.btn_start, 130, 32)
+    local startBtn = UI.CreateArcadiaButton(cf, loc.btn_start, 144, 32)
     startBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
     startBtn:SetScript("OnClick", function()
         local Eng = Engine()
@@ -354,6 +418,25 @@ local function PaintCell(btn, word, revealed, spyColor)
     end
     btn:SetBackdropColor(col[1], col[2], col[3], 1)
     btn._label:SetText(word or "")
+    -- Nicht die Zeichenanzahl, sondern die echte Glyphenbreite entscheidet:
+    -- W und M brauchen deutlich mehr Platz als I oder L.
+    local maxWidth = (btn:GetWidth() or 0) - 8
+    for size = 11, 6, -1 do
+        btn._label:SetFont(STANDARD_TEXT_FONT, size, "OUTLINE")
+        if btn._label:GetStringWidth() <= maxWidth then break end
+    end
+    btn._fullWord = word or ""
+    local settings = ArcadiaNexus.SI7_Settings
+    local visible = (revealed and revealed ~= ".") and revealed or spyColor
+    if btn._mark then
+        if settings and settings:Get("colorblindSymbols") and visible and visible ~= "." then
+            btn._mark:SetText(({ R = "R", B = "B", N = "•", X = "X" })[visible] or "")
+            btn._mark:Show()
+        else
+            btn._mark:SetText("")
+            btn._mark:Hide()
+        end
+    end
 end
 
 function R:EnterIdleState()
@@ -366,7 +449,11 @@ function R:EnterIdleState()
     if self._hudTurn then self._hudTurn:Hide() end
     if self._hudLeft then self._hudLeft:Hide() end
     if self._hudClue then self._hudClue:Hide() end
+    if self._historyBox then self._historyBox:Hide() end
     if self._noticeFS then self._noticeFS:SetText("") end
+    if self._historyFS then self._historyFS:SetText("") end
+    self._lastTurn = nil
+    if self._turnFlash then self._turnFlash:SetAlpha(0) end
     if self._logoTex then self._logoTex:Show() end
     if self._lobbyPanel then self._lobbyPanel:Hide() end
     if self._startBtn and self._startBtn.SetLabel then
@@ -399,6 +486,7 @@ function R:Render()
         if self._hudTurn then self._hudTurn:Hide() end
         if self._hudLeft then self._hudLeft:Hide() end
         if self._hudClue then self._hudClue:Hide() end
+        if self._historyBox then self._historyBox:Hide() end
         if self._clueRow then self._clueRow:Hide() end
         if self._roleRow then self._roleRow:Hide() end
         if self._lobbyPanel then self._lobbyPanel:Show() end
@@ -443,6 +531,9 @@ function R:Render()
         else
             self._noticeFS:SetText(v.isHost and loc.hud_lobby_host or loc.hud_lobby_guest)
         end
+        local lobbySet = ArcadiaNexus.SI7_WordSets and ArcadiaNexus.SI7_WordSets:GetOptions() or {}
+        local setName = (loc["wordset_" .. string.lower((v.pub and v.pub.wordSet) or "AZEROTH")] or "Azeroth")
+        self._noticeFS:SetText(self._noticeFS:GetText() .. "\n" .. string.format(loc.hud_lobby_set, setName))
         if self._startBtn and self._startBtn.SetLabel then
             self._startBtn:SetLabel(loc.btn_exit)
         end
@@ -455,31 +546,50 @@ function R:Render()
     if self._hudTurn then self._hudTurn:Show() end
     if self._hudLeft then self._hudLeft:Show() end
     if self._hudClue then self._hudClue:Show() end
+    if self._historyBox then self._historyBox:Show() end
 
     local pub = v.pub
     local Logic = ArcadiaNexus.SI7_Logic
+    if self._lastTurn and self._lastTurn ~= pub.turn and self._turnPulse then
+        self._turnPulse:Stop()
+        self._turnFlash:SetAlpha(0)
+        self._turnPulse:Play()
+    end
+    self._lastTurn = pub.turn
     for i = 1, 25 do
         local id = pub.ids and pub.ids[i]
-        local word = id and Logic.Word(id) or ""
+        local word = id and Logic.Word(id, pub.wordSet) or ""
         local mask = pub.mask and pub.mask:sub(i, i) or "."
         local spyC = v.key and v.key:sub(i, i) or nil
         PaintCell(self._cells[i], word, mask, spyC)
-        if v.canGuess and mask == "." then
-            self._cells[i]:Enable()
-        else
-            self._cells[i]:Disable()
-        end
+        -- Immer aktiv lassen, damit der Karten-Tooltip auch fuer Spione,
+        -- wartende Spieler und bereits belegte Felder erreichbar bleibt.
+        -- Engine:Guess prueft Zug, Rolle und Maskierung selbst; ein Klick auf
+        -- eine nicht erlaubte Karte kann daher keinen Spielzustand aendern.
+        self._cells[i]:Enable()
     end
 
-    local teamName = loc["team_" .. (pub.turn or "R")] or pub.turn
+    local neutral = ArcadiaNexus.SI7_WordSets and ArcadiaNexus.SI7_WordSets:IsNeutral(pub.wordSet)
+    local teamName = loc[(neutral and "team_neutral_" or "team_") .. (pub.turn or "R")] or pub.turn
     local phaseKey = "hud_phase_" .. (pub.phase or "C")
     self._hudTurnFS:SetText(string.format(loc.hud_turn, teamName) .. " · " .. (loc[phaseKey] or ""))
-    self._hudLeftFS:SetText(string.format(loc.hud_left, pub.red or 0, pub.blue or 0))
+    self._hudLeftFS:SetText(string.format(neutral and loc.hud_left_neutral or loc.hud_left, pub.red or 0, pub.blue or 0))
     local nTxt = (pub.n == 0 and pub.phase == "G") and "∞" or tostring(pub.n or 0)
     self._hudClueFS:SetText(string.format(loc.hud_clue, pub.clue ~= "" and pub.clue or "—", nTxt))
+    local actionTeam = loc[(neutral and "team_neutral_" or "team_") .. (pub.lastTeam or "")] or ""
+    local history = ""
+    if pub.lastKind == "C" then
+        history = string.format(loc.hud_history_clue, actionTeam, pub.clue or "", pub.n or 0)
+    elseif pub.lastKind == "G" and pub.lastIndex and pub.lastIndex > 0 then
+        history = string.format(loc.hud_history_guess, actionTeam, Logic.Word(pub.ids[pub.lastIndex], pub.wordSet))
+    elseif pub.lastKind == "P" then
+        history = string.format(loc.hud_history_pass, actionTeam)
+    end
+    if self._historyFS then self._historyFS:SetText(history) end
 
     if self._roleBtns then
         for i, btn in ipairs(self._roleBtns) do
+            if btn.SetLabel then btn:SetLabel(loc[(neutral and "role_neutral_" or "role_") .. i] or "") end
             local on = (i == (v.seat or 0))
             if btn.glow then btn.glow:SetAlpha(on and 0.45 or 0) end
             if btn.text then
@@ -492,8 +602,11 @@ function R:Render()
         end
     end
 
-    local roleName = loc["role_" .. tostring(v.seat or 1)] or ""
-    if v.canClue then
+    local roleName = loc[(neutral and "role_neutral_" or "role_") .. tostring(v.seat or 1)] or ""
+    local feedback = v.notice and loc[v.notice]
+    if feedback then
+        self._noticeFS:SetText(feedback)
+    elseif v.canClue then
         self._noticeFS:SetText(string.format(loc.hud_view_clue, roleName))
     elseif v.canGuess then
         self._noticeFS:SetText(string.format(loc.hud_view_guess, roleName))
@@ -534,13 +647,15 @@ function R:ShowGameOver()
     local loc = L()
     local pub = v.pub
     local winner = pub and pub.winner
-    local title = (winner == "B") and loc.go_win_B or loc.go_win_R
+    local neutral = ArcadiaNexus.SI7_WordSets and ArcadiaNexus.SI7_WordSets:IsNeutral(pub and pub.wordSet)
+    local titleKey = neutral and "go_win_neutral_" or "go_win_"
+    local title = loc[titleKey .. ((winner == "B") and "B" or "R")]
     local reason
     if pub and pub.winReason == "assassin" then
         local guessTeam = (winner == "B") and "R" or "B"
-        reason = loc["go_assassin_" .. guessTeam]
+        reason = loc[(neutral and "go_assassin_neutral_" or "go_assassin_") .. guessTeam]
     else
-        reason = loc["go_cleared_" .. (winner or "R")]
+        reason = loc[(neutral and "go_cleared_neutral_" or "go_cleared_") .. (winner or "R")]
     end
     local won = v.team and winner == v.team
     local lines
@@ -596,4 +711,6 @@ ArcadiaNexus.RegisterGame({
     container = "_si7Container",
     category   = "WORT",
     matchSeats = 4,
+    logo      = SI7_ASSETS.logo,
+    xp        = 10,
 })

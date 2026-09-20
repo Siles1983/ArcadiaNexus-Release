@@ -4,8 +4,13 @@
 ]]
 
 local ArcadiaNexus = _G.ArcadiaNexus
-ArcadiaNexus.MatchBrowser = {}
-local B = ArcadiaNexus.MatchBrowser
+local function NewBrowser(transport)
+local B = {}
+local function Transport()
+    if transport then return transport end
+    local MT = ArcadiaNexus.MatchTransport
+    return MT and MT.StartWow and MT.StartWow()
+end
 
 local TTL = 12
 local PULSE = 5
@@ -61,12 +66,13 @@ function B.Upsert(fields, fromKey)
         gameId = fields.gameId or "SI7",
         host = fields.host or fromKey,
         taken = tonumber(fields.taken) or 1,
-        maxSeats = tonumber(fields.max) or 4,
+        maxSeats = tonumber(fields.max or fields.maxSeats) or 4,
         policy = fields.policy or "OPEN",
         locked = fields.locked == "1" or fields.policy == "PIN" or fields.policy == "INVITE",
-        state = fields.st or "LOBBY",
+        state = fields.st or fields.state or "LOBBY",
         proto = tonumber(fields.proto),
         gameProto = tonumber(fields.gameProto),
+        wordSet = fields.ws,
         lastSeen = Now(),
         localHost = fields._local == true,
     }
@@ -87,8 +93,7 @@ local function RetractBroadcast(matchId, host)
         st = "GONE",
         host = host,
     })
-    local MT = ArcadiaNexus.MatchTransport
-    local t = MT and MT.StartWow and MT.StartWow()
+    local t = Transport()
     if t and t.Broadcast then
         t:Broadcast(host, payload)
     end
@@ -115,7 +120,7 @@ function B.Pulse()
         advertise.state = advertise.node.state or advertise.state
     end
     local policy = advertise.policy or "OPEN"
-    local payload = P.Encode(P.TYPE.ANNOUNCE, {
+    local fields = {
         matchId = advertise.matchId,
         gameId = advertise.gameId,
         host = advertise.host,
@@ -126,9 +131,13 @@ function B.Pulse()
         st = advertise.state or "LOBBY",
         proto = advertise.proto or P.MATCH_PROTO,
         gameProto = advertise.gameProto or 1,
-    })
-    local MT = ArcadiaNexus.MatchTransport
-    local t = MT and MT.StartWow and MT.StartWow()
+    }
+    if advertise.node and advertise.node.announceFields then
+        local extra = advertise.node.announceFields(advertise.node)
+        if extra then for k, v in pairs(extra) do if v ~= nil then fields[k] = v end end end
+    end
+    local payload = P.Encode(P.TYPE.ANNOUNCE, fields)
+    local t = Transport()
     if t and t.Broadcast then
         t:Broadcast(advertise.host, payload)
     end
@@ -164,12 +173,13 @@ function B.AdvertiseFromNode(node)
     end)
 end
 
-function B.OnPayload(fromKey, payload)
+function B.OnPayload(fromKey, payload, channel)
     local P = Proto()
     if not P then return end
     local msg = P.Decode(payload)
     if not msg then return end
     if msg.type == P.TYPE.INVITED then
+        if channel ~= P.CHANNEL.UNICAST then return end
         local id = msg.fields and msg.fields.matchId
         if not id then return end
         local ok = false
@@ -186,6 +196,12 @@ function B.OnPayload(fromKey, payload)
         return
     end
     if msg.type ~= P.TYPE.ANNOUNCE then return end
+    if channel ~= P.CHANNEL.BROADCAST then return end
+    if not msg.fields.matchId or not P.SamePlayer(msg.fields.host, fromKey) then return end
+    local existing = sessions[msg.fields.matchId]
+    if existing and not P.SamePlayer(existing.host, fromKey) then return end
+    msg.fields._local = nil
+    msg.fields.host = fromKey
     if msg.fields then msg.fields.pin = nil end
     if msg.fields and msg.fields.st == "GONE" then
         if B._invitedMatchId == msg.fields.matchId then
@@ -198,9 +214,14 @@ function B.OnPayload(fromKey, payload)
 end
 
 function B.Start()
-    local MT = ArcadiaNexus.MatchTransport
-    local t = MT and MT.StartWow and MT.StartWow()
+    local t = Transport()
     if t and t.Subscribe then
         t:Subscribe(B.OnPayload)
     end
 end
+
+B.New = NewBrowser
+return B
+end
+
+ArcadiaNexus.MatchBrowser = NewBrowser()

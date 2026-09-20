@@ -890,4 +890,6 @@ ArcadiaNexus.RegisterGame({
     engine    = "BRB_Engine",
     container = "_brbContainer",
     category  = "ARCADE",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\BarrelBrawl\\assets\\logo\\bb_logo",
+    xp        = 10,
 })

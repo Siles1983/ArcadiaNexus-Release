@@ -72,6 +72,10 @@ local CFG = {
 CFG.cell_size = math.floor(CFG.field_w / CFG.board_grid)   -- 50px
 CFG.board_px  = CFG.cell_size * CFG.board_grid
 
+local CHE_ASSETS = {
+    logo = "Interface\\AddOns\\ArcadiaNexus\\Games\\Chess\\assets\\logo\\logo_mini_chess",
+}
+
 -- Brett-Farben (Tabellen bleiben file-level: je 1 Upvalue)
 local LIGHT_FIELD  = { 0.55, 0.50, 0.40, 1 }
 local DARK_FIELD   = { 0.20, 0.17, 0.13, 1 }
@@ -203,9 +207,14 @@ function R:_CreateMainFrame()
         end
 
         container:SetScript("OnHide", function()
-            ArcadiaNexus.GameSession:HandleRendererHide("CHESS", ArcadiaNexus.CHE_Engine, function(E)
-                if E.activeGame then
-                    E:StopGame()
+            if ArcadiaNexus.MatchShell and ArcadiaNexus.MatchShell._reparenting then
+                return
+            end
+            ArcadiaNexus.GameSession:HandleRendererHide("CHESS", ArcadiaNexus.Chess_Engine, function(eng)
+                if eng.mode ~= "hotseat" and (eng.state == "PLAYING" or eng.state == "LOBBY" or eng.state == "FINISHED") then
+                    eng:HideView()
+                elseif eng.state ~= "IDLE" or eng.activeGame then
+                    eng:StopGame()
                 end
             end)
         end)
@@ -254,7 +263,7 @@ function R:_CreateLogo()
     local UI = ArcadiaNexus.UI
     self._logoTex = UI.CreateGameLogo(
         self._fieldFrame,
-        "Interface\\AddOns\\ArcadiaNexus\\Games\\Chess\\assets\\logo\\logo_mini_chess",
+        CHE_ASSETS.logo,
         { w = CFG.logo_w, h = CFG.logo_h, x = CFG.logo_ofs_x, y = CFG.logo_ofs_y }
     )
 end
@@ -420,6 +429,7 @@ function R:_CreateControls()
     local ddAnchor = CreateFrame("Frame", nil, cf)
     ddAnchor:SetSize(CFG.dd_w, CFG.btn_h)
     ddAnchor:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
+    self._diffAnchor = ddAnchor
 
     UI.CreateSimpleDropdown(
         ddAnchor,
@@ -439,10 +449,22 @@ function R:_CreateControls()
     local startBtn = UI.CreateArcadiaButton(cf, L["btn_start"], CFG.btn_w, CFG.btn_h)
     startBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
     startBtn:SetScript("OnClick", function()
-        if R.state == "PLAYING" then
-            ArcadiaNexus.Chess_Engine:StopGame()
+        local E = ArcadiaNexus.Chess_Engine
+        if not E then return end
+        if R.state == "PLAYING" and E.mode and E.mode ~= "hotseat" then
+            local Shell = ArcadiaNexus.MatchShell
+            if Shell and Shell.ShowEndRoundConfirm then
+                Shell.ShowEndRoundConfirm(function()
+                    ArcadiaNexus.UI.HideResultDialog(R._fieldFrame)
+                    E:StopGame()
+                end, R._fieldFrame)
+                return
+            end
+        end
+        if R.state == "PLAYING" or R.state == "LOBBY" or R.state == "FINISHED" or R.state == "GAMEOVER" then
+            E:StopGame()
         else
-            ArcadiaNexus.Chess_Engine:StartGame({ difficulty = R.selectedDiff })
+            E:StartGame({ difficulty = R.selectedDiff, mode = "hotseat" })
         end
     end)
     self._startBtn = startBtn
@@ -481,6 +503,53 @@ function R:EnterIdleState()
     if self._logoTex       then self._logoTex:Show()                     end
     if self._borderFrame   then self._borderFrame:Show()                 end
     if self._startBtn      then self._startBtn:SetLabel(L["btn_start"])  end
+    if self._diffAnchor    then self._diffAnchor:Show()                 end
+end
+
+function R:Render()
+    local E = ArcadiaNexus.Chess_Engine
+    if not E or E.mode == "hotseat" then return end
+    local v = E:GetView()
+    if not v then return end
+    if v.state == "IDLE" or v.state == "ABORTED" then
+        self:EnterIdleState()
+        return
+    end
+    local L = ArcadiaNexus.GetLocaleTable("CHESS")
+    if self._diffAnchor then self._diffAnchor:Hide() end
+    if self._startBtn then
+        self._startBtn:SetLabel(L["btn_exit"] or "Beenden")
+        self._startBtn:Show()
+    end
+    if v.state == "LOBBY" then
+        self.state = "LOBBY"
+        if self._fieldFrame and ArcadiaNexus.UI then
+            ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
+        end
+        if self.boardHolder then self.boardHolder:Hide() end
+        if self._moveBox then self._moveBox:Hide() end
+        if self._captureBox then self._captureBox:Hide() end
+        if self._logoTex then self._logoTex:Show() end
+        if self._borderFrame then self._borderFrame:Show() end
+        return
+    end
+    if v.state == "PLAYING" or v.state == "FINISHED" then
+        local board = E:GetBoardState()
+        if not board then return end
+        if self._logoTex then self._logoTex:Hide() end
+        if self._moveBox then self._moveBox:Show() end
+        if self._captureBox then self._captureBox:Show() end
+        if self.state ~= "PLAYING" and self.state ~= "GAMEOVER" and self.state ~= "FINISHED" then
+            self.state = "PLAYING"
+            self:OnGameStarted(board)
+        else
+            self:RenderBoard(board)
+            self:UpdateInfoBoxes(board)
+        end
+        if v.state == "FINISHED" then
+            self.state = "FINISHED"
+        end
+    end
 end
 
 -- ============================================================
@@ -504,13 +573,14 @@ function R:RenderBoard(state)
         legalSet[m.toR .. "_" .. m.toC] = true
     end
 
-    -- König im Schach?
+    -- König im Schach (Seite inCheck / checkColor)
     local checkKingR, checkKingC
     if inCheck then
+        local checkColor = state.checkColor or "white"
         for r = 1, 6 do
             for c = 1, 6 do
                 local p = board[r][c]
-                if p and p.type == "KING" and p.color == "white" then
+                if p and p.type == "KING" and p.color == checkColor then
                     checkKingR, checkKingC = r, c
                 end
             end
@@ -634,6 +704,7 @@ end
 
 function R:OnGameOver(state)
     self.state = "GAMEOVER"
+    if not state then return end
     self:RenderBoard(state)
     self:UpdateInfoBoxes(state)
 
@@ -641,9 +712,27 @@ function R:OnGameOver(state)
     local UI     = ArcadiaNexus.UI
     local L      = ArcadiaNexus.GetLocaleTable("CHESS")
     local parent = self._fieldFrame
+    local E      = ArcadiaNexus.Chess_Engine
+    local mp     = E and E.mode and E.mode ~= "hotseat"
 
     local title, titleColor, subtitle, result
-    if state.result == "white_wins" then
+    if mp then
+        result = state.localResult or "DRAW"
+        if result == "WIN" then
+            title      = L["result_mp_win"] or L["result_win"]
+            titleColor = {1, 0.84, 0}
+            subtitle   = (L["result_mp_win_sub"] or L["result_win_sub"]) .. (state.moveCount or 0)
+        elseif result == "LOSS" then
+            title      = L["result_mp_loss"] or L["result_loss"]
+            titleColor = {1, 0.3, 0.3}
+            subtitle   = (L["result_mp_loss_sub"] or L["result_loss_sub"]) .. (state.moveCount or 0)
+        else
+            title      = L["result_draw"]
+            titleColor = {0.8, 0.8, 0.8}
+            subtitle   = L["result_draw_sub"]
+            result     = "DRAW"
+        end
+    elseif state.result == "white_wins" then
         title      = L["result_win"]
         titleColor = {1, 0.84, 0}
         subtitle   = L["result_win_sub"] .. (state.moveCount or 0)
@@ -665,15 +754,35 @@ function R:OnGameOver(state)
         titleColor = titleColor,
         subtitle   = subtitle,
         gameId     = "CHESS",
-        difficulty = R.selectedDiff,
+        difficulty = mp and "normal" or R.selectedDiff,
         result     = result,
         L          = L,
         onRetry    = function()
-            ArcadiaNexus.Chess_Engine:StartGame({ difficulty = R.selectedDiff })
+            if mp then
+                local Shell = ArcadiaNexus.MatchShell
+                if Shell and Shell.Rematch then Shell.Rematch("CHESS") end
+                return
+            end
+            ArcadiaNexus.Chess_Engine:StartGame({ difficulty = R.selectedDiff, mode = "hotseat" })
         end,
         onExit     = function()
             ArcadiaNexus.Chess_Engine:StopGame()
         end,
+        buttons = mp and {
+            {
+                label = (ArcadiaNexus.GetLocaleTable("UI") or {}).btn_new_game or L["btn_new_game"],
+                onClick = function()
+                    local Shell = ArcadiaNexus.MatchShell
+                    if Shell and Shell.Rematch then Shell.Rematch("CHESS") end
+                end,
+            },
+            {
+                label = (ArcadiaNexus.GetLocaleTable("UI") or {}).btn_exit or L["btn_exit"],
+                onClick = function()
+                    ArcadiaNexus.Chess_Engine:StopGame()
+                end,
+            },
+        } or nil,
     })
 
     if self._startBtn then
@@ -693,4 +802,7 @@ ArcadiaNexus.RegisterGame({
     engine    = "Chess_Engine",
     container = "_cheContainer",
     category  = "DENKSPIELE",
+    matchSeats = 2,
+    logo      = CHE_ASSETS.logo,
+    xp        = 20,
 })

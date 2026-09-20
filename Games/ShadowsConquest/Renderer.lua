@@ -639,4 +639,6 @@ ArcadiaNexus.RegisterGame({
     renderer  = "SC_Renderer",
     engine    = "SC_Engine",
     container = "_scContainer",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\ShadowsConquest\\assets\\logo\\logo_sc",
+    xp        = 10,
 })

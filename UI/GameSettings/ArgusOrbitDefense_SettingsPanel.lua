@@ -30,7 +30,8 @@ local function BuildArgusOrbitDefenseSettingsPanel(parent)
         },
         visuals = {
             items = {
-                { key = "screenFlash", label = L.lbl_screen_flash },
+                { key = "screenFlash",  label = L.lbl_screen_flash },
+                { key = "shipParallax", label = L.lbl_ship_parallax },
             },
         },
         guide = {

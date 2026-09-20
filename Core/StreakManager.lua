@@ -53,14 +53,12 @@ local MILESTONES = {
 -- ============================================================
 function SM:Init()
     -- DB sicherstellen (Fallback falls Bootstrap-Migration noch nicht lief)
-    if not ArcadiaNexusDB.streak then
-        ArcadiaNexusDB.streak = { current=0, best=0, lastLogin=0, claimedToday=false }
-    end
+    ArcadiaNexus.StatsStore.GetStreak()
 
     -- Erstes Spiel des Tages: +2 Gold (einmalig pro Tag)
     ArcadiaNexus.Engine:On("GAME_RESULT", function(data)
         if _firstGameGiven then return end
-        local db = ArcadiaNexusDB and ArcadiaNexusDB.streak
+        local db = ArcadiaNexus.StatsStore.GetStreak()
         if not db then return end
         if db.claimedToday then return end
         db.claimedToday  = true
@@ -74,8 +72,7 @@ end
 -- LOGIN-HANDLER — wird von Bootstrap:OnPlayerLogin() aufgerufen
 -- ============================================================
 function SM:OnLogin()
-    local db = ArcadiaNexusDB.streak
-    if not db then return end
+    local db = ArcadiaNexus.StatsStore.GetStreak()
 
     local now        = GetServerTime()
     local currentDay = GetCalendarDay(now)
@@ -112,7 +109,7 @@ end
 -- MEILENSTEIN-CHECK
 -- ============================================================
 function SM:_CheckMilestone()
-    local streak = ArcadiaNexusDB.streak.current or 0
+    local streak = ArcadiaNexus.StatsStore.GetStreak().current or 0
     for _, m in ipairs(MILESTONES) do
         if streak == m.days then
             if m.xp > 0 then
@@ -136,9 +133,9 @@ end
 -- PUBLIC GETTER
 -- ============================================================
 function SM:GetCurrent()
-    return (ArcadiaNexusDB.streak and ArcadiaNexusDB.streak.current) or 0
+    return ArcadiaNexus.StatsStore.GetStreak().current or 0
 end
 
 function SM:GetBest()
-    return (ArcadiaNexusDB.streak and ArcadiaNexusDB.streak.best) or 0
+    return ArcadiaNexus.StatsStore.GetStreak().best or 0
 end

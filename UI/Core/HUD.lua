@@ -20,18 +20,18 @@ local function L(key)
     return _L[key]
 end
 
+local function Profile()
+    local PS = ArcadiaNexus.ProfileStore
+    return PS and PS.Get() or {}
+end
+
 local function UpdateBadge()
     if not F().badgeFS then return end
 
-    local profile = ArcadiaNexusDB and ArcadiaNexusDB.profile
-    local xp, xpReq, level
-    if not profile then
-        xp = 0; xpReq = 93; level = 1
-    else
-        xp    = profile.xp         or 0
-        xpReq = profile.xpRequired or 93
-        level = profile.level      or 1
-    end
+    local profile = Profile()
+    local xp    = profile.xp         or 0
+    local xpReq = profile.xpRequired or 93
+    local level = profile.level      or 1
 
     if F().badgeBar then
         local XPM = ArcadiaNexus.XPManager
@@ -50,7 +50,7 @@ local function UpdateBadge()
 
     if F().titleFS then
         local XPM    = ArcadiaNexus.XPManager
-        local prof   = ArcadiaNexusDB and ArcadiaNexusDB.profile or {}
+        local prof   = Profile()
         -- Aktiven Titel aus DB lesen; Fallback: höchster freigeschalteter Titel
         local activeTitle = prof.activeTitle
         local displayTitle
@@ -72,8 +72,8 @@ local function UpdateBadge()
     end
 
     if F().gotdBox then
-        local showBox = not (ArcadiaNexusDB and ArcadiaNexusDB.settings
-            and ArcadiaNexusDB.settings.showGotd == false)
+        local CS = ArcadiaNexus.ClientSettingsStore
+        local showBox = CS and CS.GetFlag("showGotd", true) ~= false
         if not showBox then
             F().gotdBox:Hide()
             return
@@ -82,8 +82,12 @@ local function UpdateBadge()
 
     if F().streakFS then
         local SM = ArcadiaNexus.StreakManager
-        local cur = SM and SM:GetCurrent() or
-            (ArcadiaNexusDB and ArcadiaNexusDB.streak and ArcadiaNexusDB.streak.current) or 0
+        local cur = SM and SM:GetCurrent() or 0
+        if cur == 0 then
+            local SS = ArcadiaNexus.StatsStore
+            local streak = SS and SS.GetStreak()
+            cur = (streak and streak.current) or 0
+        end
         F().streakFS:SetText((L("stats_streak") or "Login-Streak:") .. "  |TInterface\\Icons\\Spell_Fire_SealOfFire:14:14:0:0|t "
             .. cur .. " " .. (L("stats_days") or "Tage"))
     end
@@ -137,7 +141,7 @@ ArcadiaNexus.Engine:On("ARCADE_LEVEL_UP", function(data)
         C_Timer.After(3.0, function()
             if F().titleFS then
                 -- Nach Animation: aktiven Titel aus DB lesen
-                local prof = ArcadiaNexusDB and ArcadiaNexusDB.profile or {}
+                local prof = Profile()
                 local displayTitle = prof.activeTitle or newTitle
                 local visible = (prof.titleVisible ~= false)
                 if visible then

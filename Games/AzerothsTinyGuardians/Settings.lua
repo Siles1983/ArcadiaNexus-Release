@@ -67,12 +67,7 @@ local function MigratePets(db)
 end
 
 local function EnsureDB()
-    if not _G.ArcadiaNexusDB then _G.ArcadiaNexusDB = {} end
-    _G.ArcadiaNexusDB.gameSettings = _G.ArcadiaNexusDB.gameSettings or {}
-    if not _G.ArcadiaNexusDB.gameSettings[DB_KEY] then
-        _G.ArcadiaNexusDB.gameSettings[DB_KEY] = {}
-    end
-    local db = _G.ArcadiaNexusDB.gameSettings[DB_KEY]
+    local db = ArcadiaNexus.GameSettingsStore.Get(DB_KEY)
     MigratePets(db)
     return db
 end

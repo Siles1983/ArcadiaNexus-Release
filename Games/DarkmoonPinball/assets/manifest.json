@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "format": "tga32",
+  "note": "Asset IDs only. Colliders live in TableDefinition.",
+  "kinds": {
+    "ball": [
+      "base",
+      "highlight"
+    ],
+    "bumper": [
+      "idle",
+      "hit_01",
+      "hit_02",
+      "lit"
+    ],
+    "target": [
+      "idle",
+      "active",
+      "hit"
+    ],
+    "light": [
+      "off",
+      "on",
+      "flash"
+    ],
+    "flipper": [
+      "base",
+      "base_right",
+      "activeGlow",
+      "activeGlow_right"
+    ],
+    "kickback": [
+      "idle",
+      "armed",
+      "fire"
+    ],
+    "lane": [
+      "off",
+      "lit",
+      "completed"
+    ],
+    "slingshot": [
+      "base"
+    ],
+    "arrow": [
+      "base"
+    ],
+    "post": [
+      "base"
+    ],
+    "playfield": [
+      "midway_bg",
+      "carousel_bg"
+    ],
+    "fx": [
+      "ring",
+      "glow"
+    ],
+    "plunger": [
+      "spring",
+      "knob"
+    ],
+    "eye": [
+      "sclera",
+      "pupil",
+      "lid"
+    ],
+    "chrome": [
+      "logo_dp",
+      "border_dp",
+      "background_dp"
+    ]
+  }
+}

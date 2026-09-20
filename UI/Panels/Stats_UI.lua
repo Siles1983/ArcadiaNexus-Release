@@ -15,6 +15,11 @@ ArcadiaNexus.StatsUI = Stats
 
 local UI = ArcadiaNexus.UI
 
+local function Profile()
+    local PS = ArcadiaNexus.ProfileStore
+    return PS and PS.Get() or {}
+end
+
 -- ============================================================
 -- LAYOUT-KONSTANTEN
 -- ============================================================
@@ -37,9 +42,11 @@ local PAD      = 8
 -- BERECHNUNGS-HELPER
 -- ============================================================
 function Stats:GetFavoriteGame()
-    if not ArcadiaNexusDB or not ArcadiaNexusDB.leaderboard then return nil, 0 end
+    local SS = ArcadiaNexus.StatsStore
+    local lb = SS and SS.GetLeaderboard()
+    if not lb then return nil, 0 end
     local best, bestCount = nil, 0
-    for gameId, diffs in pairs(ArcadiaNexusDB.leaderboard) do
+    for gameId, diffs in pairs(lb) do
         local total = 0
         for _, entry in pairs(diffs) do
             total = total + (entry.wins   or 0)
@@ -52,9 +59,11 @@ function Stats:GetFavoriteGame()
 end
 
 function Stats:GetHighestScoreEver()
-    if not ArcadiaNexusDB or not ArcadiaNexusDB.leaderboard then return 0, nil, nil end
+    local SS = ArcadiaNexus.StatsStore
+    local lb = SS and SS.GetLeaderboard()
+    if not lb then return 0, nil, nil end
     local best, bestGame, bestDiff = 0, nil, nil
-    for gameId, diffs in pairs(ArcadiaNexusDB.leaderboard) do
+    for gameId, diffs in pairs(lb) do
         for diff, entry in pairs(diffs) do
             for _, hs in ipairs(entry.highscores or {}) do
                 if hs > best then best = hs; bestGame = gameId; bestDiff = diff end
@@ -65,15 +74,17 @@ function Stats:GetHighestScoreEver()
 end
 
 function Stats:GetWinRate()
-    local p = ArcadiaNexusDB and ArcadiaNexusDB.profile
+    local PS = ArcadiaNexus.ProfileStore
+    local p = PS and PS.Get()
     if not p or (p.totalGames or 0) == 0 then return 0 end
     return math.floor(((p.wins or 0) / p.totalGames) * 100)
 end
 
 function Stats:GetAchievementCount()
-    if not ArcadiaNexusDB or not ArcadiaNexusDB.achievements then return 0, 0 end
+    local AS = ArcadiaNexus.AchievementStore
+    local unlockedMap = AS and AS.GetUnlocked() or {}
     local unlocked = 0
-    for _ in pairs(ArcadiaNexusDB.achievements.unlocked or {}) do unlocked = unlocked + 1 end
+    for _ in pairs(unlockedMap) do unlocked = unlocked + 1 end
     -- BUG-FIX: Gruppen nutzen .tiers, nicht .achievements
     local total = 0
     local AD = ArcadiaNexus.AchievementData
@@ -108,7 +119,7 @@ end
 -- { { key = "Novice of the Nexus Arcade", label = "Novice of the Nexus Arcade" }, ... }
 function Stats:GetUnlockedTitles()
     local XPM    = ArcadiaNexus.XPManager
-    local prof   = ArcadiaNexusDB and ArcadiaNexusDB.profile or {}
+    local prof   = Profile()
     local level  = prof.level or 1
     -- TITLES-Tabelle aus XPManager ist lokal – wir nutzen GetTitle pro Level
     -- Freigeschaltete Titel = alle Titel-Schwellen bis zum aktuellen Level
@@ -390,9 +401,10 @@ end
 
 function Stats:_Rebuild()
     local L       = ArcadiaNexus.GetLocaleTable("UI")
-    local profile = (ArcadiaNexusDB and ArcadiaNexusDB.profile) or {}
-    local streak  = (ArcadiaNexusDB and ArcadiaNexusDB.streak)  or {}
-    local gold    = (ArcadiaNexusDB and ArcadiaNexusDB.tavernGold and ArcadiaNexusDB.tavernGold.balance) or 0
+    local profile = Profile()
+    local SS      = ArcadiaNexus.StatsStore
+    local streak  = (SS and SS.GetStreak()) or {}
+    local gold    = (ArcadiaNexus.TavernGoldStore and ArcadiaNexus.TavernGoldStore.GetBalance()) or 0
     local XPM     = ArcadiaNexus.XPManager
 
     local level   = profile.level      or 1
@@ -503,7 +515,7 @@ function Stats:_BuildBox4()
     local c4  = self._box4Content
     if not c4 then return end
     local L   = ArcadiaNexus.GetLocaleTable("UI")
-    local prof = (ArcadiaNexusDB and ArcadiaNexusDB.profile) or {}
+    local prof = Profile()
 
     -- Label
     local lbl = c4:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -523,18 +535,18 @@ function Stats:_BuildBox4()
         self._titleDropdown = nil
     else
         local function getCurrent()
-            local p2 = ArcadiaNexusDB and ArcadiaNexusDB.profile or {}
+            local p2 = Profile()
             -- Fallback: höchster freigeschalteter (letzter in der sortierten Liste)
             return p2.activeTitle or titles[#titles].key
         end
 
         local function onChange(key)
-            if ArcadiaNexusDB and ArcadiaNexusDB.profile then
-                ArcadiaNexusDB.profile.activeTitle = key
+            local PS = ArcadiaNexus.ProfileStore
+            if PS and PS.SetActiveTitle then
+                PS.SetActiveTitle(key)
             end
             -- Header sofort aktualisieren
-            local vis = (ArcadiaNexusDB and ArcadiaNexusDB.profile and
-                         ArcadiaNexusDB.profile.titleVisible) ~= false
+            local vis = Profile().titleVisible ~= false
             if vis and ArcadiaNexus.UI and ArcadiaNexus.UI.UpdateBadge then
                 pcall(ArcadiaNexus.UI.UpdateBadge)
             end
@@ -553,8 +565,9 @@ function Stats:_BuildBox4()
     UI.SetCheckboxValue(cb, initVisible)
     cb:SetScript("OnClick", function(self_cb)
         local val = UI.GetCheckboxValue(self_cb)
-        if ArcadiaNexusDB and ArcadiaNexusDB.profile then
-            ArcadiaNexusDB.profile.titleVisible = val
+        local PS = ArcadiaNexus.ProfileStore
+        if PS and PS.SetTitleVisible then
+            PS.SetTitleVisible(val)
         end
         -- Header sofort aktualisieren
         if ArcadiaNexus.UI and ArcadiaNexus.UI.UpdateBadge then
@@ -567,12 +580,12 @@ end
 -- Leichte Aktualisierung bei Rebuild (Checkbox-State, kein Rebuild der Frames)
 function Stats:_RefreshBox4()
     if self._titleCB then
-        local prof = ArcadiaNexusDB and ArcadiaNexusDB.profile or {}
+        local prof = Profile()
         UI.SetCheckboxValue(self._titleCB, prof.titleVisible ~= false)
     end
     -- Dropdown-Text aktualisieren (falls Titel durch Level-Up neu freigeschaltet)
     if self._titleDropdown then
-        local prof   = ArcadiaNexusDB and ArcadiaNexusDB.profile or {}
+        local prof   = Profile()
         local titles = self:GetUnlockedTitles()
         local cur    = prof.activeTitle or (titles[#titles] and titles[#titles].key) or ""
         for _, opt in ipairs(titles) do

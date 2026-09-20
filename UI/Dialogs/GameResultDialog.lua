@@ -43,12 +43,14 @@ local UI = ArcadiaNexus.UI
 
 local PANEL_W       = 320
 local PANEL_MIN_H   = 160
+local PANEL_INSET   = 4
 local BTN_W         = 120
 local BTN_H         = 30
 local BTN_GAP       = 10
 local BTN_ROW_GAP   = 8
 local PAD           = 16
 local BADGE_H       = 22
+local FS_FALLBACK   = 16
 
 local PANEL_BG  = { 0.05, 0.05, 0.08, 0.96 }
 local PANEL_BR  = { 0.90, 0.75, 0.30, 1.00 }
@@ -217,8 +219,11 @@ end
 -- Shell erstellen (pro Parent gecacht)
 -- ============================================================
 
+local _overlaySeq = 0
+
 local function CreateShell(parent)
-    local overlay = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    _overlaySeq = _overlaySeq + 1
+    local overlay = CreateFrame("Frame", "ArcadiaNexus_ResultOverlay" .. _overlaySeq, parent, "BackdropTemplate")
     overlay:SetAllPoints(parent)
     overlay:SetFrameStrata("FULLSCREEN_DIALOG")
     overlay:SetToplevel(true)
@@ -458,8 +463,7 @@ local function PopulateShell(shell, config)
     local btnH = LayoutButtons(btnBar, config.buttons or {}, shell)
     btnBar:SetHeight(math.max(btnH, BTN_H))
 
-    -- Panel-Höhe dynamisch
-    local anchorFS = #extraLines > 0 and extraFS or statsFS
+    local anchorFS = extraFS:IsShown() and extraFS or statsFS
     if not statsFS:IsShown() and not extraFS:IsShown() then
         anchorFS = subtitleFS:IsShown() and subtitleFS or titleFS
     end
@@ -470,12 +474,32 @@ local function PopulateShell(shell, config)
         btnBar:SetPoint("TOP", anchorFS, "BOTTOM", 0, -PAD)
     end
 
-    local totalH = PAD + titleFS:GetStringHeight() + 8
-    if subtitleFS:IsShown() then totalH = totalH + subtitleFS:GetStringHeight() + 8 end
-    if statsFS:IsShown()    then totalH = totalH + statsFS:GetStringHeight() + 6 end
-    if extraFS:IsShown()    then totalH = totalH + extraFS:GetStringHeight() + 4 end
-    if config.newHighscore  then totalH = totalH + BADGE_H + 6 end
-    totalH = totalH + btnBar:GetHeight() + PAD
+    local function Measured(fs, fallback)
+        if not fs or not fs:IsShown() then return 0 end
+        local h = fs:GetStringHeight() or 0
+        if h < 1 then return fallback or FS_FALLBACK end
+        return h
+    end
+
+    local extraH = 0
+    if extraFS:IsShown() then
+        extraH = extraFS:GetStringHeight() or 0
+        if extraH < 4 then
+            extraH = math.max(1, #extraLines) * 14
+        end
+    end
+
+    -- Gleiche Lücken wie SetPoint: Title-8-Sub-6-Stats-4-Extra-6-Badge-PAD-Buttons-PAD
+    local totalH = PAD + Measured(titleFS, 18) + 8
+    totalH = totalH + Measured(subtitleFS, 14) + 6
+    if statsFS:IsShown() then totalH = totalH + Measured(statsFS, 14) + 4 end
+    if extraFS:IsShown() then totalH = totalH + extraH + 6 end
+    if config.newHighscore then
+        totalH = totalH + BADGE_H + PAD
+    else
+        totalH = totalH + PAD
+    end
+    totalH = totalH + btnBar:GetHeight() + PAD + PANEL_INSET * 2
 
     panel:SetHeight(math.max(PANEL_MIN_H, totalH))
 end
@@ -525,6 +549,11 @@ function UI.ShowResultDialog(config)
     end
 
     if config.onShow then config.onShow() end
+
+    local GI = ArcadiaNexus.GameInput
+    if GI and GI.OnUiOverlay then
+        pcall(GI.OnUiOverlay, shell.btnBar and shell.btnBar._buttons)
+    end
 end
 
 function UI.HideResultDialog(parent)
@@ -536,6 +565,10 @@ function UI.HideResultDialog(parent)
         end
         shell.overlay:Hide()
         shell.overlay:SetAlpha(1)
+    end
+    local GI = ArcadiaNexus.GameInput
+    if GI and GI.OnUiOverlayClosed then
+        pcall(GI.OnUiOverlayClosed)
     end
 end
 

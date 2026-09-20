@@ -62,21 +62,20 @@ function ArcadiaNexus.Match.IsAvailable()
     return ArcadiaNexus.Match._ready == true
 end
 
-local liveNodes = {}
+local liveNodes = setmetatable({}, { __mode = "k" })
 ArcadiaNexus.Match._unloading = false
 
 function ArcadiaNexus.Match.TrackNode(node)
     if not node then return end
-    liveNodes[#liveNodes + 1] = node
+    liveNodes[node] = true
+end
+
+function ArcadiaNexus.Match.UntrackNode(node)
+    liveNodes[node] = nil
 end
 
 function ArcadiaNexus.Match.IsUnloading()
     return ArcadiaNexus.Match._unloading == true
-end
-
-local function TicketStore()
-    if not _G.ArcadiaNexusDB then return nil end
-    return _G.ArcadiaNexusDB
 end
 
 function ArcadiaNexus.Match.SaveTicket(node)
@@ -84,33 +83,28 @@ function ArcadiaNexus.Match.SaveTicket(node)
     if not node.matchId or not node.hostKey or not node.gameId then return end
     local st = node.GetState and node:GetState()
     if st ~= "LOBBY" and st ~= "PLAYING" and st ~= "FINISHED" then return end
-    local db = TicketStore()
-    if not db then return end
-    db.matchTicket = {
+    ArcadiaNexus.MatchStore.SetTicket({
         matchId = node.matchId,
         hostKey = node.hostKey,
         gameId = node.gameId,
         playerKey = node.playerKey,
-    }
+    })
 end
 
 function ArcadiaNexus.Match.ClearTicket()
-    local db = TicketStore()
-    if db then db.matchTicket = nil end
+    ArcadiaNexus.MatchStore.ClearTicket()
 end
 
 function ArcadiaNexus.Match.ClearTicketFor(node)
-    local db = TicketStore()
-    local t = db and db.matchTicket
+    local t = ArcadiaNexus.MatchStore.GetTicket()
     if not t or not node then return end
-    if t.matchId == node.matchId and t.playerKey == node.playerKey then
-        db.matchTicket = nil
+    if t.matchId == node.matchId and t.playerKey == node.playerKey and t.hostKey == node.hostKey then
+        ArcadiaNexus.MatchStore.ClearTicket()
     end
 end
 
 function ArcadiaNexus.Match.GetTicket()
-    local db = TicketStore()
-    local t = db and db.matchTicket
+    local t = ArcadiaNexus.MatchStore.GetTicket()
     if type(t) ~= "table" or not t.matchId or not t.hostKey or not t.gameId then
         return nil
     end
@@ -120,8 +114,10 @@ end
 function ArcadiaNexus.Match.OnUnload()
     local M = ArcadiaNexus.Match
     M._unloading = true
-    for i = 1, #liveNodes do
-        local node = liveNodes[i]
+    local nodes = {}
+    for node in pairs(liveNodes) do nodes[#nodes + 1] = node end
+    for i = 1, #nodes do
+        local node = nodes[i]
         if node and node.GetState then
             local st = node:GetState()
             if st ~= "IDLE" and st ~= "ABORTED" then
@@ -188,18 +184,29 @@ function ArcadiaNexus.Match.CloseGameClient(node)
     local M = ArcadiaNexus.Match
     if M.IsUnloading() and not node.isHost then
         M.SaveTicket(node)
-        if node._startGuard then node._startGuard:Cancel() end
-        if node._rejoinGuard then node._rejoinGuard:Cancel() end
-        if node.transport and node.transport.Unregister then
-            node.transport:Unregister(node.playerKey)
-        end
+        node:Dispose()
         return
     end
     if node.isHost then node:Abort("ui-stop") else node:Leave() end
     ArcadiaNexus.Match.UpdateGamePresence(node)
-    if node._startGuard then node._startGuard:Cancel() end
-    if node._rejoinGuard then node._rejoinGuard:Cancel() end
-    if node.transport and node.transport.Unregister then node.transport:Unregister(node.playerKey) end
+    node:Dispose()
+end
+
+-- Shared cleanup for remote abort and rejected setup. The caller owns the view.
+function ArcadiaNexus.Match.EndGameClient(engine, gameId)
+    engine.state = "IDLE"
+    if engine._timerGuard then engine._timerGuard:Cancel() end
+    if engine._InvalidateTimers then engine:_InvalidateTimers() end
+    engine._resolvePending, engine._unoPending = false, false
+    if engine._sessionId then
+        ArcadiaNexus.Lifecycle:EndGame(gameId, engine._sessionId)
+        engine._sessionId = nil
+    end
+    if engine.match then
+        ArcadiaNexus.Match.UpdateGamePresence(engine.match)
+        engine.match:Dispose()
+        engine.match = nil
+    end
 end
 
 function ArcadiaNexus.Match.PresentGameView(gameId, view)

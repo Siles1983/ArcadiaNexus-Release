@@ -1,7 +1,7 @@
 --[[
     Arcadia Nexus
     Bootstrap.lua
-    Version: 0.2.0 (Persistence-only DB init)
+    Version: 1.1.5
 ]]
 
 local ADDON_NAME = ...
@@ -42,77 +42,65 @@ function ArcadiaNexus:OnAddonLoaded()
     self.Persistence:InitializeDB()
 end
 
+local STARTUP = {
+    { name = "Engine",               method = "Init" },
+    { name = "ScoreManager",         method = "Init" },
+    { name = "XPManager",            method = "Init" },
+    { name = "AchievementManager",   method = "Init" },
+    { name = "TavernGold",           method = "Init" },
+    { name = "StreakManager",        method = "Init" },
+    { name = "StreakManager",        method = "OnLogin" },
+    { name = "ChallengeManager",     method = "Init" },
+    { name = "GameResultProcessor",  method = "Init" },
+    { name = "ToastManager",         method = "Init" },
+    { name = "ConsolePortBridge",    method = "Init" },
+    { name = "GameInput",            method = "Init" },
+    { name = "Match",                method = "Init", static = true },
+}
+
+local SHUTDOWN = {
+    { name = "Match", method = "OnUnload", static = true },
+}
+
+local function SafeInvoke(addon, step, ...)
+    local target = addon[step.name]
+    if not target then return end
+    local fn = target[step.method]
+    if type(fn) ~= "function" then return end
+    local ok, err
+    if step.static then
+        ok, err = pcall(fn, ...)
+    else
+        ok, err = pcall(fn, target, ...)
+    end
+    local label = step.name .. (step.method == "Init" and "" or (" " .. step.method))
+    if ok then
+        GH_LogInfo("Bootstrap", label .. (step.method == "Init" and " initialisiert" or " OK"))
+    else
+        GH_LogError("Bootstrap", label .. " fehlgeschlagen: " .. tostring(err))
+    end
+end
+
 function ArcadiaNexus:OnPlayerLogin()
-    -- Engine
-    if self.Engine and self.Engine.Init then
-        local ok, err = pcall(function() self.Engine:Init() end)
-        if ok then GH_LogInfo("Bootstrap", "Engine initialisiert")
-        else GH_LogError("Bootstrap", "Engine Init fehlgeschlagen: " .. tostring(err)) end
-    end
-    -- ScoreManager
-    if self.ScoreManager and self.ScoreManager.Init then
-        local ok, err = pcall(function() self.ScoreManager:Init() end)
-        if ok then GH_LogInfo("Bootstrap", "ScoreManager initialisiert")
-        else GH_LogError("Bootstrap", "ScoreManager Init fehlgeschlagen: " .. tostring(err)) end
-    end
-    -- XPManager
-    if self.XPManager and self.XPManager.Init then
-        local ok, err = pcall(function() self.XPManager:Init() end)
-        if ok then GH_LogInfo("Bootstrap", "XPManager initialisiert")
-        else GH_LogError("Bootstrap", "XPManager Init fehlgeschlagen: " .. tostring(err)) end
-    end
-    -- AchievementManager
-    if self.AchievementManager and self.AchievementManager.Init then
-        local ok, err = pcall(function() self.AchievementManager:Init() end)
-        if ok then GH_LogInfo("Bootstrap", "AchievementManager initialisiert") else GH_LogError("Bootstrap", "AchievementManager Init fehlgeschlagen: " .. tostring(err)) end
-    end
-    -- TavernGold muss vor StreakManager und ChallengeManager laufen
-    if self.TavernGold and self.TavernGold.Init then
-        local ok, err = pcall(function() self.TavernGold:Init() end)
-        if ok then GH_LogInfo("Bootstrap", "TavernGold initialisiert") else GH_LogError("Bootstrap", "TavernGold Init fehlgeschlagen: " .. tostring(err)) end
-    end
-    -- StreakManager: Login-Verarbeitung
-    if self.StreakManager and self.StreakManager.Init then
-        local ok, err = pcall(function() self.StreakManager:Init() end)
-        if ok then GH_LogInfo("Bootstrap", "StreakManager initialisiert") else GH_LogError("Bootstrap", "StreakManager Init fehlgeschlagen: " .. tostring(err)) end
-    end
-    if self.StreakManager and self.StreakManager.OnLogin then
-        local ok, err = pcall(function() self.StreakManager:OnLogin() end)
-        if ok then GH_LogInfo("Bootstrap", "StreakManager OnLogin OK") else GH_LogError("Bootstrap", "StreakManager OnLogin fehlgeschlagen: " .. tostring(err)) end
-    end
-    -- ChallengeManager
-    if self.ChallengeManager and self.ChallengeManager.Init then
-        local ok, err = pcall(function() self.ChallengeManager:Init() end)
-        if ok then GH_LogInfo("Bootstrap", "ChallengeManager initialisiert") else GH_LogError("Bootstrap", "ChallengeManager Init fehlgeschlagen: " .. tostring(err)) end
-    end
-    -- GameResultProcessor (nach allen Pipeline-Modulen)
-    if self.GameResultProcessor and self.GameResultProcessor.Init then
-        local ok, err = pcall(function() self.GameResultProcessor:Init() end)
-        if ok then GH_LogInfo("Bootstrap", "GameResultProcessor initialisiert")
-        else GH_LogError("Bootstrap", "GameResultProcessor Init fehlgeschlagen: " .. tostring(err)) end
-    end
-    -- ToastManager
-    if self.ToastManager and self.ToastManager.Init then
-        local ok, err = pcall(function() self.ToastManager:Init() end)
-        if ok then GH_LogInfo("Bootstrap", "ToastManager initialisiert") else GH_LogError("Bootstrap", "ToastManager Init fehlgeschlagen: " .. tostring(err)) end
-    end
-    -- Match (optional, TOC-Block Core/Match/*)
-    if self.Match and self.Match.Init then
-        local ok, err = pcall(function() self.Match.Init() end)
-        if ok then GH_LogInfo("Bootstrap", "Match initialisiert")
-        else GH_LogError("Bootstrap", "Match Init fehlgeschlagen: " .. tostring(err)) end
+    for i = 1, #STARTUP do
+        SafeInvoke(self, STARTUP[i])
     end
 end
 
 function ArcadiaNexus:OnPlayerLogout()
-    if self.Match and self.Match.OnUnload then
-        pcall(self.Match.OnUnload)
+    local GR = self.GameRegistry
+    if GR and GR.StopActiveGame then
+        pcall(GR.StopActiveGame)
+    end
+    for i = 1, #SHUTDOWN do
+        SafeInvoke(self, SHUTDOWN[i])
     end
 end
 
 function ArcadiaNexus:OnPlayerEnteringWorld(isLogin, isReload)
-    if self.Match and self.Match.OnEnteringWorld then
-        pcall(self.Match.OnEnteringWorld, isLogin, isReload)
+    local m = self.Match
+    if m and m.OnEnteringWorld then
+        pcall(m.OnEnteringWorld, isLogin, isReload)
     end
 end
 
@@ -126,6 +114,7 @@ end
 --       engine    = "TET_Engine",      -- ArcadiaNexus[engine]-Key (optional)
 --       container = "_tetContainer",   -- ArcadiaNexus[container]-Key
 --       category  = "DENKSPIELE",      -- ID, DE/EN-Name oder Alias (docs/RegisterGame_API.md)
+--       xp        = 10,                -- Basis-XP bei GAME_RESULT (Default 10)
 --   })
 --
 -- Speicherort: Core/GameRegistry.lua (nicht Engine:RegisterGame — Legacy entfernt).
@@ -181,6 +170,12 @@ ArcadiaNexus._filterState = { query = "" }
 function ArcadiaNexus.HasMultiplayer()
     local M = ArcadiaNexus.Match
     return M ~= nil and M._ready == true
+end
+
+--- ConsolePort ist geladen. Unabhängig vom Hub-Schalter.
+function ArcadiaNexus.HasConsolePort()
+    local B = ArcadiaNexus.ConsolePortBridge
+    return B ~= nil and B.HasAddon() == true
 end
 
 function ArcadiaNexus.RegisterGame(info)
@@ -250,6 +245,7 @@ end
 -- ==========================================
 
 ArcadiaNexus._locales = {}   -- [gameID][locale] = stringTable
+ArcadiaNexus._localeCache = {}
 
 -- Sprache einmalig beim Addon-Load ermitteln
 local _clientLocale = GetLocale and GetLocale() or "enUS"
@@ -259,23 +255,31 @@ ArcadiaNexus.ActiveLocale = (_clientLocale == "deDE") and "deDE" or "enUS"
 function ArcadiaNexus.RegisterLocale(gameID, locale, strings)
     ArcadiaNexus._locales[gameID] = ArcadiaNexus._locales[gameID] or {}
     ArcadiaNexus._locales[gameID][locale] = strings
+    ArcadiaNexus._localeCache[gameID] = nil
 end
 
 -- Locale-Tabelle fuer ein Spiel abrufen.
 -- Aktive Sprache zuerst; fehlende Keys fallen auf enUS zurueck.
 -- Fehlende Keys in enUS geben "[key]" als Platzhalter zurueck.
 function ArcadiaNexus.GetLocaleTable(gameID)
+    local cached = ArcadiaNexus._localeCache[gameID]
+    if cached then return cached end
+
     local locales = ArcadiaNexus._locales[gameID]
+    local localeTable
     if not locales then
-        return setmetatable({}, {
+        localeTable = setmetatable({}, {
             __index = function(_, k) return "[" .. tostring(k) .. "]" end
         })
+    else
+        local active   = locales[ArcadiaNexus.ActiveLocale] or {}
+        local fallback = locales["enUS"] or {}
+        localeTable = setmetatable(active, {
+            __index = function(_, k)
+                return fallback[k] or ("[" .. tostring(k) .. "]")
+            end
+        })
     end
-    local active   = locales[ArcadiaNexus.ActiveLocale] or {}
-    local fallback = locales["enUS"] or {}
-    return setmetatable(active, {
-        __index = function(_, k)
-            return fallback[k] or ("[" .. tostring(k) .. "]")
-        end
-    })
+    ArcadiaNexus._localeCache[gameID] = localeTable
+    return localeTable
 end

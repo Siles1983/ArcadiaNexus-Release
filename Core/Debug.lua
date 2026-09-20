@@ -9,7 +9,7 @@
         GH_LogDebug("Snake", "Tick: pos=(" .. x .. "," .. y .. ")")  -- nur im devMode
 
     devMode aktivieren:
-        ArcadiaNexusDB.dev.devMode = true  (via SettingsPanel-Checkbox)
+        DevStore.SetDevMode(true)  (via SettingsPanel-Checkbox)
 
     Slash-Commands:
         /andevcheck    – zeigt devMode-Status
@@ -55,12 +55,7 @@ local function _IsDevMode()
     if not _IsAllowlisted() then
         return false
     end
-    return ArcadiaNexusDB
-        and ArcadiaNexusDB.dev
-        and ArcadiaNexusDB.dev.devMode
-        and ArcadiaNexusDB.dev.devMode ~= false
-        and ArcadiaNexusDB.dev.devMode ~= 0
-        or false
+    return ArcadiaNexus.DevStore.IsDevMode()
 end
 
 -- Öffentliche API — nutzbar von allen Modulen
@@ -169,7 +164,7 @@ end
 SLASH_ANDEVCHECK1 = "/andevcheck"
 SlashCmdList["ANDEVCHECK"] = function()
     local active = _IsDevMode()
-    local raw    = ArcadiaNexusDB and ArcadiaNexusDB.dev and ArcadiaNexusDB.dev.devMode
+    local raw    = ArcadiaNexus.DevStore.Get().devMode
     local allowed = _IsAllowlisted()
     if active then
         print("|cff00ff88[GH]|r Developer-Modus ist |cff00ff88AKTIV|r. (DB-Wert: " .. tostring(raw) .. ")")

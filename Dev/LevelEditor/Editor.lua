@@ -103,14 +103,13 @@ local function CanOpen()
 end
 
 local function EnsureDB()
-    if not ArcadiaNexusDB then return nil end
-    ArcadiaNexusDB.dev = ArcadiaNexusDB.dev or {}
-    local d = ArcadiaNexusDB.dev.levelEditor
-    if type(d) ~= "table" then
-        d = {}
-        ArcadiaNexusDB.dev.levelEditor = d
+    local DS = ArcadiaNexus.DevStore
+    if not DS then return nil end
+    local dev = DS.Get()
+    if type(dev.levelEditor) ~= "table" then
+        dev.levelEditor = {}
     end
-    return d
+    return dev.levelEditor
 end
 
 local function SaveDraft()

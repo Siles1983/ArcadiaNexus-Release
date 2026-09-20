@@ -7,6 +7,8 @@ local P = ArcadiaNexus.Persistence
 local DEFAULTS = {
     soundEnabled = true,
     lastMode     = "hotseat",
+    wordSet      = "AZEROTH",
+    colorblindSymbols = false,
 }
 
 local function GetDB()
@@ -28,4 +30,6 @@ function S:Reset()
     local db = GetDB()
     db.soundEnabled = nil
     db.lastMode = nil
+    db.wordSet = nil
+    db.colorblindSymbols = nil
 end

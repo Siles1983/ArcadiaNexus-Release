@@ -13,7 +13,24 @@ local Logic = ArcadiaNexus.TicTacToeLogic
 -- Board Creation
 -- ==========================================
 
+function Logic.ClampSize(size)
+    size = tonumber(size) or 3
+    if size < 3 then size = 3 end
+    if size > 5 then size = 5 end
+    return size
+end
+
+function Logic.ClampWinLength(size, winLength)
+    size = Logic.ClampSize(size)
+    local w = tonumber(winLength) or size
+    if w < 3 then w = 3 end
+    if w > size then w = size end
+    return w
+end
+
 function Logic:CreateBoard(size, winLength)
+    size = Logic.ClampSize(size)
+    winLength = Logic.ClampWinLength(size, winLength)
     local board = {
         size = size,
         winLength = winLength,
@@ -185,4 +202,235 @@ function ArcadiaNexus.TicTacToeLogic:CloneBoard(board)
     end
 
     return clone
+end
+
+-- ==========================================
+-- Match (öffentliches 3x3, kein Hidden State, keine KI)
+-- ==========================================
+
+Logic.GAME_ID = "TICTACTOE"
+Logic.GAME_PROTO = 1
+Logic.MP_SIZE = 3
+
+function Logic.EmptyPublic()
+    local n = Logic.MP_SIZE
+    return {
+        size = n,
+        winLength = n,
+        turn = 1,
+        over = false,
+        winner = 0,
+        cells = string.rep("0", n * n),
+        line = nil,
+        lastI = 0,
+    }
+end
+
+local function CellIndex(size, x, y)
+    return (y - 1) * size + x
+end
+
+function Logic.XY(size, i)
+    i = tonumber(i) or 0
+    local x = ((i - 1) % size) + 1
+    local y = math.floor((i - 1) / size) + 1
+    return x, y
+end
+
+function Logic.BoardFromPublic(pub)
+    local size = (pub and pub.size) or Logic.MP_SIZE
+    local board = Logic:CreateBoard(size, (pub and pub.winLength) or size)
+    local cells = (pub and pub.cells) or ""
+    for y = 1, size do
+        for x = 1, size do
+            local i = CellIndex(size, x, y)
+            board.cells[y][x] = tonumber(cells:sub(i, i)) or 0
+        end
+    end
+    return board
+end
+
+function Logic.PackLine(line)
+    if type(line) ~= "table" then return "" end
+    local parts = {}
+    for i = 1, #line do
+        local p = line[i]
+        if p and p.x and p.y then
+            parts[#parts + 1] = tostring(p.x) .. "." .. tostring(p.y)
+        end
+    end
+    return table.concat(parts, ",")
+end
+
+function Logic.UnpackLine(s)
+    if type(s) ~= "string" or s == "" then return nil end
+    local line = {}
+    for token in string.gmatch(s, "[^,]+") do
+        local x, y = token:match("^(%d+)%.(%d+)$")
+        if x then
+            line[#line + 1] = { x = tonumber(x), y = tonumber(y) }
+        end
+    end
+    return #line > 0 and line or nil
+end
+
+function Logic.ApplyMatch(pub, intent, seat)
+    if not pub or pub.over then return false end
+    seat = tonumber(seat) or 0
+    if seat ~= 1 and seat ~= 2 then return false end
+    if seat ~= (tonumber(pub.turn) or 1) then return false end
+    local size = pub.size or Logic.MP_SIZE
+    local i = tonumber(intent and intent.i)
+    if not i or i < 1 or i > size * size then return false end
+    local cells = pub.cells or string.rep("0", size * size)
+    if #cells < size * size then
+        cells = cells .. string.rep("0", size * size - #cells)
+    end
+    if cells:sub(i, i) ~= "0" then return false end
+    pub.cells = cells:sub(1, i - 1) .. tostring(seat) .. cells:sub(i + 1)
+    pub.lastI = i
+    local x, y = Logic.XY(size, i)
+    local board = Logic.BoardFromPublic(pub)
+    local result, line = Logic:CheckWin(board, x, y, seat)
+    if result == "WIN" then
+        pub.over = true
+        pub.winner = seat
+        pub.line = line
+    elseif result == "DRAW" then
+        pub.over = true
+        pub.winner = 0
+        pub.line = nil
+    else
+        pub.turn = (seat == 1) and 2 or 1
+        pub.line = nil
+    end
+    return true
+end
+
+function Logic.IsFinished(pub)
+    return pub and pub.over == true
+end
+
+function Logic.PackPublic(pub)
+    if not pub then return {} end
+    return {
+        sz = pub.size,
+        wl = pub.winLength,
+        t = pub.turn,
+        o = pub.over and 1 or 0,
+        w = pub.winner or 0,
+        c = pub.cells,
+        ln = Logic.PackLine(pub.line),
+        li = pub.lastI or 0,
+    }
+end
+
+function Logic.UnpackPublic(pub, f)
+    if not pub or not f then return end
+    if f.sz ~= nil then pub.size = tonumber(f.sz) or pub.size end
+    if f.wl ~= nil then pub.winLength = tonumber(f.wl) or pub.winLength end
+    if f.t ~= nil then pub.turn = tonumber(f.t) or pub.turn end
+    if f.o ~= nil then pub.over = tonumber(f.o) == 1 end
+    if f.w ~= nil then pub.winner = tonumber(f.w) or 0 end
+    if f.c ~= nil and f.c ~= "" then pub.cells = f.c end
+    if f.ln ~= nil then pub.line = Logic.UnpackLine(f.ln) end
+    if f.li ~= nil then pub.lastI = tonumber(f.li) or 0 end
+end
+
+function Logic.PackStart(pub)
+    return Logic.PackPublic(pub)
+end
+
+function Logic.UnpackStart(pub, f)
+    Logic.UnpackPublic(pub, f)
+end
+
+function Logic.CanTryStart(node)
+    if not node then return false end
+    local n = 0
+    local max = node.maxSeats or 2
+    for i = 1, max do
+        local k = node.seats and node.seats[i]
+        if k and k ~= "" then
+            n = n + 1
+            if not (node.ready and node.ready[i]) then return false end
+        end
+    end
+    return n == 2
+end
+
+function Logic.BoardStateFromPublic(pub, localSeat)
+    pub = pub or Logic.EmptyPublic()
+    local board = Logic.BoardFromPublic(pub)
+    local result
+    if pub.over then
+        if (tonumber(pub.winner) or 0) == 0 then
+            result = "DRAW"
+        elseif tonumber(pub.winner) == tonumber(localSeat) then
+            result = "WIN"
+        else
+            result = "LOSS"
+        end
+    end
+    local moveCount = 0
+    local cells = pub.cells or ""
+    for i = 1, #cells do
+        if cells:sub(i, i) ~= "0" then moveCount = moveCount + 1 end
+    end
+    local lastMove
+    local lastI = tonumber(pub.lastI) or 0
+    if lastI > 0 then
+        local lx, ly = Logic.XY(pub.size or Logic.MP_SIZE, lastI)
+        local actor = tonumber((pub.cells or ""):sub(lastI, lastI)) or 0
+        lastMove = { x = lx, y = ly, actor = actor }
+    end
+    return {
+        size = pub.size or Logic.MP_SIZE,
+        cells = board.cells,
+        gameOver = pub.over == true,
+        result = result,
+        winningLine = pub.line,
+        lastMove = lastMove,
+        moveCount = moveCount,
+        turn = tonumber(pub.turn) or 1,
+        localSeat = tonumber(localSeat) or 1,
+    }
+end
+
+function Logic.MatchOpts(engine)
+    return {
+        gameId = Logic.GAME_ID,
+        gameProto = Logic.GAME_PROTO,
+        maxSeats = 2,
+        newPublic = Logic.EmptyPublic,
+        seedOnStart = function()
+            return Logic.EmptyPublic()
+        end,
+        packPublic = Logic.PackPublic,
+        unpackPublic = Logic.UnpackPublic,
+        packStart = Logic.PackStart,
+        unpackStart = Logic.UnpackStart,
+        applyIntent = function(pub, intent, seat)
+            return Logic.ApplyMatch(pub, intent, seat)
+        end,
+        privateForSeat = function()
+            return nil
+        end,
+        isFinished = Logic.IsFinished,
+        onState = function(_, st)
+            if engine then engine:OnMatchState(st) end
+        end,
+        onResult = function(node, resultId)
+            if engine then engine:OnMatchResult(node, resultId) end
+        end,
+        onReject = function(_, f)
+            if engine then engine:OnMatchReject(f) end
+        end,
+        onPublic = function()
+            if engine then engine:OnMatchPublic() end
+        end,
+        canTryStart = function(node)
+            return Logic.CanTryStart(node)
+        end,
+    }
 end

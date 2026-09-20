@@ -34,6 +34,58 @@ ArcadiaNexus.RegisterAchievements({
     },
 
     {
+        id = "AJ_LEGEND", gameId = "AZEROTHJEWELS", category = "DENKSPIELE",
+        title_de = "Juwelenehre", title_en = "Jewel Honor",
+        desc_de  = "Bezwinge das zweite Kampagnenband.", desc_en = "Conquer the second campaign band.",
+        icon     = "Interface\\Icons\\INV_Misc_Gem_Diamond_01",
+        condition = function(data, db)
+            if data.gameId ~= "AZEROTHJEWELS" then return 0 end
+            return GetTotals(db).totalLevels or 0
+        end,
+        tiers = {
+            { id="AJ_LEGEND_BRONZE", tierName="Bronze", target=60,  xp=20, desc_de="Schließe 60 Level ab.",  desc_en="Complete 60 levels."  },
+            { id="AJ_LEGEND_SILBER", tierName="Silber", target=75,  xp=40, desc_de="Schließe 75 Level ab.",  desc_en="Complete 75 levels."  },
+            { id="AJ_LEGEND_GOLD",   tierName="Gold",   target=100, xp=70, desc_de="Schließe 100 Level ab.", desc_en="Complete 100 levels." },
+        },
+    },
+
+    {
+        id = "AJ_ENDLESS", gameId = "AZEROTHJEWELS", category = "DENKSPIELE",
+        title_de = "Endlosschliff", title_en = "Endless Cut",
+        desc_de  = "Bezwinge Endlos-Wellen nach der Kampagne.", desc_en = "Clear Endless waves after the campaign.",
+        icon     = "Interface\\Icons\\INV_Misc_Gem_Sapphire_02",
+        condition = function(data, db)
+            if data.gameId ~= "AZEROTHJEWELS" then return 0 end
+            local totals = GetTotals(db)
+            local fromStats = totals.endlessBestWave or 0
+            local fromResult = (data.stats and data.stats.endlessBestWave) or (data.stats and data.stats.endlessWave) or 0
+            if fromResult > fromStats then return fromResult end
+            return fromStats
+        end,
+        tiers = {
+            { id="AJ_ENDLESS_BRONZE", tierName="Bronze", target=5,  xp=20, desc_de="Erreiche Endlos-Welle 5.",  desc_en="Reach Endless wave 5."  },
+            { id="AJ_ENDLESS_SILBER", tierName="Silber", target=15, xp=40, desc_de="Erreiche Endlos-Welle 15.", desc_en="Reach Endless wave 15." },
+            { id="AJ_ENDLESS_GOLD",   tierName="Gold",   target=30, xp=70, desc_de="Erreiche Endlos-Welle 30.", desc_en="Reach Endless wave 30." },
+        },
+    },
+
+    {
+        id = "AJ_STARS", gameId = "AZEROTHJEWELS", category = "DENKSPIELE",
+        title_de = "Sternensammler", title_en = "Star Collector",
+        desc_de  = "Sammle Sterne in den Leveln.", desc_en = "Collect stars across levels.",
+        icon     = "Interface\\Icons\\INV_Misc_Gem_Pearl_04",
+        condition = function(data, db)
+            if data.gameId ~= "AZEROTHJEWELS" then return 0 end
+            return GetTotals(db).totalStars or 0
+        end,
+        tiers = {
+            { id="AJ_STARS_BRONZE", tierName="Bronze", target=50,  xp=15, desc_de="Sammle 50 Sterne.",  desc_en="Collect 50 stars."  },
+            { id="AJ_STARS_SILBER", tierName="Silber", target=150, xp=30, desc_de="Sammle 150 Sterne.", desc_en="Collect 150 stars." },
+            { id="AJ_STARS_GOLD",   tierName="Gold",   target=250, xp=55, desc_de="Sammle 250 Sterne.", desc_en="Collect 250 stars." },
+        },
+    },
+
+    {
         id = "AJ_POWERUP", gameId = "AZEROTHJEWELS", category = "DENKSPIELE",
         title_de = "Arkanist", title_en = "Arcanist",
         desc_de  = "Setze PowerUps ein.", desc_en = "Use PowerUps.",

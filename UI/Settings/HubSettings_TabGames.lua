@@ -36,14 +36,13 @@ end
 function HubSettings:_EnsurePendingHiddenGames()
     if not self._pendingHiddenGames then
         self._pendingHiddenGames = CopyHiddenGames(
-            ArcadiaNexusDB and ArcadiaNexusDB.hiddenGames)
+            ArcadiaNexus.HiddenGamesStore.Get())
     end
 end
 
 function HubSettings:_ApplyPendingHiddenGames()
-    if not ArcadiaNexusDB then return end
     self:_EnsurePendingHiddenGames()
-    ArcadiaNexusDB.hiddenGames = CopyHiddenGames(self._pendingHiddenGames)
+    ArcadiaNexus.HiddenGamesStore.Replace(self._pendingHiddenGames)
 end
 
 local function CreateGameListBtnPool()
@@ -474,7 +473,7 @@ ArcadiaNexus.RegisterHubSettingsTab({
     end,
     onSelect = function(hs)
         hs._pendingHiddenGames = CopyHiddenGames(
-            ArcadiaNexusDB and ArcadiaNexusDB.hiddenGames)
+            ArcadiaNexus.HiddenGamesStore.Get())
         C_Timer.After(0, function() hs:_RefreshSettingsLayout() end)
     end,
 })

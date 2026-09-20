@@ -94,6 +94,15 @@ function SB.Build(parent, config)
     local GS = ArcadiaNexus.GameSettings
     if not GS or not GS.Build then return end
 
+    local soundItems = {
+        { key = "soundOnWin",  label = L.sound_win  },
+        { key = "soundOnLoss", label = L.sound_loss },
+        { key = "soundOnDraw", label = L.sound_draw },
+    }
+    if L.sound_place then
+        table.insert(soundItems, 1, { key = "soundOnPlace", label = L.sound_place })
+    end
+
     GS.Build(parent, {
         settings = S,
         locale   = L,
@@ -101,11 +110,7 @@ function SB.Build(parent, config)
         sound = {
             masterLabel = L.sound_enabled,
             rowSpacing  = 26,
-            items = {
-                { key = "soundOnWin",  label = L.sound_win  },
-                { key = "soundOnLoss", label = L.sound_loss },
-                { key = "soundOnDraw", label = L.sound_draw },
-            },
+            items = soundItems,
         },
         theme = {
             title     = L.box_symbols,
@@ -115,5 +120,6 @@ function SB.Build(parent, config)
             end,
         },
         guide = config.guide,
+        extraBoxes = config.extraBoxes,
     })
 end

@@ -16,13 +16,7 @@ local MAX_LOG = 20
 -- INIT
 -- ============================================================
 function TG:Init()
-    if not ArcadiaNexusDB.tavernGold then
-        ArcadiaNexusDB.tavernGold = { balance=0, lifetime=0, log={} }
-    end
-    local db = ArcadiaNexusDB.tavernGold
-    if not db.log      then db.log      = {} end
-    if not db.lifetime then db.lifetime = 0  end
-    if not db.balance  then db.balance  = 0  end
+    ArcadiaNexus.TavernGoldStore.Get()
 end
 
 -- ============================================================
@@ -30,8 +24,7 @@ end
 -- ============================================================
 function TG:Add(amount, reason)
     if not amount or amount <= 0 then return end
-    local db = ArcadiaNexusDB.tavernGold
-    if not db then return end
+    local db = ArcadiaNexus.TavernGoldStore.Get()
 
     db.balance  = (db.balance  or 0) + amount
     db.lifetime = (db.lifetime or 0) + amount
@@ -50,11 +43,11 @@ function TG:Add(amount, reason)
 end
 
 function TG:GetBalance()
-    return (ArcadiaNexusDB.tavernGold and ArcadiaNexusDB.tavernGold.balance) or 0
+    return ArcadiaNexus.TavernGoldStore.GetBalance()
 end
 
 function TG:GetLifetime()
-    return (ArcadiaNexusDB.tavernGold and ArcadiaNexusDB.tavernGold.lifetime) or 0
+    return ArcadiaNexus.TavernGoldStore.GetLifetime()
 end
 
 -- ============================================================

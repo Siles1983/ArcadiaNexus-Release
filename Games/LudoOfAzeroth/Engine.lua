@@ -22,6 +22,9 @@ E._running      = false
 E.AI_DELAY      = 1.2
 E.AI_MOVE_DELAY = 0.8
 
+local _timerGuard = ArcadiaNexus.TimerGuard.New()
+E._timerGuard     = _timerGuard
+
 local SAVE_KEY = "saveState"
 
 local function GetDB()
@@ -87,7 +90,7 @@ function E:ResumeGame()
                 R:ShowValidMoveHighlights(game)
             end
         else
-            C_Timer.After(self.AI_MOVE_DELAY, function()
+            _timerGuard:After(self.AI_MOVE_DELAY, function()
                 if not self._running or self.activeGame ~= game then return end
                 local best = L:AIPickMove(game)
                 if best then
@@ -141,7 +144,7 @@ function E:StartTurn(game)
     self:SaveGame()
 
     if self:IsAITurn(game) and game.phase == "roll" then
-        C_Timer.After(self.AI_DELAY, function()
+        _timerGuard:After(self.AI_DELAY, function()
             if not self._running then return end
             if self.activeGame ~= game then return end
             self:DoRoll(game)
@@ -183,7 +186,7 @@ function E:_ContinueAfterRoll(game)
         if L:CanReroll(game) then
             if R then R:OnRollAgain(game) end
             if self:IsAITurn(game) then
-                C_Timer.After(self.AI_DELAY, function()
+                _timerGuard:After(self.AI_DELAY, function()
                     if not self._running then return end
                     if self.activeGame ~= game then return end
                     if game.phase ~= "roll" then return end
@@ -193,7 +196,7 @@ function E:_ContinueAfterRoll(game)
             return
         end
         ArcadiaNexus.Engine:Emit("LOA_NO_MOVE", game)
-        C_Timer.After(1.0, function()
+        _timerGuard:After(1.0, function()
             if not self._running then return end
             if self.activeGame ~= game then return end
             L:NextTurn(game)
@@ -203,7 +206,7 @@ function E:_ContinueAfterRoll(game)
     end
 
     if self:IsAITurn(game) then
-        C_Timer.After(self.AI_MOVE_DELAY, function()
+        _timerGuard:After(self.AI_MOVE_DELAY, function()
             if not self._running then return end
             if self.activeGame ~= game then return end
             local best = L:AIPickMove(game)
@@ -262,7 +265,7 @@ function E:DoMove(game, pieceIdx)
 
     self:SaveGame()
 
-    C_Timer.After(0.5, function()
+    _timerGuard:After(0.5, function()
         if not self._running then return end
         if self.activeGame ~= game then return end
         L:NextTurn(game)
@@ -282,5 +285,6 @@ function E:StopGame(skipSave)
     end
     self._running   = false
     self.activeGame = nil
+    _timerGuard:Cancel()
     ArcadiaNexus.Engine:Emit("LOA_GAME_STOPPED")
 end

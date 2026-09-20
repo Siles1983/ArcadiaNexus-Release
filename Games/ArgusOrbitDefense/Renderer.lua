@@ -3,7 +3,7 @@
 --  Nur Anzeige. Schreibt NIE in den Game-State zurück.
 --
 --  Fixes v33g:
---    - stars.tga sichtbar: Backdrop bgFile entfernt, nur edgeFile für Rand
+--    - Sternen-Parallax: UV-Repeat pro Schicht, Flug-Kopplung optional
 --    - exhaust.tga als Schub-Asset
 --    - Meteore/Hunter: WHITE8X8 + SetVertexColor (robust, keine Icon-Pfad-Abhängigkeit)
 --    - kein f:Show() in EnterIdleState / OnGameStarted
@@ -13,6 +13,10 @@ local ArcadiaNexus = _G.ArcadiaNexus
 ArcadiaNexus.AOD_Renderer = {}
 local R = ArcadiaNexus.AOD_Renderer
 
+local function Loc()
+    return ArcadiaNexus.GetLocaleTable("ARGUSORBDEFENSE") or {}
+end
+
 -- ── Registrierung (Datei-Ebene) ───────────────────────────────
 ArcadiaNexus.RegisterGame({
     id        = "ARGUSORBDEFENSE",
@@ -21,6 +25,8 @@ ArcadiaNexus.RegisterGame({
     renderer  = "AOD_Renderer",
     engine    = "AOD_Engine",
     container = "_aodContainer",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\ArgusOrbitDefense\\Assets\\logo\\logo_aod",
+    xp        = 10,
 })
 
 -- ── Asset-Pfade ───────────────────────────────────────────────
@@ -59,10 +65,10 @@ local BG_ALPHA = 0
 -- ── Border-Konstanten ─────────────────────────────────────────
 -- border_aod.tga liegt über dem Spielfeld (OVERLAY).
 -- BORDER_W/H = 0 → SetAllPoints (füllt gesamtes Spielfeld)
-local BORDER_W = 790      -- Breite (0 = gesamtes Spielfeld)
-local BORDER_H = 540      -- Höhe   (0 = gesamtes Spielfeld)
+local BORDER_W = 797      -- Breite (0 = gesamtes Spielfeld)
+local BORDER_H = 550      -- Höhe   (0 = gesamtes Spielfeld)
 local BORDER_X = 2      -- X-Offset vom CENTER des Spielfelds
-local BORDER_Y = 0      -- Y-Offset vom CENTER des Spielfelds
+local BORDER_Y = -1      -- Y-Offset vom CENTER des Spielfelds
 
 -- Power-Up Icons (Interface\Icons existieren garantiert)
 local ICON_SHIELD = "Interface\\Icons\\Spell_Holy_DevineShield"
@@ -96,7 +102,7 @@ local METEOR_SIZE = { BIG=38, MEDIUM=22, SMALL=14 }
 
 -- ── Pool-Groessen ─────────────────────────────────────────────
 local POOL_METEORS   = 40
-local POOL_BULLETS   = 20
+local POOL_BULLETS   = 40
 local POOL_H_BULLETS = 20
 local POOL_HUNTERS   = 8
 local POOL_POWERUPS  = 10
@@ -112,7 +118,11 @@ R._shipFrame     = nil
 R._shipTex       = nil
 R._thrustFrame   = nil
 R._thrustTex     = nil
-R._stars2Tex     = nil        -- zweites Sternenfeld (Fade-Animation)
+R._stars2Tex     = nil        -- Nah-Schicht (Fade)
+R._starFarTex    = nil
+R._starNearTex   = nil
+R._shipParallaxX = 0
+R._shipParallaxY = 0
 R._meteorPool    = {}
 R._bulletPool    = {}
 R._hBulletPool   = {}
@@ -127,6 +137,15 @@ R._shieldHUD     = nil
 R._shieldFS      = nil
 R._rapidHUD      = nil
 R._rapidFS       = nil
+R._spreadHUD     = nil
+R._spreadFS      = nil
+R._shieldRing    = nil
+R._waveBanner    = nil
+R._waveBannerFS  = nil
+R._hunterBannerFS = nil
+R._pauseFS       = nil
+R._scoreLbl      = nil
+R._bombRing      = nil
 R._scoreFS       = nil
 R._waveFS        = nil
 R._livesFS       = nil        -- wird nicht mehr verwendet (Texturen statt FontString)
@@ -157,6 +176,7 @@ function R:Init()
     self:_CreateShip()
     self:_CreatePools()
     self:_CreateFlash()
+    self:_CreateBombRing()
     self:_CreatePauseOverlay()
     self:_CreateControls()
     self:_CreateSlotMenu()
@@ -226,30 +246,72 @@ function R:_CreateFieldFrame()
     blackBg:SetAllPoints(field)
     blackBg:SetColorTexture(0, 0, 0, 1)
 
-    -- Sternenhintergrund (Ebene 1)
-    local bg = field:CreateTexture(nil, "BACKGROUND", nil, -1)
-    bg:SetAllPoints(field)
-    bg:SetTexture(ASSET_STARS)
+    -- Eine Textur pro Schicht: UV-Repeat statt zweier Kopien (keine Naht, kein Y-Wrap-Loch)
+    local function MakeStarLayer(path, sublevel)
+        local t = field:CreateTexture(nil, "BACKGROUND", nil, sublevel)
+        t:SetAllPoints(field)
+        t:SetTexture(path, "REPEAT", "REPEAT")
+        if not t:GetTexture() then t:SetTexture(path) end
+        if t.SetSnapToPixelGrid then t:SetSnapToPixelGrid(true) end
+        if t.SetTexelSnappingBias then t:SetTexelSnappingBias(0) end
+        return t
+    end
 
-    -- Zweites Sternenfeld (Ebene 2) — langsames Ein-/Ausblenden
-    local bg2 = field:CreateTexture(nil, "BACKGROUND", nil, 0)
-    bg2:SetAllPoints(field)
-    bg2:SetTexture(ASSET_STARS2)
-    bg2:SetAlpha(0)
-    self._stars2Tex = bg2
+    local farTex  = MakeStarLayer(ASSET_STARS,  -1)
+    local nearTex = MakeStarLayer(ASSET_STARS2,  0)
+    nearTex:SetAlpha(0)
+    self._starFarTex  = farTex
+    self._starNearTex = nearTex
+    self._stars2Tex   = nearTex
 
-    -- Eigener Frame für den Fade-Loop — wird nie von particleUpdate überschrieben
+    local function Wrap01(x)
+        return x - math.floor(x)
+    end
+
+    local function ScrollStar(tex, ox, oy, w, h)
+        if not tex or not tex.SetTexCoord then return end
+        ox = math.floor(ox + 0.5)
+        oy = math.floor(oy + 0.5)
+        local u = Wrap01(ox / w)
+        local v = Wrap01(oy / h)
+        tex:SetTexCoord(u, u + 1, v, v + 1)
+    end
+
+    -- Eigener Frame für Parallax+Fade — wird nie von particleUpdate überschrieben
     local fadeFrame = CreateFrame("Frame", "ArcadiaNexus_AOD_FadeFrame", field)
     fadeFrame:SetAllPoints(field)
     fadeFrame:EnableMouse(false)
     local _fadeDir = 1
     local _fadeVal = 0
     local _fadeSpeed = 0.12
+    local _farX, _nearX = 0, 0
+    local FAR_PX  = 12
+    local NEAR_PX = 28
     fadeFrame:SetScript("OnUpdate", function(_, dt)
         _fadeVal = _fadeVal + _fadeDir * _fadeSpeed * dt
         if _fadeVal >= 1 then _fadeVal = 1; _fadeDir = -1
         elseif _fadeVal <= 0 then _fadeVal = 0; _fadeDir = 1 end
-        bg2:SetAlpha(_fadeVal)
+        nearTex:SetAlpha(_fadeVal)
+
+        _farX  = _farX  + FAR_PX  * dt
+        _nearX = _nearX - NEAR_PX * dt
+        -- Flug-Parallax über Geschwindigkeit, nicht Position — Screen-Wrap darf nicht springen
+        local E = ArcadiaNexus.AOD_Engine
+        local Settings = ArcadiaNexus.AOD_Settings
+        local ship = E and E.gameState and E.gameState.ship
+        if Settings and Settings:Get("shipParallax") ~= false
+            and E and E.state == "PLAYING" and ship and ship.alive then
+            R._shipParallaxX = (R._shipParallaxX or 0) + (ship.vx or 0) * 0.18 * dt
+            R._shipParallaxY = (R._shipParallaxY or 0) + (ship.vy or 0) * 0.18 * dt
+        end
+        local w = field:GetWidth() or FIELD_W
+        local h = field:GetHeight() or FIELD_H
+        if w < 10 then w = FIELD_W end
+        if h < 10 then h = FIELD_H end
+        local px = R._shipParallaxX or 0
+        local py = R._shipParallaxY or 0
+        ScrollStar(farTex,  _farX + px * 0.45, py * 0.4, w, h)
+        ScrollStar(nearTex, _nearX + px,       py,       w, h)
     end)
 
     -- Border-Overlay (border_aod.tga) — eigener Frame über allen Spielobjekten
@@ -276,6 +338,24 @@ function R:_CreateFieldFrame()
             if L and L.SetFieldSize then L:SetFieldSize(fw, fh) end
         end
     end)
+
+    -- Wellen-Einblendung (kurz, Mitte)
+    local banner = CreateFrame("Frame", nil, field)
+    banner:SetSize(360, 72)
+    banner:SetPoint("CENTER", field, "CENTER", 0, 40)
+    banner:SetFrameLevel(field:GetFrameLevel() + 20)
+    banner:EnableMouse(false)
+    local bannerFS = banner:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+    bannerFS:SetPoint("CENTER", banner, "CENTER", 0, 10)
+    bannerFS:SetTextColor(0.55, 0.82, 1, 1)
+    local hunterFS = banner:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    hunterFS:SetPoint("CENTER", banner, "CENTER", 0, -16)
+    hunterFS:SetTextColor(0.85, 0.35, 1, 1)
+    hunterFS:Hide()
+    banner:Hide()
+    self._waveBanner     = banner
+    self._waveBannerFS   = bannerFS
+    self._hunterBannerFS = hunterFS
 
     self._fieldFrame = field
 end
@@ -324,16 +404,18 @@ function R:_CreateHUD()
     end
     livesBox:Hide()
 
-    -- Score (TOPLEFT +224/-32, 144x48)
+    -- Score
+    local Lhud = Loc()
     local scoreBox = MakeBox(224, -32, 144, 48, 0,0.04,0,0.8, 0.4,0.3,0.08)
     local scoreLbl = scoreBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     scoreLbl:SetPoint("TOPLEFT", scoreBox, "TOPLEFT", 6, -4)
-    scoreLbl:SetText("Punkte")
+    scoreLbl:SetText(Lhud.lbl_score or "Score")
     scoreLbl:SetTextColor(0.6, 0.6, 0.6, 1)
     local scoreFS = scoreBox:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     scoreFS:SetPoint("TOPLEFT", scoreBox, "TOPLEFT", 6, -20)
     scoreFS:SetTextColor(1, 0.85, 0, 1)
     self._scoreFS  = scoreFS
+    self._scoreLbl = scoreLbl
     self._scoreBox = scoreBox
     scoreBox:Hide()
 
@@ -346,7 +428,7 @@ function R:_CreateHUD()
     self._waveBox = waveBox
     waveBox:Hide()
 
-    -- Schild (TOPLEFT +16/-368, 104x32) — versteckt bis aktiv
+    -- Schild (unten links)
     local shieldBox = MakeBox(80, -368, 104, 32, 0,0.06,0.3,0.9, 0.3,0.5,1)
     local shIco = shieldBox:CreateTexture(nil, "ARTWORK")
     shIco:SetSize(20, 20)
@@ -359,7 +441,20 @@ function R:_CreateHUD()
     self._shieldHUD = shieldBox
     self._shieldFS  = shFS
 
-    -- Schnellfeuer (TOPLEFT +472/-368, 104x32) — versteckt bis aktiv
+    -- Streuschuss (unten mitte)
+    local spreadBox = MakeBox(255, -368, 104, 32, 0.04,0.08,0.28,0.9, 0.25,0.5,1)
+    local spIco = spreadBox:CreateTexture(nil, "ARTWORK")
+    spIco:SetSize(20, 20)
+    spIco:SetPoint("LEFT", spreadBox, "LEFT", 4, 0)
+    spIco:SetTexture(ICON_SPREAD)
+    local spFS = spreadBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    spFS:SetPoint("LEFT", spreadBox, "LEFT", 28, 0)
+    spFS:SetTextColor(0.45, 0.7, 1, 1)
+    spreadBox:Hide()
+    self._spreadHUD = spreadBox
+    self._spreadFS  = spFS
+
+    -- Schnellfeuer (unten rechts)
     local rapidBox = MakeBox(430, -368, 104, 32, 0.3,0.06,0,0.9, 1,0.5,0.1)
     local rpIco = rapidBox:CreateTexture(nil, "ARTWORK")
     rpIco:SetSize(20, 20)
@@ -387,6 +482,15 @@ function R:_CreateShip()
     local tex = sf:CreateTexture(nil, "ARTWORK")
     tex:SetAllPoints(sf)
     tex:SetTexture(ASSET_SHIP)
+
+    local shieldRing = sf:CreateTexture(nil, "BACKGROUND")
+    shieldRing:SetSize(46, 46)
+    shieldRing:SetPoint("CENTER", sf, "CENTER", 0, 0)
+    shieldRing:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    shieldRing:SetVertexColor(0.45, 0.8, 1)
+    shieldRing:SetBlendMode("ADD")
+    shieldRing:Hide()
+    self._shieldRing = shieldRing
 
     -- FIX: exhaust.tga als Schub-Asset
     local thrust = CreateFrame("Frame", nil, field)
@@ -549,6 +653,24 @@ function R:_CreateFlash()
     self._flashTex   = tex
 end
 
+function R:_CreateBombRing()
+    local field = self._fieldFrame
+    if not field then return end
+    local ring = CreateFrame("Frame", nil, field)
+    ring:SetSize(40, 40)
+    ring:SetPoint("CENTER", field, "BOTTOMLEFT", 0, 0)
+    ring:SetFrameLevel(field:GetFrameLevel() + 8)
+    ring:EnableMouse(false)
+    local tex = ring:CreateTexture(nil, "OVERLAY")
+    tex:SetAllPoints(ring)
+    tex:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    tex:SetVertexColor(1.0, 0.85, 0.25)
+    tex:SetBlendMode("ADD")
+    ring._tex = tex
+    ring:Hide()
+    self._bombRing = ring
+end
+
 -- ── Pause-Overlay ─────────────────────────────────────────────
 function R:_CreatePauseOverlay()
     local field = self._fieldFrame
@@ -565,11 +687,12 @@ function R:_CreatePauseOverlay()
 
     local fs = ov:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     fs:SetPoint("CENTER", ov, "CENTER", 0, 0)
-    fs:SetText("Pause")
+    fs:SetText(Loc().state_paused or "Pause")
     fs:SetTextColor(0.6, 0.8, 1, 1)
 
     ov:Hide()
     self._pauseOverlay = ov
+    self._pauseFS      = fs
 end
 
 -- ── _CreateControls (AlienDefense-Blueprint) ──────────────────
@@ -822,7 +945,6 @@ function R:UpdatePhysics(gs)
     local field = self._fieldFrame
     if not field or not gs then return end
 
-    -- Schiff
     local ship = gs.ship
     if ship.alive then
         self._shipFrame:SetPoint("CENTER", field, "BOTTOMLEFT", ship.x, ship.y)
@@ -844,9 +966,21 @@ function R:UpdatePhysics(gs)
         else
             self._thrustFrame:Hide()
         end
+
+        local ring = self._shieldRing
+        if ring then
+            if gs.shieldTimer and gs.shieldTimer > 0 then
+                local pulse = 0.4 + 0.25 * (0.5 + 0.5 * math.sin((gs.shieldTimer or 0) * 8))
+                ring:SetAlpha(pulse)
+                ring:Show()
+            else
+                ring:Hide()
+            end
+        end
     else
         self._shipFrame:Hide()
         self._thrustFrame:Hide()
+        if self._shieldRing then self._shieldRing:Hide() end
     end
 
     -- Meteore (Größe + Asset per texType)
@@ -948,12 +1082,14 @@ end
 -- ── HUD ───────────────────────────────────────────────────────
 function R:UpdateHUD(gs)
     if not gs then return end
+    local L = Loc()
+    if self._scoreLbl then self._scoreLbl:SetText(L.lbl_score or "Score") end
     if self._scoreFS then self._scoreFS:SetText(tostring(gs.score or 0)) end
     if self._waveFS  then
         if gs.gameMode == "levels" then
-            self._waveFS:SetText("Level " .. (gs.level or 1))
+            self._waveFS:SetText(string.format(L.overlay_level or "Level %d", gs.level or 1))
         else
-            self._waveFS:SetText("Welle " .. (gs.wave or 1))
+            self._waveFS:SetText(string.format(L.overlay_wave or "Wave %d", gs.wave or 1))
         end
     end
     if self._livesTex then
@@ -971,27 +1107,75 @@ function R:UpdateHUD(gs)
         end
     end
     if self._rapidHUD then
-        local t = math.max(gs.rapidTimer or 0, gs.spreadTimer or 0)
-        if t > 0 then
-            if self._rapidFS then self._rapidFS:SetText(string.format("%.1fs", t)) end
+        if gs.rapidTimer and gs.rapidTimer > 0 then
+            if self._rapidFS then self._rapidFS:SetText(string.format("%.1fs", gs.rapidTimer)) end
             self._rapidHUD:Show()
         else
             self._rapidHUD:Hide()
+        end
+    end
+    if self._spreadHUD then
+        if gs.spreadTimer and gs.spreadTimer > 0 then
+            if self._spreadFS then self._spreadFS:SetText(string.format("%.1fs", gs.spreadTimer)) end
+            self._spreadHUD:Show()
+        else
+            self._spreadHUD:Hide()
         end
     end
 end
 
 function R:UpdatePowerUpBar(gs) self:UpdateHUD(gs) end
 
+function R:ShowWaveBanner(gs)
+    local banner = self._waveBanner
+    local fs = self._waveBannerFS
+    if not banner or not fs or not gs then return end
+    local L = Loc()
+    if gs.gameMode == "levels" then
+        fs:SetText(string.format(L.overlay_level or "Level %d", gs.level or 1))
+    else
+        fs:SetText(string.format(L.overlay_wave or "Wave %d", gs.wave or 1))
+    end
+    local hunterFS = self._hunterBannerFS
+    local hasHunters = gs.hunters and #gs.hunters > 0
+    if hunterFS then
+        if hasHunters then
+            hunterFS:SetText(L.overlay_hunters or "Fel Hunters incoming!")
+            hunterFS:Show()
+        else
+            hunterFS:Hide()
+        end
+    end
+    banner:SetAlpha(1)
+    banner:Show()
+    local remain = hasHunters and 1.7 or 1.35
+    local sid = ArcadiaNexus.AOD_Engine and ArcadiaNexus.AOD_Engine._sessionId
+    banner:SetScript("OnUpdate", function(self_f, dt)
+        local E = ArcadiaNexus.AOD_Engine
+        if ArcadiaNexus.GameSession and not ArcadiaNexus.GameSession:IsSession(E, sid) then
+            self_f:Hide()
+            self_f:SetScript("OnUpdate", nil)
+            return
+        end
+        remain = remain - dt
+        if remain <= 0 then
+            self_f:Hide()
+            self_f:SetScript("OnUpdate", nil)
+        elseif remain < 0.4 then
+            self_f:SetAlpha(remain / 0.4)
+        end
+    end)
+end
+
 -- ── Event-Handler ─────────────────────────────────────────────
 function R:OnGameStarted(gs)
-    local L = ArcadiaNexus.GetLocaleTable("ARGUSORBDEFENSE") or {}
     self.state = "PLAYING"
 
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
-    if self._pauseOverlay then self._pauseOverlay:Hide() end
+    self:HidePause()
     if self._shieldHUD    then self._shieldHUD:Hide()    end
     if self._rapidHUD     then self._rapidHUD:Hide()     end
+    if self._spreadHUD    then self._spreadHUD:Hide()    end
     if self._logoTex      then self._logoTex:Hide()      end
     if self._slotMenu     then self._slotMenu:Hide()     end
 
@@ -1005,12 +1189,16 @@ function R:OnGameStarted(gs)
     if self._keyFrame  then self._keyFrame:EnableKeyboard(true) end
     if self._shipFrame then self._shipFrame:Show() end
 
+    self._shipParallaxX = 0
+    self._shipParallaxY = 0
+
     if self._livesBox then self._livesBox:Show() end
     if self._scoreBox then self._scoreBox:Show() end
     if self._waveBox  then self._waveBox:Show()  end
 
     self:_StartParticleUpdate()
     self:UpdateHUD(gs)
+    self:ShowWaveBanner(gs)
 
     self._lastDiff    = gs.difficulty
     self._endlessMode = gs.gameMode == "endless"
@@ -1019,6 +1207,7 @@ end
 function R:OnLevelAdvanced(gs)
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     self:UpdateHUD(gs)
+    self:ShowWaveBanner(gs)
 end
 
 function R:OnMeteorDestroyed(meteor, isBomb)
@@ -1031,6 +1220,59 @@ end
 
 function R:OnBombExplode(x, y)
     self:_SpawnParticles(x, y, 20, 1, 0.9, 0.3, 150, 1.0)
+    local ring = self._bombRing
+    local field = self._fieldFrame
+    if not ring or not field then return end
+    local Logic = ArcadiaNexus.AOD_Logic
+    local radius = (Logic and Logic.BOMB_RADIUS) or 120
+    ring:ClearAllPoints()
+    ring:SetPoint("CENTER", field, "BOTTOMLEFT", x, y)
+    ring:SetSize(40, 40)
+    ring:SetAlpha(1)
+    ring:Show()
+    local elapsed = 0
+    local dur = 0.45
+    local sid = ArcadiaNexus.AOD_Engine and ArcadiaNexus.AOD_Engine._sessionId
+    ring:SetScript("OnUpdate", function(self_f, dt)
+        local E = ArcadiaNexus.AOD_Engine
+        if ArcadiaNexus.GameSession and not ArcadiaNexus.GameSession:IsSession(E, sid) then
+            self_f:Hide()
+            self_f:SetScript("OnUpdate", nil)
+            return
+        end
+        elapsed = elapsed + dt
+        local p = elapsed / dur
+        if p >= 1 then
+            self_f:Hide()
+            self_f:SetScript("OnUpdate", nil)
+            return
+        end
+        local sz = (40 + (radius * 2 - 40) * p)
+        self_f:SetSize(sz, sz)
+        self_f:SetAlpha(1 - p)
+    end)
+end
+
+function R:OnShoot(gs)
+    local ship = gs and gs.ship
+    if not ship or not ship.alive then return end
+    local dirX = math.cos(ship.angle - math.pi / 2)
+    local dirY = math.sin(ship.angle - math.pi / 2)
+    local x = ship.x + dirX * 16
+    local y = ship.y + dirY * 16
+    local slot = GetFreeSlot(self._particlePool)
+    if not slot then return end
+    slot.active      = true
+    slot.x           = x
+    slot.y           = y
+    slot.vx          = dirX * 90
+    slot.vy          = dirY * 90
+    slot.lifetime    = 0.12
+    slot.maxLifetime = 0.12
+    slot.tex:SetColorTexture(0.65, 0.92, 1, 1)
+    slot.frame:SetPoint("CENTER", self._fieldFrame, "BOTTOMLEFT", x, y)
+    slot.frame:SetAlpha(1)
+    slot.frame:Show()
 end
 
 function R:OnShipDied(gs)
@@ -1038,6 +1280,7 @@ function R:OnShipDied(gs)
     if ship then self:_SpawnParticles(ship.x, ship.y, 12, 0.4, 0.7, 1, 100, 1.2) end
     if self._shipFrame   then self._shipFrame:Hide()   end
     if self._thrustFrame then self._thrustFrame:Hide() end
+    if self._shieldRing  then self._shieldRing:Hide()  end
 end
 
 function R:OnShipRespawned(gs)
@@ -1067,14 +1310,15 @@ end
 
 function R:ShowPause()
     if self._pauseOverlay then self._pauseOverlay:Show() end
-    local L = ArcadiaNexus.GetLocaleTable("ARGUSORBDEFENSE") or {}
-    if self._btnPause then self._btnPause:SetLabel(L["btn_resume"] or "Weiterspielen") end
+    local L = Loc()
+    if self._pauseFS then self._pauseFS:SetText(L.state_paused or "Pause") end
+    if self._btnPause then self._btnPause:SetLabel(L.btn_resume or "Resume") end
 end
 
 function R:HidePause()
     if self._pauseOverlay then self._pauseOverlay:Hide() end
-    local L = ArcadiaNexus.GetLocaleTable("ARGUSORBDEFENSE") or {}
-    if self._btnPause then self._btnPause:SetLabel(L["btn_pause"] or "Pause") end
+    local L = Loc()
+    if self._btnPause then self._btnPause:SetLabel(L.btn_pause or "Pause") end
 end
 
 function R:_RetryFromResult()
@@ -1115,7 +1359,7 @@ function R:ShowWaveClear(gs)
         title      = title,
         titleColor = { 0.4, 1, 0.5 },
         score      = gs.score,
-        gameId     = "ARGUSORBITDEFENSE",
+        gameId     = "ARGUSORBDEFENSE",
         difficulty = gs.difficulty or self._lastDiff,
         result     = "WIN",
         L          = L,
@@ -1132,7 +1376,7 @@ function R:ShowVictory(gs)
         title      = L["state_victory"] or "Argus verteidigt!",
         titleColor = { 1, 0.84, 0 },
         score      = gs.score,
-        gameId     = "ARGUSORBITDEFENSE",
+        gameId     = "ARGUSORBDEFENSE",
         difficulty = gs.difficulty or self._lastDiff,
         result     = "WIN",
         L          = L,
@@ -1150,7 +1394,7 @@ function R:ShowGameOver(gs)
         title      = L["state_gameover"] or "Schiff zerstört!",
         titleColor = { 1, 0.27, 0.27 },
         score      = gs.score,
-        gameId     = "ARGUSORBITDEFENSE",
+        gameId     = "ARGUSORBDEFENSE",
         difficulty = gs.difficulty or self._lastDiff,
         result     = "LOSS",
         L          = L,
@@ -1173,11 +1417,21 @@ function R:EnterIdleState()
 
     if self._shipFrame    then self._shipFrame:Hide()    end
     if self._thrustFrame  then self._thrustFrame:Hide()  end
+    self:HidePause()
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
-    if self._pauseOverlay then self._pauseOverlay:Hide() end
     if self._shieldHUD    then self._shieldHUD:Hide()    end
     if self._rapidHUD     then self._rapidHUD:Hide()     end
+    if self._spreadHUD    then self._spreadHUD:Hide()    end
+    if self._shieldRing   then self._shieldRing:Hide()   end
+    if self._waveBanner   then
+        self._waveBanner:SetScript("OnUpdate", nil)
+        self._waveBanner:Hide()
+    end
     if self._flashFrame   then self._flashFrame:Hide()   end
+    if self._bombRing     then
+        self._bombRing:SetScript("OnUpdate", nil)
+        self._bombRing:Hide()
+    end
     if self._logoTex      then self._logoTex:Show()      end
     if self._slotMenu     then self._slotMenu:Hide()     end
 

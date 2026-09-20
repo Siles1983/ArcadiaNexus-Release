@@ -215,8 +215,7 @@ end
 local function GetStatsByCategory(catKey)
     if not catKey then return 0, 0 end
     local ad = ArcadiaNexus.AchievementData or {}
-    local ul = (ArcadiaNexusDB and ArcadiaNexusDB.achievements
-                and ArcadiaNexusDB.achievements.unlocked) or {}
+    local ul = (ArcadiaNexus.AchievementStore and ArcadiaNexus.AchievementStore.GetUnlocked()) or {}
     local total, unlocked = 0, 0
     for _, group in ipairs(ad) do
         local groupCat = group.category or group.gameId
@@ -234,8 +233,7 @@ local function GetOverallStats()
     local SHm = ArcadiaNexus.AchSumH
     if SHm and SHm.GetOverallStats then return SHm.GetOverallStats() end
     local ad = ArcadiaNexus.AchievementData or {}
-    local ul = (ArcadiaNexusDB and ArcadiaNexusDB.achievements
-                and ArcadiaNexusDB.achievements.unlocked) or {}
+    local ul = (ArcadiaNexus.AchievementStore and ArcadiaNexus.AchievementStore.GetUnlocked()) or {}
     local total, unlocked = 0, 0
     for _, group in ipairs(ad) do
         for _, tier in ipairs(group.tiers or {}) do

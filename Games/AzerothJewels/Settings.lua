@@ -29,6 +29,10 @@ S.Defaults = {
     soundOnMatch    = true,
     soundOnPowerup  = true,
     soundOnGameover = true,
+    soundOnLowMoves = true,
+    hintSparkle     = true,
+    reducedMotion   = false,
+    impactFx        = true,
 }
 
 S.MAX_SLOTS = 3
@@ -98,7 +102,11 @@ function S:SaveSlot(slot, data)
         powerUps    = data.powerUps or { fire=0, frost=0, chain=0, bomb=0, holy=0 },
         progress    = data.progress or { fire=0, frost=0, chain=0, bomb=0, holy=0 },
         midLevel    = data.midLevel,
-        timestamp   = data.timestamp or time(),
+        timestamp    = data.timestamp or time(),
+        clearedLevel = data.clearedLevel or (data.level and math.max(0, data.level - 1)) or 0,
+        stars        = data.stars or {},
+        endlessWave     = data.endlessWave or 0,
+        endlessRunScore = data.endlessRunScore or 0,
     }
 end
 
@@ -136,7 +144,8 @@ end
 local function EnsureStats(db)
     if not db.stats then
         db.stats = { totalLevels = 0, totalPowerUps = 0, totalTimeWins = 0,
-                     totalIce = 0, totalCombo5 = 0 }
+                     totalIce = 0, totalCombo5 = 0, totalStars = 0,
+                     totalEndlessWaves = 0, endlessBestWave = 0 }
     end
     return db.stats
 end
@@ -150,4 +159,47 @@ function S:AddStats(delta)
     for k, v in pairs(delta) do
         stats[k] = (stats[k] or 0) + v
     end
+end
+
+function S:NoteEndlessBest(wave)
+    local stats = EnsureStats(GetDB())
+    local w = tonumber(wave) or 0
+    if w > (stats.endlessBestWave or 0) then
+        stats.endlessBestWave = w
+    end
+end
+
+function S:CopyStars(stars)
+    local out = {}
+    if type(stars) ~= "table" then return out end
+    for k, v in pairs(stars) do
+        local n = tonumber(k)
+        if n then out[n] = tonumber(v) or 0 end
+    end
+    return out
+end
+
+function S:SumStars(save)
+    local sum = 0
+    if not save or type(save.stars) ~= "table" then return 0 end
+    for _, v in pairs(save.stars) do
+        sum = sum + (tonumber(v) or 0)
+    end
+    return sum
+end
+
+function S:GetStar(save, level)
+    if not save or type(save.stars) ~= "table" then return 0 end
+    return tonumber(save.stars[level]) or 0
+end
+
+function S:IsLevelUnlocked(save, level, count)
+    if not save or not level or level < 1 then return false end
+    if count and level > count then return false end
+    if level == 1 then return true end
+    local cleared = tonumber(save.clearedLevel) or 0
+    if cleared >= (level - 1) then return true end
+    if self:GetStar(save, level - 1) >= 1 then return true end
+    local cursor = tonumber(save.level) or 1
+    return cursor >= level
 end

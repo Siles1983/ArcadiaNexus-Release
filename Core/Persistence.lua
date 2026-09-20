@@ -13,6 +13,9 @@
       ArcadiaNexus.Persistence:GetSchemaVersion()
       ArcadiaNexus.Persistence:GetGameSettings(gameID)
       ArcadiaNexus.Persistence:SetGameSetting(gameID, key, value)
+
+    Domain-Writes: Core/Stores.lua (ProfileStore, StatsStore,
+    GameSettingsStore, MatchStore).
 ]]
 
 ArcadiaNexus = ArcadiaNexus or {}
@@ -36,6 +39,7 @@ local DB_DEFAULTS = {
         soundEnabled      = true,
         animationsEnabled = true,
         showGotd          = true,
+        showToast         = true,
         lockUI            = false,
         uiScale           = 1.0,
     },
@@ -46,7 +50,7 @@ local DB_DEFAULTS = {
     profile = {
         level         = 1,
         xp            = 0,
-        xpRequired    = 2000,
+        xpRequired    = 93,
         totalXP       = 0,
         totalGames    = 0,
         wins          = 0,

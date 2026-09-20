@@ -7,7 +7,7 @@
 --    score250  – Sofort +250 Punkte
 --    score500  – Sofort +500 Punkte
 --    big       – Paddle x2, 10s
---    bullet    – Extra-Ball (max 3 gleichzeitig), dauerhaft bis Leben verloren
+--    bullet    – Extra-Ball (max 3 gleichzeitig); Leben erst, wenn der letzte Ball fällt
 --    fast      – Kugel + Paddle +50% Speed, 8s
 --    slow      – Kugel + Paddle -50% Speed, 8s
 --    small     – Paddle /2, 8s (Malus)
@@ -58,6 +58,11 @@ Logic.PU_POOL = {
     "strength", "strength",
 }
 
+Logic.PU_TYPES = {
+    "lives", "score250", "score500",
+    "big", "bullet", "fast", "slow", "small", "strength",
+}
+
 -- ── State ─────────────────────────────────────────────────────
 function Logic:NewState(difficulty, savedProgress)
     local def = self.DIFFICULTY_DEFS[difficulty] or self.DIFFICULTY_DEFS.easy
@@ -67,9 +72,10 @@ function Logic:NewState(difficulty, savedProgress)
         paddleX           = (self.FIELD_W - def.paddleW) / 2,
         ballX             = self.FIELD_W / 2,
         ballY             = self.PADDLE_Y - self.BALL_RADIUS - 5,
-        ballVX            = self.BASE_SPEED * def.speedMul * 0.6,
-        ballVY            = -self.BASE_SPEED * def.speedMul * 0.8,
+        ballVX            = 0,
+        ballVY            = 0,
         ballActive        = true,
+        ballDocked        = true,
         balls             = {},
         speedMul          = 1.0,
         baseSpeed         = self.BASE_SPEED * def.speedMul,
@@ -166,17 +172,32 @@ function Logic:ParseLevel(state, levelIndex)
     state.levelName = entry.name or ("Level " .. levelIndex)
 end
 
--- ── Ball-Reset ────────────────────────────────────────────────
-function Logic:ResetBall(state)
-    state.ballX = self.FIELD_W / 2
+-- ── Ball am Paddle ────────────────────────────────────────────
+function Logic:_StickBallToPaddle(state)
+    state.ballX = (state.paddleX or 0) + (state.paddleW or 0) / 2
     state.ballY = self.PADDLE_Y - self.BALL_RADIUS - 5
-    local angle  = -math.pi/2 + (math.random() - 0.5) * 0.8
-    local spd    = self:_EffectiveSpeed(state)
-    state.ballVX = spd * math.cos(angle)
-    state.ballVY = spd * math.sin(angle)
-    state.ballActive = true
+end
+
+function Logic:ResetBall(state)
     state.balls      = {}
     state.comboCount = 0
+    state.ballActive = true
+    state.ballDocked = true
+    state.ballVX     = 0
+    state.ballVY     = 0
+    self:_StickBallToPaddle(state)
+end
+
+function Logic:LaunchBall(state)
+    if not state or state.gameOver or not state.ballDocked then return false end
+    self:_StickBallToPaddle(state)
+    local angle = -math.pi / 2 + (math.random() - 0.5) * 0.8
+    local spd   = self:_EffectiveSpeed(state)
+    state.ballVX     = spd * math.cos(angle)
+    state.ballVY     = spd * math.sin(angle)
+    state.ballDocked = false
+    state.ballActive = true
+    return true
 end
 
 -- ── Effektive Geschwindigkeit ─────────────────────────────────
@@ -216,7 +237,11 @@ function Logic:Tick(state, dt)
     state.elapsedSecs = state.elapsedSecs + dt
     self:_TickPowerUps(state, dt, actions)
 
-    if state.ballActive then self:_MoveBall(state, dt, actions) end
+    if state.ballDocked then
+        self:_StickBallToPaddle(state)
+    elseif state.ballActive then
+        self:_MoveBall(state, dt, actions)
+    end
 
     local i = 1
     while i <= #state.balls do
@@ -224,6 +249,9 @@ function Logic:Tick(state, dt)
         if state.balls[i]._lost then table.remove(state.balls, i)
         else i = i + 1 end
     end
+
+    -- Leben nur, wenn kein Ball mehr im Feld ist (Arkanoid-Regel).
+    self:_PromoteOrLoseLife(state, actions)
 
     self:_MovePowerUpDrops(state, dt, actions)
     self:_CheckWin(state, actions)
@@ -249,25 +277,36 @@ function Logic:_MoveBall(state, dt, actions)
     local obj = { x=state.ballX, y=state.ballY, vx=state.ballVX, vy=state.ballVY, _lost=false }
     self:_MoveBallObj(state, obj, dt, actions)
     if obj._lost then
-        state.lives = state.lives - 1
         state.ballActive = false
-        state.balls = {}
-        state.droppedPUs = {}
-        -- Alle Timer aufheben
-        state.bigTimer = nil; state.fastTimer = nil; state.slowTimer = nil
-        state.smallTimer = nil; state.strengthTimer = nil
-        state.activePUText = nil
-        -- Paddle zurücksetzen
-        local def = self.DIFFICULTY_DEFS[state.difficulty] or self.DIFFICULTY_DEFS.easy
-        state.paddleW = def.paddleW
-        actions[#actions+1] = { type="life_lost" }
-        if state.lives <= 0 then
-            state.gameOver = true; state.won = false
-            actions[#actions+1] = { type="game_over" }
-        end
     else
         state.ballX=obj.x; state.ballY=obj.y
         state.ballVX=obj.vx; state.ballVY=obj.vy
+    end
+end
+
+function Logic:_PromoteOrLoseLife(state, actions)
+    if state.ballActive then return end
+    if #state.balls > 0 then
+        local nextBall = table.remove(state.balls, 1)
+        state.ballX  = nextBall.x
+        state.ballY  = nextBall.y
+        state.ballVX = nextBall.vx
+        state.ballVY = nextBall.vy
+        state.ballActive = true
+        state.ballDocked = false
+        return
+    end
+    state.lives = state.lives - 1
+    state.droppedPUs = {}
+    state.bigTimer = nil; state.fastTimer = nil; state.slowTimer = nil
+    state.smallTimer = nil; state.strengthTimer = nil
+    state.activePUText = nil
+    local def = self.DIFFICULTY_DEFS[state.difficulty] or self.DIFFICULTY_DEFS.easy
+    state.paddleW = def.paddleW
+    actions[#actions+1] = { type="life_lost" }
+    if state.lives <= 0 then
+        state.gameOver = true; state.won = false
+        actions[#actions+1] = { type="game_over" }
     end
 end
 
@@ -280,9 +319,9 @@ function Logic:_MoveBallObj(state, ball, dt, actions)
     local nx = ball.x + ball.vx * dt
     local ny = ball.y + ball.vy * dt
 
-    if nx-r < 0 then nx=r; ball.vx=math.abs(ball.vx); actions[#actions+1]={type="bounce_wall"}
-    elseif nx+r > self.FIELD_W then nx=self.FIELD_W-r; ball.vx=-math.abs(ball.vx); actions[#actions+1]={type="bounce_wall"} end
-    if ny-r < 0 then ny=r; ball.vy=math.abs(ball.vy); actions[#actions+1]={type="bounce_wall"} end
+    if nx-r < 0 then nx=r; ball.vx=math.abs(ball.vx); actions[#actions+1]={type="bounce_wall", side="left"}
+    elseif nx+r > self.FIELD_W then nx=self.FIELD_W-r; ball.vx=-math.abs(ball.vx); actions[#actions+1]={type="bounce_wall", side="right"} end
+    if ny-r < 0 then ny=r; ball.vy=math.abs(ball.vy); actions[#actions+1]={type="bounce_wall", side="top"} end
 
     if ny+r > self.FIELD_H then
         ball._lost = true; return
@@ -445,9 +484,9 @@ function Logic:_ActivatePowerUp(state, puType, actions)
         state.activePUText = "big"
 
     elseif puType == "bullet" then
-        -- Extra-Ball hinzufügen (max MAX_BALLS-1 Extra-Bälle)
+        -- Extra-Ball hinzufügen (max MAX_BALLS-1 Extra-Bälle); nicht während Serve
         local totalBalls = 1 + #state.balls
-        if totalBalls < self.MAX_BALLS then
+        if not state.ballDocked and totalBalls < self.MAX_BALLS then
             local angle = math.atan2(state.ballVY, state.ballVX)
             local spd   = self:_EffectiveSpeed(state)
             local off   = math.pi / 6
@@ -536,6 +575,23 @@ end
 
 function Logic:RetryLevel(state)
     self:ReloadLevel(state)
+end
+
+-- DevMode: Power-Up über dem Paddle fallen lassen.
+function Logic:DevDropPowerUp(state, puType)
+    if not state or state.gameOver or type(puType) ~= "string" then return false end
+    if not self._puTypeSet then
+        self._puTypeSet = {}
+        for i = 1, #self.PU_TYPES do
+            self._puTypeSet[self.PU_TYPES[i]] = true
+        end
+    end
+    if not self._puTypeSet[puType] then return false end
+    local pw = state.paddleW or 80
+    local x  = (state.paddleX or 0) + pw / 2
+    state.droppedPUs = state.droppedPUs or {}
+    state.droppedPUs[#state.droppedPUs + 1] = { x = x, y = 24, type = puType, vy = 100 }
+    return true
 end
 
 Logic:RefreshBlockMetrics()

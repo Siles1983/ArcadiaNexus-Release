@@ -40,6 +40,11 @@ local function _GetPoolRoot()
     return _poolRoot
 end
 
+--- Versteckter Pool-Parent für lokale Pools (kein SetParent(nil)).
+function FP.GetRoot()
+    return _GetPoolRoot()
+end
+
 -- ============================================================
 -- HILFSFUNKTIONEN
 -- ============================================================

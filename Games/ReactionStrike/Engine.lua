@@ -176,13 +176,8 @@ function E:_FakeoutSurvived(gs)
     -- Zähler für Achievement RS_FAKEOUT persistieren
     local S = GetSettings()
     if S then
-        local db = _G.ArcadiaNexusDB
-        if db then
-            db.gameSettings = db.gameSettings or {}
-            db.gameSettings["REACTIONSTRIKE"] = db.gameSettings["REACTIONSTRIKE"] or {}
-            local rs = db.gameSettings["REACTIONSTRIKE"]
-            rs.fakeoutsSurvived = (rs.fakeoutsSurvived or 0) + 1
-        end
+        local rs = ArcadiaNexus.GameSettingsStore.Get("REACTIONSTRIKE")
+        rs.fakeoutsSurvived = (rs.fakeoutsSurvived or 0) + 1
     end
     local R = GetRenderer()
     if R then R:ShowFakeoutSurvived(gs) end
@@ -220,8 +215,7 @@ function E:HandleInput(inputType)
         end
 
         -- GAME_RESULT an zentrales System
-        local rsDB = _G.ArcadiaNexusDB
-        local rsStats = rsDB and rsDB.gameSettings and rsDB.gameSettings["REACTIONSTRIKE"]
+        local rsStats = ArcadiaNexus.GameSettingsStore.Get("REACTIONSTRIKE")
         ArcadiaNexus.Engine:Emit("GAME_RESULT", {
             gameId     = "REACTIONSTRIKE",
             difficulty = gs.difficulty,

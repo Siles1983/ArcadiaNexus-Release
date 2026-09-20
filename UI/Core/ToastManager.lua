@@ -59,24 +59,55 @@ local function FadeFrame(frame, fromAlpha, toAlpha, duration, onDone)
     end)
 end
 
-local function FadeTexture(tex, fromAlpha, toAlpha, duration, onDone)
+local function TrackTicker(frame, ticker)
+    if not frame or not ticker then return ticker end
+    frame._animTickers = frame._animTickers or {}
+    frame._animTickers[#frame._animTickers + 1] = ticker
+    return ticker
+end
+
+local function CancelAnimTickers(frame)
+    if not frame or not frame._animTickers then return end
+    for i = 1, #frame._animTickers do
+        local ticker = frame._animTickers[i]
+        if ticker and ticker.Cancel then ticker:Cancel() end
+    end
+    frame._animTickers = nil
+end
+
+local function FadeTexture(frame, tex, fromAlpha, toAlpha, duration, onDone)
+    if not tex then return end
     local elapsed = 0
-    C_Timer.NewTicker(0.016, function()
+    local gen = frame and frame._gen
+    local ticker
+    ticker = C_Timer.NewTicker(0.016, function()
+        if frame and frame._gen ~= gen then
+            if ticker then ticker:Cancel() end
+            return
+        end
         elapsed = elapsed + 0.016
         local t = math.min(elapsed / duration, 1)
         tex:SetAlpha(fromAlpha + (toAlpha - fromAlpha) * t)
         if t >= 1 then
+            if ticker then ticker:Cancel() end
             if onDone then onDone() end
         end
     end, math.ceil(duration / 0.016) + 1)
+    TrackTicker(frame, ticker)
 end
 
-local function AnimateShine(shineTex, baseX, baseY)
+local function AnimateShine(frame, shineTex, baseX, baseY)
     if not shineTex then return end
     shineTex:SetAlpha(0)
     shineTex:Show()
     local elapsed = 0
-    local ticker = C_Timer.NewTicker(0.016, function()
+    local gen = frame and frame._gen
+    local ticker
+    ticker = C_Timer.NewTicker(0.016, function()
+        if frame and frame._gen ~= gen then
+            if ticker then ticker:Cancel() end
+            return
+        end
         elapsed = elapsed + 0.016
         if elapsed <= 0.2 then
             shineTex:SetAlpha(elapsed / 0.2)
@@ -93,20 +124,24 @@ local function AnimateShine(shineTex, baseX, baseY)
             shineTex:Hide()
             shineTex:ClearAllPoints()
             shineTex:SetPoint("BOTTOMLEFT", shineTex:GetParent(), "BOTTOMLEFT", baseX, baseY)
+            if ticker then ticker:Cancel() end
         end
     end)
+    TrackTicker(frame, ticker)
     return ticker
 end
 
 local function GrowDown()
-    local db = ArcadiaNexusDB and ArcadiaNexusDB.toastAnchor
+    local CS = ArcadiaNexus.ClientSettingsStore
+    local db = CS and CS.GetAnchor("toastAnchor")
     local ay = (db and db.y) or -200
     local uh = (UIParent and UIParent:GetHeight()) or 768
     return ay > -(uh / 2)
 end
 
 local function AnchorXY()
-    local db = ArcadiaNexusDB and ArcadiaNexusDB.toastAnchor
+    local CS = ArcadiaNexus.ClientSettingsStore
+    local db = CS and CS.GetAnchor("toastAnchor")
     return (db and db.x) or 0, (db and db.y) or -200
 end
 
@@ -180,9 +215,20 @@ local _toastSeq = 0
 local function RecycleFrame(f)
     if not f then return end
     CancelMove(f)
+    CancelAnimTickers(f)
     f:SetScript("OnUpdate", nil)
     f:Hide()
     f:SetAlpha(0)
+    if f._glowTex then
+        f._glowTex:SetAlpha(0)
+        f._glowTex:Hide()
+    end
+    if f._shineTex then
+        f._shineTex:SetAlpha(0)
+        f._shineTex:Hide()
+        f._shineTex:ClearAllPoints()
+        f._shineTex:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 8)
+    end
     f._item = nil
     f._slot = nil
     f._curY = nil
@@ -364,11 +410,15 @@ local function PlayToast(f)
         local glow = f._glowTex
         if glow then
             glow:SetAlpha(0); glow:Show()
-            FadeTexture(glow, 0, 1, 0.2, function()
-                FadeTexture(glow, 1, 0, 0.5, function() glow:Hide() end)
+            FadeTexture(f, glow, 0, 1, 0.2, function()
+                if f._gen ~= gen or not f._busy then return end
+                FadeTexture(f, glow, 1, 0, 0.5, function()
+                    if f._gen ~= gen or not f._busy then return end
+                    glow:Hide()
+                end)
             end)
         end
-        AnimateShine(f._shineTex, 0, 8)
+        AnimateShine(f, f._shineTex, 0, 8)
 
         if SOUNDKIT and SOUNDKIT.UI_ACHIEVEMENT_TOAST_SPARK then
             pcall(function() C_Sound.PlaySound(SOUNDKIT.UI_ACHIEVEMENT_TOAST_SPARK) end)
@@ -421,10 +471,15 @@ function TM:_Pump()
     end)
 end
 
+function TM:IsEnabled()
+    local CS = ArcadiaNexus.ClientSettingsStore
+    if not CS or not CS.GetFlag then return true end
+    return CS.GetFlag("showToast", true) ~= false
+end
+
 function TM:Init()
-    if not ArcadiaNexusDB.toastAnchor then
-        ArcadiaNexusDB.toastAnchor = { x = 0, y = -200 }
-    end
+    local CS = ArcadiaNexus.ClientSettingsStore
+    if CS then CS.GetAnchor("toastAnchor") end
 
     ArcadiaNexus.Engine:On("ACHIEVEMENT_UNLOCKED", function(ach)
         local ok, err = pcall(function() TM:Show(ach) end)
@@ -448,11 +503,13 @@ end
 
 function TM:Show(ach)
     if not ach then return end
+    if not ach._preview and not self:IsEnabled() then return end
     table.insert(self._queue, { data = ach, isGold = false })
     self:_Pump()
 end
 
 function TM:ShowGold(amount, reason)
+    if not self:IsEnabled() then return end
     table.insert(self._queue, { isGold = true, amount = amount, reason = reason })
     self:_Pump()
 end
@@ -488,7 +545,8 @@ function TM:PreviewStack()
 end
 
 function TM:UpdateAnchor()
-    local db = ArcadiaNexusDB and ArcadiaNexusDB.toastAnchor
+    local CS = ArcadiaNexus.ClientSettingsStore
+    local db = CS and CS.GetAnchor("toastAnchor")
     if not db then return end
     for _, rec in ipairs(self._active) do
         if rec.frame then

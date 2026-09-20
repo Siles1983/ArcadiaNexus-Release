@@ -3,8 +3,7 @@
 -- State-Machine: IDLE → PLAYING → RESULT_WIN / RESULT_LOSS
 --
 -- KEIN OnUpdate-Loop – rein event-getrieben.
--- C_Timer.After NUR für Reveal-Animation (kurze Delays).
--- _revealGen verhindert veraltete Reveal-Callbacks.
+-- TimerGuard für Reveal-Animation (kurze Delays).
 
 ArcadiaNexus.WRD_Engine = {}
 local E = ArcadiaNexus.WRD_Engine
@@ -13,7 +12,9 @@ E._sessionId = nil
 
 E.state       = "IDLE"
 E._gameState  = nil
-E._revealGen  = 0   -- verhindert veraltete C_Timer-Callbacks
+
+local _timerGuard = ArcadiaNexus.TimerGuard.New()
+E._timerGuard     = _timerGuard
 
 -- Sound-IDs (direkte Integer – kein SOUNDKIT-nil-Risiko)
 local SND_REVEAL  = 850    -- IG_MAINMENU_OPTION_CHECKBOX_ON
@@ -43,8 +44,7 @@ function E:StartGame(difficulty)
 
     E._sessionId = ArcadiaNexus.Lifecycle:RestartGame("AZEROTHWORDS", E._sessionId)
 
-    -- Laufende Reveal-Callbacks invalidieren
-    E._revealGen = E._revealGen + 1
+    _timerGuard:Cancel()
 
     local diff = difficulty or "normal"
     local gs   = Logic:NewState(diff)
@@ -119,14 +119,12 @@ function E:_SubmitGuess()
 
     local rowIndex = gs.attemptsUsed
 
-    -- Reveal-Animation (sequenziell, C_Timer.After)
-    E._revealGen = E._revealGen + 1
-    local gen = E._revealGen
+    -- Reveal-Animation (sequenziell)
+    _timerGuard:Cancel()
 
     for i = 1, gs.wordLength do
         local idx = i
-        C_Timer.After(idx * 0.12, function()
-            if E._revealGen ~= gen then return end
+        _timerGuard:After(idx * 0.12, function()
             PlayWRD("soundOnReveal", SND_REVEAL)
             if R then R:RevealTile(rowIndex, idx, result[idx], gs) end
         end)
@@ -134,8 +132,7 @@ function E:_SubmitGuess()
 
     -- Nach Reveal: Ergebnis prüfen
     local totalDelay = gs.wordLength * 0.12 + 0.1
-    C_Timer.After(totalDelay, function()
-        if E._revealGen ~= gen then return end
+    _timerGuard:After(totalDelay, function()
         self:_AfterReveal(gs, result)
     end)
 end
@@ -158,7 +155,7 @@ function E:_AfterReveal(gs, result)
         E.state  = "RESULT_WIN"
         if R then R:UpdateKeyboard(gs) end
         PlayWRD("soundOnCorrect", SND_CORRECT)
-        C_Timer.After(0.3, function()
+        _timerGuard:After(0.3, function()
             PlayWRD("soundOnWin", SND_WIN)
             if R then R:ShowResult(gs) end
         end)
@@ -173,7 +170,7 @@ function E:_AfterReveal(gs, result)
         E.state  = "RESULT_LOSS"
         if R then R:UpdateKeyboard(gs) end
         PlayWRD("soundOnLose", SND_LOSE)
-        C_Timer.After(0.3, function()
+        _timerGuard:After(0.3, function()
             if R then R:ShowResult(gs) end
         end)
         self:_EmitResult(gs)
@@ -210,7 +207,7 @@ function E:StopGame()
         ArcadiaNexus.Lifecycle:EndGame("AZEROTHWORDS", E._sessionId)
         E._sessionId = nil
     end
-    E._revealGen = E._revealGen + 1  -- Alle laufenden Timers invalidieren
+    _timerGuard:Cancel()
     E.state      = "IDLE"
     self._gameState = nil
     local R = GetRenderer()

@@ -43,9 +43,9 @@ local CFG = {
     hud_score_x     = 170,
     hud_score_y     = 218,
     hud_score_alpha = 0.75,
-    hud_wave_w      = 180,
+    hud_wave_w      = 220,
     hud_wave_h      = 28,
-    hud_wave_x      = -190,
+    hud_wave_x      = -210,
     hud_wave_y      = -190,
     hud_wave_alpha  = 0.75,
     hud_weapon_w    = 180,
@@ -102,6 +102,30 @@ local SHOT_W, SHOT_H = 13, 26
 local ALIEN_SHOT_W, ALIEN_SHOT_H = 11, 23
 local DROP_W, DROP_H = 20, 20
 
+-- VFX (modern-retro, ohne neue Schiff-Assets)
+local TEX_GLOW = "Interface\\GLUES\\Models\\UI_Draenei\\GenericGlow64"
+local TEX_RING = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight"
+local TEX_STAR = "Interface\\Cooldown\\star4"
+
+local FX_POOL_SIZE     = 64
+local FX_SPARKS        = 7
+local HOVER_AMP        = 1.6
+local HOVER_SPEED      = 7.0
+-- Zwei UV-Schichten + leichter Schiff-Versatz (Tiefe, kein AOD-Flug)
+local PARALLAX_FAR_U   = 0.009
+local PARALLAX_FAR_V   = 0.0035
+local PARALLAX_NEAR_U  = 0.026
+local PARALLAX_NEAR_V  = 0.011
+local PARALLAX_SHIP_FAR  = 0.016
+local PARALLAX_SHIP_NEAR = 0.042
+local PARALLAX_NEAR_ALPHA = 0.38
+local OVERLAY_DRIFT_X  = 10
+local OVERLAY_DRIFT_Y  = 6
+local ALIEN_BOB_PX     = 1
+local DESCENT_PULSE    = 0.20
+local MUZZLE_LIFE      = 0.11
+local THRUST_W, THRUST_H = 22, 26
+
 local ALIEN_SIZES = {
     [1] = { w=32, h=24 },
     [2] = { w=24, h=20 },
@@ -145,6 +169,21 @@ R.state     = "IDLE"
 
 R._flashR, R._flashG, R._flashB = 1, 1, 1
 
+R._fxPool        = {}
+R._fieldBgTex    = nil
+R._fieldBgNearTex = nil
+R._overlayTex    = nil
+R._thrustTex     = nil
+R._muzzleNodes   = nil
+R._muzzleWeapon  = "SINGLE"
+R._vfxTime       = 0
+R._bgFarU, R._bgFarV   = 0, 0
+R._bgNearU, R._bgNearV = 0, 0
+R._shipPar       = 0
+R._muzzleT       = 0
+R._alienBobPhase = 0
+R._descentPulse  = 0
+
 R._dbgPlayerBoxes = {}
 R._dbgAlienBoxes  = {}
 R._dbgShotBoxes   = {}
@@ -158,6 +197,8 @@ ArcadiaNexus.RegisterGame({
     renderer  = "AD_Renderer",
     engine    = "AD_Engine",
     container = "_adContainer",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\AlienDefense\\assets\\logo\\logo_ad",
+    xp        = 14,
 })
 
 -- ══════════════════════════════════════════════════════════════
@@ -172,6 +213,7 @@ function R:Init()
     self:_CreateFieldFrame()
     self:_CreateLogo()           -- Logo im Spielfeld (IDLE-Startbildschirm)
     self:_CreatePlayerTex()
+    self:_CreateFxPool()
     self:_CreateFlash()
     self:_CreateKeyFrame()
     self:_CreateControls()
@@ -224,6 +266,7 @@ function R:_CreateContentFrame()
         bgTex:SetAllPoints(cf)
     end
     bgTex:SetAlpha(BG_OVERLAY_ALPHA)
+    self._overlayTex = bgTex
 end
 
 -- ── HUD (Content-Ebene: Zeit, Score, Leben-Icons) ─────────────
@@ -325,12 +368,19 @@ function R:_CreateFieldFrame()
     field:SetBackdropColor(0, 0, 0.04, 0.96)
     field:SetBackdropBorderColor(0.6, 0.5, 0.2, 0)
 
-    local bg = field:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints(field)
-    bg:SetTexture(AD_ASSETS.bg, "REPEAT", "REPEAT")
-    bg:SetHorizTile(true)
-    bg:SetVertTile(true)
-    bg:SetAlpha(0.85)
+    local function MakeStarLayer(sublevel, alpha)
+        local t = field:CreateTexture(nil, "BACKGROUND", nil, sublevel)
+        t:SetAllPoints(field)
+        t:SetTexture(AD_ASSETS.bg, "REPEAT", "REPEAT")
+        t:SetHorizTile(true)
+        t:SetVertTile(true)
+        t:SetAlpha(alpha)
+        if t.SetSnapToPixelGrid then t:SetSnapToPixelGrid(true) end
+        if t.SetTexelSnappingBias then t:SetTexelSnappingBias(0) end
+        return t
+    end
+    self._fieldBgTex     = MakeStarLayer(-1, 0.85)
+    self._fieldBgNearTex = MakeStarLayer( 0, PARALLAX_NEAR_ALPHA)
 
     self._fieldFrame = field
     self:_CreateFieldHUD()
@@ -390,6 +440,14 @@ function R:_CreateLogo()
     )
 end
 
+local function _MakeAddTex(parent, path, layer)
+    local tex = parent:CreateTexture(nil, layer or "OVERLAY")
+    tex:SetTexture(path)
+    tex:SetBlendMode("ADD")
+    tex:Hide()
+    return tex
+end
+
 function R:_CreatePlayerTex()
     local field = self._fieldFrame
     local t = field:CreateTexture(nil, "ARTWORK")
@@ -398,6 +456,230 @@ function R:_CreatePlayerTex()
     t:SetPoint("TOPLEFT", field, "TOPLEFT", (FIELD_W - PLAYER_W) / 2, -PLAYER_Y)
     t:Hide()
     self._playerTex = t
+
+    local thrust = _MakeAddTex(field, TEX_GLOW, "ARTWORK")
+    thrust:SetSize(THRUST_W, THRUST_H)
+    self._thrustTex = thrust
+
+    self._muzzleNodes = {}
+    for i = 1, 2 do
+        self._muzzleNodes[i] = {
+            halo = _MakeAddTex(field, TEX_GLOW, "OVERLAY"),
+            core = _MakeAddTex(field, TEX_GLOW, "OVERLAY"),
+            star = _MakeAddTex(field, TEX_STAR, "OVERLAY"),
+        }
+    end
+end
+
+function R:_CreateFxPool()
+    local field = self._fieldFrame
+    if not field then return end
+    self._fxPool = {}
+    for i = 1, FX_POOL_SIZE do
+        local tex = field:CreateTexture(nil, "OVERLAY")
+        tex:SetBlendMode("ADD")
+        tex:Hide()
+        self._fxPool[i] = {
+            tex = tex, active = false,
+            x = 0, y = 0, vx = 0, vy = 0,
+            life = 0, max = 0.28,
+            w0 = 8, h0 = 8, w1 = 16, h1 = 16,
+            r = 1, g = 1, b = 1, a = 1,
+            rot = 0, rotSpd = 0, midPeak = false, grav = 0,
+        }
+    end
+end
+
+local function _AcquireFx(pool)
+    for i = 1, #pool do
+        local p = pool[i]
+        if not p.active then return p end
+    end
+    return nil
+end
+
+local function _EmitFx(pool, spec)
+    local p = _AcquireFx(pool)
+    if not p then return end
+    p.active = true
+    p.x, p.y = spec.x, spec.y
+    p.vx, p.vy = spec.vx or 0, spec.vy or 0
+    p.w0, p.h0 = spec.w0, spec.h0 or spec.w0
+    p.w1, p.h1 = spec.w1, spec.h1 or spec.w1
+    p.life, p.max = spec.life, spec.life
+    p.r, p.g, p.b, p.a = spec.r, spec.g, spec.b, spec.a or 1
+    p.rot = spec.rot or 0
+    p.rotSpd = spec.rotSpd or 0
+    p.midPeak = spec.midPeak and true or false
+    p.grav = spec.grav or 0
+    p.tex:SetTexture(spec.tex)
+    p.tex:SetTexCoord(0, 1, 0, 1)
+    if p.tex.SetRotation then p.tex:SetRotation(p.rot) end
+end
+
+function R:_SpawnExplosion(cx, cy, scale, style)
+    local pool = self._fxPool
+    if not pool then return end
+    local s = scale or 1
+    local player = (style == "player")
+
+    -- Weißer Kernblitz
+    _EmitFx(pool, {
+        tex = TEX_GLOW, x = cx, y = cy,
+        w0 = 14 * s, w1 = 32 * s, life = 0.10,
+        r = 1.00, g = 0.98, b = 0.85, a = 1.00,
+    })
+    -- Feuerball
+    _EmitFx(pool, {
+        tex = TEX_GLOW, x = cx, y = cy,
+        w0 = 20 * s, w1 = 52 * s, life = 0.32,
+        r = player and 0.35 or 1.00,
+        g = player and 0.85 or 0.45,
+        b = player and 1.00 or 0.10,
+        a = 0.95,
+    })
+    -- Bloom
+    _EmitFx(pool, {
+        tex = TEX_GLOW, x = cx, y = cy,
+        w0 = 16 * s, w1 = 40 * s, life = 0.24,
+        r = player and 0.55 or 0.25,
+        g = player and 0.95 or 1.00,
+        b = player and 1.00 or 0.30,
+        a = 0.70,
+    })
+    -- Druckwelle
+    _EmitFx(pool, {
+        tex = TEX_RING, x = cx, y = cy,
+        w0 = 18 * s, w1 = 72 * s, life = 0.34,
+        r = 1.00, g = player and 0.95 or 0.92, b = player and 0.70 or 0.45, a = 0.90,
+        midPeak = true,
+    })
+    -- Stern-Flash
+    _EmitFx(pool, {
+        tex = TEX_STAR, x = cx, y = cy,
+        w0 = 18 * s, w1 = 46 * s, life = 0.16,
+        r = 1.00, g = 0.95, b = 0.40, a = 0.95,
+        rot = math.random() * 6.28318, rotSpd = 8,
+    })
+    for i = 1, FX_SPARKS do
+        local ang = (i / FX_SPARKS) * 6.28318 + (math.random() - 0.5) * 0.45
+        local spd = 90 + math.random() * 70
+        _EmitFx(pool, {
+            tex = TEX_GLOW, x = cx, y = cy,
+            vx = math.cos(ang) * spd, vy = math.sin(ang) * spd,
+            w0 = 11 * s, w1 = 4 * s, life = 0.26 + math.random() * 0.08,
+            r = player and 0.55 or 1.00,
+            g = player and (0.80 + math.random() * 0.20) or (0.55 + math.random() * 0.35),
+            b = player and 1.00 or 0.12,
+            a = 0.95, grav = 70,
+        })
+    end
+end
+
+function R:_HideMuzzle()
+    local nodes = self._muzzleNodes
+    if not nodes then return end
+    for i = 1, #nodes do
+        local n = nodes[i]
+        n.halo:Hide(); n.core:Hide(); n.star:Hide()
+    end
+end
+
+function R:_ClearFx()
+    local pool = self._fxPool
+    if pool then
+        for i = 1, #pool do
+            local p = pool[i]
+            p.active = false
+            if p.tex then p.tex:Hide() end
+        end
+    end
+    self._muzzleT = 0
+    self:_HideMuzzle()
+    if self._thrustTex then self._thrustTex:Hide() end
+end
+
+function R:_TickFx(dt)
+    local field = self._fieldFrame
+    local pool = self._fxPool
+    if not field or not pool then return end
+    for i = 1, #pool do
+        local p = pool[i]
+        if p.active then
+            p.life = p.life - dt
+            if p.life <= 0 then
+                p.active = false
+                p.tex:Hide()
+            else
+                p.x = p.x + p.vx * dt
+                p.y = p.y + p.vy * dt
+                p.vy = p.vy + (p.grav or 0) * dt
+                local k = p.life / p.max
+                local u = 1 - k
+                local w = p.w0 + (p.w1 - p.w0) * u
+                local h = p.h0 + (p.h1 - p.h0) * u
+                local a = p.a * k
+                if p.midPeak then
+                    a = p.a * (4 * k * u)
+                end
+                local tex = p.tex
+                tex:SetSize(w, h)
+                tex:SetVertexColor(p.r, p.g, p.b, a)
+                tex:ClearAllPoints()
+                tex:SetPoint("CENTER", field, "TOPLEFT", p.x, -p.y)
+                if p.rotSpd ~= 0 and tex.SetRotation then
+                    p.rot = p.rot + p.rotSpd * dt
+                    tex:SetRotation(p.rot)
+                end
+                tex:Show()
+            end
+        end
+    end
+    if self._muzzleT and self._muzzleT > 0 then
+        self._muzzleT = self._muzzleT - dt
+        if self._muzzleT <= 0 then
+            self:_HideMuzzle()
+        end
+    end
+end
+
+function R:OnPlayerShoot(weapon)
+    if weapon == "LASER" then return end
+    self._muzzleT = MUZZLE_LIFE
+    self._muzzleWeapon = weapon or "SINGLE"
+end
+
+function R:OnPlayerHit(gs)
+    if not gs then return end
+    local cx = gs.playerX + PLAYER_W * 0.5
+    local cy = PLAYER_Y + PLAYER_H * 0.45
+    self:_SpawnExplosion(cx, cy, 1.45, "player")
+    self:_HideMuzzle()
+    if self._thrustTex then self._thrustTex:Hide() end
+    if self._playerTex then self._playerTex:Hide() end
+end
+
+local function _PlaceMuzzleNode(node, field, x, y, k)
+    local expand = 0.70 + (1 - k) * 0.90
+    node.halo:SetSize(32 * expand, 32 * expand)
+    node.halo:SetVertexColor(1.00, 0.32, 0.05, 0.80 * k)
+    node.halo:ClearAllPoints()
+    node.halo:SetPoint("CENTER", field, "TOPLEFT", x, -y)
+    node.halo:Show()
+
+    node.core:SetSize(14 + 10 * k, 14 + 10 * k)
+    node.core:SetVertexColor(1.00, 0.92, 0.55, 0.95 * k)
+    node.core:ClearAllPoints()
+    node.core:SetPoint("CENTER", field, "TOPLEFT", x, -y)
+    node.core:Show()
+
+    local flameH = 16 + 10 * k
+    node.star:SetSize(12 + 6 * k, flameH)
+    node.star:SetVertexColor(1.00, 0.70, 0.15, 0.85 * k)
+    node.star:ClearAllPoints()
+    node.star:SetPoint("CENTER", field, "TOPLEFT", x, -(y - flameH * 0.18))
+    if node.star.SetRotation then node.star:SetRotation(0) end
+    node.star:Show()
 end
 
 -- ── _CreateFlash ──────────────────────────────────────────────
@@ -410,11 +692,12 @@ function R:_CreateFlash()
     ft:SetAllPoints(flash)
     ft:SetTexture(WHITE8X8)
     ft:SetVertexColor(1, 1, 1, 0)
-    flash:SetScript("OnUpdate", function(self, dt)
+    flash:SetScript("OnUpdate", function(_, dt)
         local a = select(4, ft:GetVertexColor())
         if a and a > 0.001 then
             ft:SetVertexColor(R._flashR, R._flashG, R._flashB, math.max(0, a - dt * 4))
         end
+        R:_TickFx(dt)
     end)
     self._flashFrame = flash
     self._flashTex   = ft
@@ -559,20 +842,11 @@ function R:_CreateControls()
     savedHint:SetText("")
     self._savedHintFS = savedHint
 
-    -- Endlos-Checkbox (Segment 4, Mitte x=+330)
-    local chkHolder = CreateFrame("Frame", nil, cf)
-    chkHolder:SetSize(CHK_SIZE + 4, CHK_SIZE + 20)
+    -- Endlos-Checkbox (Segment 4), Label rechts
+    local chkHolder, chk = UI.CreateBarCheckbox(cf, L["lbl_endless"] or "Endlos", {
+        w = 110, h = 36, size = CHK_SIZE,
+    })
     chkHolder:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[4], bar.y.checkbox)
-
-    -- Label zentriert über der Checkbox
-    local chkLabel = chkHolder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    chkLabel:SetPoint("BOTTOM", chkHolder, "TOP", 0, -18)
-    chkLabel:SetJustifyH("CENTER")
-    chkLabel:SetText(L["lbl_endless"] or "Endlos")
-
-    local chk = CreateFrame("CheckButton", nil, chkHolder, "UICheckButtonTemplate")
-    chk:SetSize(CHK_SIZE, CHK_SIZE)
-    chk:SetPoint("CENTER", chkHolder, "CENTER", 0, -8)
     chk:SetScript("OnShow", function()
         local S = ArcadiaNexus.AD_Settings
         chk:SetChecked(S and S:Get("endlessMode") or false)
@@ -657,19 +931,20 @@ function R:_CreatePauseOverlay()
     local field = self._fieldFrame
     local L     = ArcadiaNexus.GetLocaleTable("ALIENDEFENSE")
     local ovl = CreateFrame("Frame", nil, field, "BackdropTemplate")
-    ovl:SetAllPoints(field)
-    ovl:SetFrameStrata("DIALOG")
+    ovl:SetSize(200, 56)
+    ovl:SetPoint("CENTER", field, "CENTER", 0, 0)
+    ovl:SetFrameLevel(field:GetFrameLevel() + 35)
+    ovl:EnableMouse(false)
     ovl:SetBackdrop({
-        bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
-        tile=true, tileEdge=true, tileSize=16, edgeSize=12,
-        insets={left=3,right=3,top=3,bottom=3},
+        bgFile = WHITE8X8, edgeFile = WHITE8X8, edgeSize = 2,
+        insets = { left = 2, right = 2, top = 2, bottom = 2 },
     })
-    ovl:SetBackdropColor(0, 0, 0, 0.70)
-    ovl:SetBackdropBorderColor(0.9, 0.75, 0.3, 1)
+    ovl:SetBackdropColor(0, 0, 0, 0.82)
+    ovl:SetBackdropBorderColor(0.35, 0.75, 0.95, 1)
     local fs = ovl:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     fs:SetPoint("CENTER", ovl, "CENTER", 0, 0)
-    fs:SetText("|cffffd700" .. (L["state_paused"] or "Pause") .. "|r")
+    fs:SetText(L["state_paused"] or "Pause")
+    fs:SetTextColor(0.55, 0.90, 1.00, 1)
     ovl:Hide()
     self._pauseOverlay = ovl
 end
@@ -686,6 +961,7 @@ function R:EnterIdleState()
     self:_ClearDbgBoxes()
 
     if self._playerTex    then self._playerTex:Hide()      end
+    self:_ClearFx()
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     if self._pauseOverlay then self._pauseOverlay:Hide()    end
     if self._diffContainer then self._diffContainer:Show() end
@@ -734,6 +1010,13 @@ function R:OnGameStarted(gs)
     self:_ClearAlienFrames()
     self:_ClearShotFrames()
     self:_ClearDropFrames()
+    self:_ClearFx()
+    self._vfxTime = 0
+    self._bgFarU, self._bgFarV = 0, 0
+    self._bgNearU, self._bgNearV = 0, 0
+    self._shipPar = 0
+    self._alienBobPhase = 0
+    self._descentPulse = 0
     self:_BuildAlienFrames(gs)
 
     if self._playerTex then
@@ -747,6 +1030,9 @@ function R:OnWaveAdvanced(gs)
     self:_ClearAlienFrames()
     self:_ClearShotFrames()
     self:_ClearDropFrames()
+    self:_ClearFx()
+    self._alienBobPhase = 0
+    self._descentPulse = 0
     self:_BuildAlienFrames(gs)
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     self:_SetPauseMode("pause")
@@ -782,7 +1068,7 @@ function R:_BuildAlienFrames(gs)
             t:SetVertexColor(1, 1, 1)
             t:SetAlpha(1)
             t:SetSize(sz.w, sz.h)
-            t:SetPoint("TOPLEFT", field, "TOPLEFT", alien.x, -alien.y)
+            self:_PlaceAlienTex(t, field, alien)
             t:Show()
         else
             t:Hide()
@@ -794,11 +1080,38 @@ function R:_BuildAlienFrames(gs)
     end
 end
 
+function R:_PlaceAlienTex(tex, field, alien)
+    local phase = (self._alienBobPhase or 0) + (alien.row or 0)
+    local oy = (phase % 2) * ALIEN_BOB_PX
+    tex:ClearAllPoints()
+    tex:SetPoint("TOPLEFT", field, "TOPLEFT", alien.x, -(alien.y + oy))
+    local p = self._descentPulse or 0
+    if p > 0 then
+        local k = p / DESCENT_PULSE
+        tex:SetVertexColor(1, 1 - 0.42 * k, 1 - 0.62 * k)
+    else
+        tex:SetVertexColor(1, 1, 1)
+    end
+end
+
+function R:OnFormationStep()
+    self._alienBobPhase = 1 - (self._alienBobPhase or 0)
+end
+
+function R:OnFormationDescent()
+    self._descentPulse = DESCENT_PULSE
+end
+
 function R:_ClearAlienFrames()
     for _, t in pairs(self._alienFrames) do if t then t:Hide() end end
 end
 
 function R:OnAlienKilled(alien, gs)
+    if alien then
+        local sz = ALIEN_SIZES[alien.typ] or ALIEN_SIZES[1]
+        local scale = (alien.typ == 3 and 1.28) or (alien.typ == 2 and 0.92) or 1.0
+        self:_SpawnExplosion(alien.x + sz.w * 0.5, alien.y + sz.h * 0.5, scale)
+    end
     for i, a in ipairs(gs.aliens) do
         if a == alien then
             local t = self._alienFrames[i]
@@ -812,6 +1125,20 @@ function R:OnDropSpawned(wtype, x, y, gs) end
 
 function R:OnWeaponCollected(wtype, gs)
     self:UpdateHUD(gs)
+    if not gs or not self._fxPool then return end
+    local cx = gs.playerX + PLAYER_W * 0.5
+    local cy = PLAYER_Y + 10
+    _EmitFx(self._fxPool, {
+        tex = TEX_GLOW, x = cx, y = cy,
+        w0 = 18, w1 = 44, life = 0.26,
+        r = 1.00, g = 0.86, b = 0.25, a = 0.92,
+    })
+    _EmitFx(self._fxPool, {
+        tex = TEX_RING, x = cx, y = cy,
+        w0 = 16, w1 = 50, life = 0.30,
+        r = 1.00, g = 0.90, b = 0.40, a = 0.85,
+        midPeak = true,
+    })
 end
 
 function R:_ClearDropFrames()
@@ -943,21 +1270,101 @@ end
 --  PHYSICS UPDATE
 -- ══════════════════════════════════════════════════════════════
 
-function R:UpdatePhysics(gs)
+function R:UpdatePhysics(gs, dt)
     if not gs or not self._fieldFrame then return end
     local field = self._fieldFrame
     local fw, fh = field:GetWidth(), field:GetHeight()
+    dt = dt or 0
 
-    if self._playerTex then
-        self._playerTex:SetPoint("TOPLEFT", field, "TOPLEFT", gs.playerX, -PLAYER_Y)
+    if dt > 0 then
+        self._vfxTime = (self._vfxTime or 0) + dt
+        self._bgFarU  = (self._bgFarU  or 0) + dt * PARALLAX_FAR_U
+        self._bgFarV  = (self._bgFarV  or 0) + dt * PARALLAX_FAR_V
+        self._bgNearU = (self._bgNearU or 0) + dt * PARALLAX_NEAR_U
+        self._bgNearV = (self._bgNearV or 0) + dt * PARALLAX_NEAR_V
+
+        local fwMove = (fw > PLAYER_W) and (fw - PLAYER_W) or 1
+        local target = ((gs.playerX or 0) / fwMove) * 2 - 1
+        if target < -1 then target = -1 elseif target > 1 then target = 1 end
+        local par = self._shipPar or 0
+        par = par + (target - par) * math.min(1, dt * 2.4)
+        self._shipPar = par
+
+        local function Wrap01(x)
+            return x - math.floor(x)
+        end
+        local function ScrollLayer(tex, u, v, shipAmt, vScale)
+            if not tex or not tex.SetTexCoord then return end
+            u = Wrap01(u + par * shipAmt)
+            v = Wrap01(v)
+            tex:SetTexCoord(u, u + 1, v, v + (vScale or 1))
+        end
+        ScrollLayer(self._fieldBgTex,     self._bgFarU,  self._bgFarV,  PARALLAX_SHIP_FAR)
+        ScrollLayer(self._fieldBgNearTex, self._bgNearU, self._bgNearV, PARALLAX_SHIP_NEAR, 0.92)
+
+        if self._overlayTex and BG_OVERLAY_W > 0 then
+            local t = self._vfxTime
+            self._overlayTex:ClearAllPoints()
+            self._overlayTex:SetPoint("CENTER", self._contentFrame, "CENTER",
+                BG_OVERLAY_X + math.sin(t * 0.11) * OVERLAY_DRIFT_X + par * 5,
+                BG_OVERLAY_Y + math.cos(t * 0.08) * OVERLAY_DRIFT_Y)
+        end
     end
 
+    local boom = (gs.playerBoomT or 0) > 0
+    local invuln = (gs.invulnT or 0) > 0
+    local shipVisible = (not boom) and (not invuln or (math.floor((gs.invulnT or 0) * 10) % 2 == 0))
+
+    local hover = math.sin((self._vfxTime or 0) * HOVER_SPEED) * HOVER_AMP
+    local py = PLAYER_Y + hover
+    if self._playerTex then
+        if shipVisible then
+            self._playerTex:SetPoint("TOPLEFT", field, "TOPLEFT", gs.playerX, -py)
+            self._playerTex:SetAlpha(1)
+            self._playerTex:Show()
+        else
+            self._playerTex:Hide()
+        end
+    end
+    local moving = (not boom) and (gs.keyLeft or gs.keyRight)
+    if self._thrustTex then
+        if moving and shipVisible then
+            local flicker = 0.45 + 0.50 * math.abs(math.sin((self._vfxTime or 0) * 28))
+            self._thrustTex:SetSize(THRUST_W, THRUST_H * (0.85 + 0.25 * flicker))
+            self._thrustTex:SetVertexColor(0.20, 0.75, 1.0, flicker)
+            self._thrustTex:ClearAllPoints()
+            self._thrustTex:SetPoint("CENTER", field, "TOPLEFT",
+                gs.playerX + PLAYER_W * 0.5,
+                -(py + PLAYER_H - 4))
+            self._thrustTex:Show()
+        else
+            self._thrustTex:Hide()
+        end
+    end
+    if (self._muzzleT or 0) > 0 and self._muzzleNodes and shipVisible then
+        local k = self._muzzleT / MUZZLE_LIFE
+        local noseX = gs.playerX + PLAYER_W * 0.5
+        local noseY = py + 2
+        if self._muzzleWeapon == "DOUBLE" then
+            _PlaceMuzzleNode(self._muzzleNodes[1], field, noseX - 12, noseY, k)
+            _PlaceMuzzleNode(self._muzzleNodes[2], field, noseX + 12, noseY, k)
+        else
+            _PlaceMuzzleNode(self._muzzleNodes[1], field, noseX, noseY, k)
+            local n2 = self._muzzleNodes[2]
+            n2.halo:Hide(); n2.core:Hide(); n2.star:Hide()
+        end
+    else
+        self:_HideMuzzle()
+    end
+
+    if dt > 0 and (self._descentPulse or 0) > 0 then
+        self._descentPulse = math.max(0, self._descentPulse - dt)
+    end
     for i, alien in ipairs(gs.aliens) do
         local t = self._alienFrames[i]
         if alien.alive then
             if t then
-                t:ClearAllPoints()
-                t:SetPoint("TOPLEFT", field, "TOPLEFT", alien.x, -alien.y)
+                self:_PlaceAlienTex(t, field, alien)
                 t:Show()
             end
         else
@@ -987,6 +1394,7 @@ function R:UpdatePhysics(gs)
     while #self._alienShotFrames < nA do
         local t = field:CreateTexture(nil, "ARTWORK")
         t:SetTexture(AD_ASSETS.shot_alien)
+        t:SetBlendMode("ADD")
         t:SetSize(ALIEN_SHOT_W, ALIEN_SHOT_H); t:Hide()
         self._alienShotFrames[#self._alienShotFrames+1] = t
     end
@@ -995,7 +1403,7 @@ function R:UpdatePhysics(gs)
         if i <= nA then
             local shot = gs.alienShots[i]
             t:SetTexture(AD_ASSETS.shot_alien)
-            t:SetVertexColor(1, 1, 1)
+            t:SetVertexColor(1.0, 0.42, 0.18)
             t:SetAlpha(1)
             PlaceClipped(t, field, shot.x, shot.y, ALIEN_SHOT_W, ALIEN_SHOT_H, fw, fh)
         else t:Hide() end
@@ -1011,10 +1419,11 @@ function R:UpdatePhysics(gs)
         local t = self._dropFrames[i]
         if i <= nD then
             local drop = gs.weaponDrops[i]
+            local pulse = 1 + 0.16 * math.abs(math.sin((self._vfxTime or 0) * 8))
             t:SetTexture(drop.wtype == "SHIELD" and AD_ASSETS.powerup_shield or AD_ASSETS.powerup_weapon)
-            t:SetVertexColor(1, 1, 1)
-            t:SetAlpha(1)
-            PlaceClipped(t, field, drop.x, drop.y, DROP_W, DROP_H, fw, fh)
+            t:SetVertexColor(1, 0.92 + 0.08 * pulse, 0.55 + 0.45 * pulse)
+            t:SetAlpha(0.72 + 0.28 * pulse)
+            PlaceClipped(t, field, drop.x, drop.y, DROP_W * pulse, DROP_H * pulse, fw, fh)
         else t:Hide() end
     end
 
@@ -1029,7 +1438,10 @@ function R:UpdateHUD(gs)
     if not gs then return end
     local L = ArcadiaNexus.GetLocaleTable("ALIENDEFENSE")
 
-    local waveStr = (L["lbl_wave"] or "Welle") .. ": " .. gs.wave
+    local waveStr = (L["lbl_wave"] or "Welle") .. " " .. gs.wave
+    if gs.waveName and gs.waveName ~= "" then
+        waveStr = waveStr .. " · " .. gs.waveName
+    end
     if gs.endlessMode then
         waveStr = waveStr .. " |cff999999(" .. (L["lbl_endless"] or "Endlos") .. ")|r"
     end

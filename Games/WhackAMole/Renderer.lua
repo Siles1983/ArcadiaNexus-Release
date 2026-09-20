@@ -635,4 +635,6 @@ ArcadiaNexus.RegisterGame({
     engine    = "WAM_Engine",
     container = "_wamContainer",
     category  = "GESCHICK",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\WhackAMole\\assets\\logo\\logo_whackamole",
+    xp        = 8,
 })

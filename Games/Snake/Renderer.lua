@@ -766,4 +766,6 @@ ArcadiaNexus.RegisterGame({
     engine    = "SNK_Engine",
     container = "_snkContainer",
     category  = "ARCADE",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\Snake\\assets\\logo\\logo_snake",
+    xp        = 10,
 })

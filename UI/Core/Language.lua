@@ -48,9 +48,9 @@ ArcadiaNexus.RegisterLocale("UI", "deDE", {
     welcome_title                = "Willkommen in ArcadiaNexus",
     welcome_gotd_header          = "Spiel des Tages",
     welcome_new_games_header     = "Neue Spiele",
-    welcome_new_games_placeholder = "Azeroth Ascent – Jump & Run (Release-Kandidat)\nAzeroth Intelligence – jetzt auch im Mehrspieler-Tab",
+    welcome_new_games_placeholder = "Arcane Barrage – Hex-Shooter (Arcade)\nBackgammon – gegen KI oder im Mehrspieler\nAzeroth Intelligence – Hotseat und 2v2\nDarkmoon Pinball – Dunkelmond-Jahrmarkt",
     welcome_changelog_header     = "Changelog",
-    welcome_changelog_text       = "v1.1.4\n• Neu: Azeroth Ascent (Jump & Run)\n• Neu: Mehrspieler-Tab – mit Freunden spielen\n• Azeroth Intelligence: Host / Teilnehmen in der Gruppe\n• Beitritt offen, per PIN oder Freigabe\n• 4 Spieler Klassik 2v2 oder 2 Spieler Duo",
+    welcome_changelog_text       = "v1.1.5\n• Neu: Arcane Barrage (Hex-Shooter)\n• Neu: Backgammon, Azeroth Intelligence, Darkmoon Pinball\n• Alien Defense, Argus, Pairs und BlockBreaker: Grafik und Sound\n• Azeroth Jewels: Kampagne 51–100, Karte und Endlos\n• Bestenliste: Spiel-Logo als Wasserzeichen",
     -- Leaderboard-UI
     lb_highscores   = "Bestscores",
     lb_wins         = "Siege",
@@ -58,6 +58,8 @@ ArcadiaNexus.RegisterLocale("UI", "deDE", {
     lb_draws        = "Unentschieden",
     lb_played       = "Gespielt",
     lb_best_level       = "Höchstes Level",
+    lb_stars            = "Sterne",
+    lb_endless          = "Endlos-Welle",
     lb_levels_cleared   = "Level gelöst",
     lb_capital          = "Kapital",
     lb_max_capital      = "Höchstes Kapital",
@@ -106,6 +108,12 @@ ArcadiaNexus.RegisterLocale("UI", "deDE", {
     match_join_need_pin = "PIN eingeben, dann Teilnehmen.",
     match_rejoin_wait   = "Verbindung nach Reload…",
     match_reject_rejoin = "Wiedereinstieg fehlgeschlagen — Sitzung nicht mehr da.",
+    match_reject_timeout = "Keine Antwort vom Host. Verbindung prüfen und erneut beitreten.",
+    match_reject_payload = "Sitzung abgebrochen: Spielzustand überschreitet das Nachrichtenlimit.",
+    match_reject_proto = "Unterschiedliche Spielversion — Beitritt abgelehnt. Alle brauchen dasselbe Arcadia-Protokoll.",
+    match_reject_proto_low = "Deine Version ist zu niedrig. Du: Protokoll %s. Nötig: Protokoll %s (Host-Addon %s).",
+    match_reject_proto_high = "Der Host spielt ein älteres Protokoll. Du: Protokoll %s. Host: Protokoll %s (Addon %s).",
+    match_warn_proto = "Diese Sitzung nutzt ein anderes Protokoll (%s). Du: %s. Beitritt ist nicht möglich.",
     match_pick_title    = "Neue Sitzung",
     match_pick_hint     = "Nur Mehrspieler-Titel. Die Lobby bleibt in diesem Tab.",
     match_pick_empty_title = "Spiel wählen",
@@ -181,6 +189,7 @@ ArcadiaNexus.RegisterLocale("UI", "deDE", {
     hubsettings_position        = "Position:",
     hubsettings_reset           = "Zurücksetzen",
     hubsettings_toast_preview   = "Vorschau",
+    hubsettings_toast_show      = "Toast anzeigen",
 
     -- Hub-Einstellungen GOTD
     hubsettings_gotd_section      = "Spiel des Tages",
@@ -210,6 +219,13 @@ ArcadiaNexus.RegisterLocale("UI", "deDE", {
     hubsettings_lock_section   = "Fenster",
     hubsettings_lock_ui        = "Fenster-Position sperren",
     hubsettings_lock_desc      = "Verhindert, dass das Fenster versehentlich verschoben wird.",
+
+    hubsettings_cp_section     = "Gamepad",
+    hubsettings_cp_desc        = "ConsolePort steuert den Hub per Interface-Cursor. In Echtzeit-Spielen übernimmt der Stick das Spiel, der Cursor pausiert.",
+    hubsettings_cp_enable      = "ConsolePort-Cursor im Hub",
+    hubsettings_cp_missing     = "ConsolePort ist nicht geladen. Addon installieren und /reload, dann den Schalter nutzen.",
+    hubsettings_cp_active      = "Aktiv. Kreis/B beendet das Spiel. Options pausiert. Im Ergebnis: Kreuz bestätigt, Kreis beendet.",
+    hubsettings_cp_off         = "Aus. Maus und Tastatur bleiben unverändert.",
 
     -- Hub Settings Stats Reset
     hubsettings_stats_section        = "Statistiken zurücksetzen",
@@ -340,9 +356,9 @@ ArcadiaNexus.RegisterLocale("UI", "enUS", {
     welcome_title                = "Welcome to ArcadiaNexus",
     welcome_gotd_header          = "Game of the Day",
     welcome_new_games_header     = "New Games",
-    welcome_new_games_placeholder = "Azeroth Ascent – Jump & Run (release candidate)\nAzeroth Intelligence – now on the Multiplayer tab",
+    welcome_new_games_placeholder = "Arcane Barrage – hex shooter (Arcade)\nBackgammon – vs AI or multiplayer\nAzeroth Intelligence – hotseat and 2v2\nDarkmoon Pinball – Darkmoon Faire",
     welcome_changelog_header     = "Changelog",
-    welcome_changelog_text       = "v1.1.4\n• New: Azeroth Ascent (Jump & Run)\n• New: Multiplayer tab – play with friends\n• Azeroth Intelligence: host / join in your group\n• Join open, with a PIN, or by allow list\n• 4-player classic 2v2 or 2-player duo",
+    welcome_changelog_text       = "v1.1.5\n• New: Arcane Barrage (hex shooter)\n• New: Backgammon, Azeroth Intelligence, Darkmoon Pinball\n• Alien Defense, Argus, Pairs, and BlockBreaker: look and sound\n• Azeroth Jewels: campaign 51–100, map, and Endless\n• Leaderboard: game logo as watermark",
 
     -- Leaderboard-UI
     lb_highscores   = "Best Scores",
@@ -351,6 +367,8 @@ ArcadiaNexus.RegisterLocale("UI", "enUS", {
     lb_draws        = "Draws",
     lb_played       = "Played",
     lb_best_level       = "Highest level",
+    lb_stars            = "Stars",
+    lb_endless          = "Endless wave",
     lb_levels_cleared   = "Levels cleared",
     lb_capital          = "Capital",
     lb_max_capital      = "Highest capital",
@@ -399,6 +417,12 @@ ArcadiaNexus.RegisterLocale("UI", "enUS", {
     match_join_need_pin = "Enter the PIN, then Join.",
     match_rejoin_wait   = "Rejoining after reload…",
     match_reject_rejoin = "Rejoin failed — the session is gone.",
+    match_reject_timeout = "No response from the host. Check your connection and join again.",
+    match_reject_payload = "Session aborted: game state exceeds the message size limit.",
+    match_reject_proto = "Different game version — join rejected. Everyone needs the same Arcadia protocol.",
+    match_reject_proto_low = "Your version is too old. You: protocol %s. Required: protocol %s (host addon %s).",
+    match_reject_proto_high = "The host is on an older protocol. You: protocol %s. Host: protocol %s (addon %s).",
+    match_warn_proto = "This session uses a different protocol (%s). Yours: %s. Join is not possible.",
     match_pick_title    = "New session",
     match_pick_hint     = "Multiplayer titles only. The lobby stays on this tab.",
     match_pick_empty_title = "Pick a game",
@@ -474,6 +498,7 @@ ArcadiaNexus.RegisterLocale("UI", "enUS", {
     hubsettings_position        = "Position:",
     hubsettings_reset           = "Reset",
     hubsettings_toast_preview   = "Preview",
+    hubsettings_toast_show      = "Show toast",
 
     -- Hub Settings GOTD
     hubsettings_gotd_section      = "Game of the Day",
@@ -503,6 +528,13 @@ ArcadiaNexus.RegisterLocale("UI", "enUS", {
     hubsettings_lock_section   = "Window",
     hubsettings_lock_ui        = "Lock window position",
     hubsettings_lock_desc      = "Prevents the window from being accidentally moved.",
+
+    hubsettings_cp_section     = "Gamepad",
+    hubsettings_cp_desc        = "ConsolePort drives the hub with the interface cursor. In realtime games the stick takes over and the cursor pauses.",
+    hubsettings_cp_enable      = "ConsolePort cursor in the hub",
+    hubsettings_cp_missing     = "ConsolePort is not loaded. Install the addon and /reload, then use this switch.",
+    hubsettings_cp_active      = "On. Circle/B exits the game. Options pauses. On results: Cross confirms, Circle exits.",
+    hubsettings_cp_off         = "Off. Mouse and keyboard stay unchanged.",
 
     -- Hub Settings Stats Reset
     hubsettings_stats_section        = "Reset Statistics",

@@ -121,14 +121,13 @@ local function BuildSidebarPanel(parent, cfg)
     local prefix = cfg.groupStatePrefix or ""
 
     local function GetGroupOpen(id)
-        local db = ArcadiaNexusDB and ArcadiaNexusDB.categoryGroupState
-        if db and db[prefix .. id] ~= nil then return db[prefix .. id] end
+        local CS = ArcadiaNexus.ClientSettingsStore
+        if CS then return CS.GetGroupOpen(prefix .. id, true) end
         return true
     end
     local function SetGroupOpen(id, val)
-        if ArcadiaNexusDB and ArcadiaNexusDB.categoryGroupState then
-            ArcadiaNexusDB.categoryGroupState[prefix .. id] = val
-        end
+        local CS = ArcadiaNexus.ClientSettingsStore
+        if CS then CS.SetGroupOpen(prefix .. id, val) end
     end
 
     local function RelayoutAll()

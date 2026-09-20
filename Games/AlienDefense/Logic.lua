@@ -70,7 +70,10 @@ Logic.SHOT_SPD     = 320  -- px/s (Spieler-Schuss nach oben)
 
 Logic.ALIEN_SHOT_W = 11
 Logic.ALIEN_SHOT_H = 23
-Logic.ALIEN_SHOT_SPD = 160  -- px/s (nach unten)
+Logic.ALIEN_SHOT_SPD = 230  -- px/s (nach unten)
+Logic.DUAL_FIRE_WAVE = 8    -- ab dieser Welle zwei Schützen pro Salve
+Logic.PLAYER_BOOM_T  = 0.40 -- Schiff unsichtbar, kein Feuer
+Logic.PLAYER_INVULN_T = 1.20
 
 Logic.DROP_W       = 10
 Logic.DROP_H       = 10
@@ -93,9 +96,9 @@ Logic.WEAPON_FIRE_RATES = {
 
 -- ── Schwierigkeits-Definitionen ────────────────────────────────
 Logic.DIFFICULTY_DEFS = {
-    easy   = { playerSpd=200, stepRate=1.00, alienFireRate=3.0, lives=5, scoreFac=1.00, accelPerWave=0.00 },
-    normal = { playerSpd=180, stepRate=0.65, alienFireRate=1.8, lives=3, scoreFac=1.25, accelPerWave=0.10 },
-    hard   = { playerSpd=160, stepRate=0.40, alienFireRate=0.9, lives=1, scoreFac=2.00, accelPerWave=0.15 },
+    easy   = { playerSpd=200, stepRate=1.00, alienFireRate=1.2, lives=5, scoreFac=1.00, accelPerWave=0.03 },
+    normal = { playerSpd=180, stepRate=0.65, alienFireRate=0.7, lives=3, scoreFac=1.25, accelPerWave=0.10 },
+    hard   = { playerSpd=160, stepRate=0.40, alienFireRate=0.4, lives=1, scoreFac=2.00, accelPerWave=0.15 },
 }
 
 -- ── NewState ──────────────────────────────────────────────────
@@ -124,6 +127,9 @@ function Logic:NewState(diff, savedProgress, startEndless)
         keyRight         = false,
         keyFire          = false,
         fireCooldown     = 0,
+        playerBoomT      = 0,
+        invulnT          = 0,
+        pendingGameOver  = nil,
 
         -- Waffen
         activeWeapon     = "SINGLE",
@@ -216,6 +222,7 @@ function Logic:ParseWave(s)
     end
 
     s.totalAliens  = #s.aliens
+    s.waveName     = entry.name
     s.playerShots  = {}
     s.alienShots   = {}
     s.weaponDrops  = {}
@@ -238,6 +245,19 @@ function Logic:Tick(s, dt)
     if s.gameOver then return actions end
 
     s.elapsedSecs = s.elapsedSecs + dt
+
+    if (s.playerBoomT or 0) > 0 then
+        s.playerBoomT = math.max(0, s.playerBoomT - dt)
+    end
+    if (s.invulnT or 0) > 0 then
+        s.invulnT = math.max(0, s.invulnT - dt)
+    end
+    if s.pendingGameOver and (s.playerBoomT or 0) <= 0 then
+        s.gameOver = true
+        s.pendingGameOver = nil
+        actions[#actions + 1] = { type = "game_over", reason = "lives" }
+        return actions
+    end
 
     -- 1. Spieler-Bewegung
     self:_MovePlayer(s, dt)
@@ -282,6 +302,7 @@ end
 
 -- ── Spieler-Bewegung ──────────────────────────────────────────
 function Logic:_MovePlayer(s, dt)
+    if (s.playerBoomT or 0) > 0 then return end
     if s.keyLeft  then s.playerX = s.playerX - s.playerSpd * dt end
     if s.keyRight then s.playerX = s.playerX + s.playerSpd * dt end
     s.playerX = math.max(0, math.min(self.FIELD_W - self.PLAYER_W, s.playerX))
@@ -290,6 +311,7 @@ end
 -- ── Feuer ─────────────────────────────────────────────────────
 function Logic:_HandleFire(s, dt, actions)
     s.fireCooldown = s.fireCooldown - dt
+    if (s.playerBoomT or 0) > 0 then return end
     if s.keyFire and s.fireCooldown <= 0 then
         s.fireCooldown = self.WEAPON_FIRE_RATES[s.activeWeapon] or 0.25
         self:_SpawnPlayerShots(s, actions)
@@ -495,15 +517,18 @@ function Logic:_AlienFire(s, actions)
 
     if #candidates == 0 then return end
 
-    -- Zufälligen Schützen wählen
-    local shooter = candidates[math.random(#candidates)]
-    local sx = shooter.x + self.ALIEN_W / 2 - self.ALIEN_SHOT_W / 2
-    local sy = shooter.y + self.ALIEN_H
-
-    s.alienShots[#s.alienShots + 1] = {
-        x = sx, y = sy,
-    }
-    actions[#actions + 1] = { type = "alien_shoot", x = sx, y = sy }
+    local nFire = 1
+    if (s.wave or 1) >= self.DUAL_FIRE_WAVE and #candidates >= 2 then
+        nFire = 2
+    end
+    for _ = 1, nFire do
+        local idx = math.random(#candidates)
+        local shooter = table.remove(candidates, idx)
+        local sx = shooter.x + self.ALIEN_W / 2 - self.ALIEN_SHOT_W / 2
+        local sy = shooter.y + self.ALIEN_H
+        s.alienShots[#s.alienShots + 1] = { x = sx, y = sy }
+        actions[#actions + 1] = { type = "alien_shoot", x = sx, y = sy }
+    end
 end
 
 -- ── Alien-Schüsse bewegen + Kollision ─────────────────────────
@@ -523,14 +548,18 @@ function Logic:_MoveAlienShots(s, dt, actions)
                 shot.x, shot.y, self.ALIEN_SHOT_W, self.ALIEN_SHOT_H,
                 px, py, self.PLAYER_HITBOXES)
             then
-                s.lives = s.lives - 1
-                s.perfectWave = false
-                toRemove[#toRemove + 1] = i
-                if s.lives <= 0 then
-                    s.gameOver = true
-                    actions[#actions + 1] = { type = "game_over", reason = "lives" }
+                if (s.invulnT or 0) > 0 or (s.playerBoomT or 0) > 0 then
+                    toRemove[#toRemove + 1] = i
                 else
+                    s.lives = s.lives - 1
+                    s.perfectWave = false
+                    s.playerBoomT = self.PLAYER_BOOM_T
+                    s.invulnT = self.PLAYER_INVULN_T
+                    toRemove[#toRemove + 1] = i
                     actions[#actions + 1] = { type = "player_hit", livesLeft = s.lives }
+                    if s.lives <= 0 then
+                        s.pendingGameOver = "lives"
+                    end
                 end
             end
         end
@@ -558,14 +587,16 @@ function Logic:_MoveDrops(s, dt, actions)
                 drop.x, drop.y, self.DROP_W, self.DROP_H,
                 px, py, self.PLAYER_HITBOXES)
             then
-                s.activeWeapon         = drop.wtype
-                s._lastCollectedWeapon = drop.wtype
-                s.weaponTimer          = self.DROP_DURATION
-                toRemove[#toRemove + 1] = i
-                actions[#actions + 1] = {
-                    type  = "weapon_collected",
-                    wtype = drop.wtype,
-                }
+                if (s.playerBoomT or 0) <= 0 then
+                    s.activeWeapon         = drop.wtype
+                    s._lastCollectedWeapon = drop.wtype
+                    s.weaponTimer          = self.DROP_DURATION
+                    toRemove[#toRemove + 1] = i
+                    actions[#actions + 1] = {
+                        type  = "weapon_collected",
+                        wtype = drop.wtype,
+                    }
+                end
             end
         end
     end
@@ -590,6 +621,7 @@ function Logic:_CheckConditions(s, actions)
     end
 
     -- Alle Aliens besiegt → Welle gewonnen
+    if s.pendingGameOver or (s.playerBoomT or 0) > 0 then return end
     local aliveCount = 0
     for _, alien in ipairs(s.aliens) do
         if alien.alive then aliveCount = aliveCount + 1 end

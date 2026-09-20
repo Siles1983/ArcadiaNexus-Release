@@ -25,6 +25,7 @@ S.Defaults = {
     soundOnWin          = true,    -- WoW-Fallback
     soundOnLose         = true,    -- WoW-Fallback
     screenFlash         = true,
+    shipParallax        = true,    -- Sterne folgen leicht der Schiffposition
 }
 
 local DB_KEY = "ARGUSORBDEFENSE"

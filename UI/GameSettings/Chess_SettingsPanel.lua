@@ -80,7 +80,7 @@ local function BuildChessSettingsPanel(parent)
         guide = {
             sections = {
                 GS.GuideSection(nil, L, {
-                    "guide_1", "guide_2", "guide_3", "guide_4",
+                    "guide_1", "guide_2", "guide_3", "guide_4", "guide_5",
                 }),
                 GS.GuideSection(L.box_ki, L, {
                     "info_classic_title", "info_classic_text", "info_classic_text2",

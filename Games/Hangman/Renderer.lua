@@ -788,4 +788,6 @@ ArcadiaNexus.RegisterGame({
     engine    = "HGM_Engine",
     container = "_hangmanContainer",
     category  = "WORT",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\Hangman\\assets\\logo\\logo_hgm",
+    xp        = 10,
 })

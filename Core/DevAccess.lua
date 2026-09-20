@@ -1,25 +1,6 @@
--- ============================================================
---  ArcadiaNexus – Core/DevAccess.lua
---  Wer darf den Developer-Modus nutzen?
---
---  Client-Addons können kein echtes Geheimnis schützen: Alles in Lua
---  und SavedVariables ist les- und änderbar. Ein Passwort im Code ist
---  daher nur eine Hürde, keine Sicherheit.
---
---  Praktisch: Charakter-Allowlist. Andere Spieler sehen den Tab nicht,
---  und ArcadiaNexus.IsDevMode() bleibt aus — auch wenn jemand
---  ArcadiaNexusDB.dev.devMode in den SavedVariables auf true setzt.
---
---  1) /andevwho  →  gibt "Name-Realm" aus
---  2) Eintrag unten in ALLOW_CHARS
---  3) /reload
--- ============================================================
-
 local ArcadiaNexus = _G.ArcadiaNexus
 
--- Keys wie /andevwho sie ausgibt, kleingeschrieben.
--- Beispiel: ["siles-stormrage"] = true,
-local ALLOW_CHARS = {["aleria-aleria"] = true,
+local ALLOW_CHARS = {["none-none"] = true,
 }
 
 local function NormalizeKey(name, realm)
@@ -48,12 +29,10 @@ local function IsAllowlisted()
     return key ~= nil and ALLOW_CHARS[key] == true
 end
 
---- Darf diesen Charakter den Dev-Tab sehen / DevMode schalten?
 function ArcadiaNexus.CanAccessDevMode()
     return IsAllowlisted()
 end
 
---- Allowlist ist gesetzt — fremde Charaktere sind ausgesperrt.
 function ArcadiaNexus.DevAccessLocked()
     return AllowlistActive()
 end

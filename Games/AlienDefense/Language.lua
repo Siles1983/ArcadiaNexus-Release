@@ -58,6 +58,7 @@ ArcadiaNexus.RegisterLocale("ALIENDEFENSE", "deDE", {
 
     -- Sound-Labels
     sound_shoot         = "Schuss",
+    sound_alienshoot    = "Alien-Schuss",
     sound_aliendeath    = "Alien besiegt",
     sound_playerhit     = "Spieler getroffen",
     sound_weapondrop    = "Waffen-Drop",
@@ -145,6 +146,7 @@ ArcadiaNexus.RegisterLocale("ALIENDEFENSE", "enUS", {
 
     -- Sound-Labels
     sound_shoot         = "Shot Fired",
+    sound_alienshoot    = "Alien Shot",
     sound_aliendeath    = "Alien Killed",
     sound_playerhit     = "Player Hit",
     sound_weapondrop    = "Weapon Drop",

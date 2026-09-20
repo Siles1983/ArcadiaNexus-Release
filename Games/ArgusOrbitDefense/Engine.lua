@@ -23,10 +23,11 @@ E.state     = "IDLE"
 E.gameState = nil
 
 local _gameLoop = ArcadiaNexus.GameLoop.Create("ArcadiaNexus_AOD_LoopFrame")
+local _soundGuard = ArcadiaNexus.TimerGuard.New()
 
 E._wasThrusting      = false
 E._hunterWasThrusting = {}
-E._engineTicker      = nil   -- Ticker für Engine-Sound-Loop
+E._engineSoundOn     = false
 
 -- ── Sound-Pfade (Custom WAV) ───────────────────────────────────
 local SND_PATH      = "Interface\\AddOns\\ArcadiaNexus\\Games\\ArgusOrbitDefense\\Assets\\sounds\\"
@@ -80,7 +81,8 @@ function E:_StartLoop()
 end
 
 function E:_StopLoop()
-    if E._engineTicker then E._engineTicker:Cancel(); E._engineTicker = nil end
+    _soundGuard:Cancel()
+    E._engineSoundOn = false
     _gameLoop:Stop()
 end
 
@@ -106,21 +108,23 @@ function E:_Tick(dt)
         end
     end
     if anyThrusting then
-        if not E._engineTicker then
-            -- Sofort einmal spielen, dann alle 0.5s wiederholen
+        if not E._engineSoundOn then
+            -- Sofort einmal spielen, dann alle 0.1s wiederholen
             PlayAODSound("soundOnEngine", SND_ENGINE)
-            E._engineTicker = C_Timer.NewTicker(0.1, function()
+            E._engineSoundOn = true
+            _soundGuard:EveryTicker(0.1, function()
                 if E.state ~= "PLAYING" then
-                    if E._engineTicker then E._engineTicker:Cancel(); E._engineTicker = nil end
+                    _soundGuard:Cancel()
+                    E._engineSoundOn = false
                     return
                 end
                 PlayAODSound("soundOnEngine", SND_ENGINE)
             end)
         end
     else
-        if E._engineTicker then
-            E._engineTicker:Cancel()
-            E._engineTicker = nil
+        if E._engineSoundOn then
+            _soundGuard:Cancel()
+            E._engineSoundOn = false
         end
     end
 
@@ -136,6 +140,7 @@ function E:_Tick(dt)
     for _, act in ipairs(actions) do
         if act.type == "shoot" then
             PlayAODSound("soundOnShoot", SND_SHOOT)
+            Renderer:OnShoot(gs)
 
         elseif act.type == "meteor_destroyed" then
             PlayAODSound("soundOnExplode", SND_DESTROY)
@@ -193,6 +198,9 @@ function E:_Tick(dt)
         elseif act.type == "stat_hunter" then
             local Settings = ArcadiaNexus.AOD_Settings
             if Settings then Settings:IncrementStat("totalHunters") end
+
+        elseif act.type == "wave_started" then
+            Renderer:ShowWaveBanner(self.gameState)
 
         elseif act.type == "wave_clear" then
             -- Endless: Loop läuft weiter, Logic steuert den Wave-Wechsel selbst
@@ -307,7 +315,7 @@ function E:StopGame()
     E.state               = "IDLE"
     E._wasThrusting       = false
     E._hunterWasThrusting = {}
-    if E._engineTicker then E._engineTicker:Cancel(); E._engineTicker = nil end
+    E._engineSoundOn      = false
     self.gameState = nil
     local R = ArcadiaNexus.AOD_Renderer
     if R then R:EnterIdleState() end

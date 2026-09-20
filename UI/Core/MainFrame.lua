@@ -30,8 +30,8 @@ local function BuildMainFrame()
         tileEdge = true,
     })
     -- Position aus DB wiederherstellen, sonst Standard-Center
-    -- ArcadiaNexusDB ist zu diesem Zeitpunkt (PLAYER_ENTERING_WORLD) bereits geladen
-    local pos = ArcadiaNexusDB and ArcadiaNexusDB.windowPos
+    local CS = ArcadiaNexus.ClientSettingsStore
+    local pos = CS and CS.GetWindowPos()
     if pos and pos.x and pos.y then
         f:SetPoint(pos.point or "CENTER", UIParent, pos.relPoint or "CENTER", pos.x, pos.y)
     else
@@ -41,11 +41,11 @@ local function BuildMainFrame()
     f:SetFrameLevel(MAIN_FRAME_LEVEL)
     f:SetMovable(true)
     -- Drag-Lock aus DB laden
-    if ArcadiaNexusDB and ArcadiaNexusDB.settings and ArcadiaNexusDB.settings.lockUI then
+    if CS and CS.GetFlag("lockUI", false) then
         f:SetMovable(false)
     end
     -- UI-Scale aus DB laden
-    local initScale = ArcadiaNexusDB and ArcadiaNexusDB.settings and ArcadiaNexusDB.settings.uiScale
+    local initScale = CS and CS.GetNumber("uiScale", 1.0)
     if initScale and initScale ~= 1.0 then
         f:SetScale(initScale)
     end
@@ -55,10 +55,10 @@ local function BuildMainFrame()
     f:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
         -- Position in DB speichern
-        local db = ArcadiaNexusDB
-        if db then
+        local CS = ArcadiaNexus.ClientSettingsStore
+        if CS then
             local point, _, relPoint, x, y = self:GetPoint(1)
-            db.windowPos = { point = point, relPoint = relPoint, x = x, y = y }
+            CS.SetWindowPos({ point = point, relPoint = relPoint, x = x, y = y })
         end
     end)
 
@@ -152,6 +152,10 @@ local function BuildMainFrame()
     -- Beim Öffnen über andere Addon-Frames in derselben Strata-Ebene
     f:SetScript("OnShow", function(self)
         self:Raise()
+        local Bridge = ArcadiaNexus.ConsolePortBridge
+        if Bridge and Bridge.OnHubShown then
+            pcall(Bridge.OnHubShown, Bridge, self)
+        end
     end)
 
     -- Beim Schließen des UI: alle laufenden Spiele stoppen
@@ -259,6 +263,11 @@ local function Init()
                 .. " Spiel-Renderer konnten nicht initialisiert werden; der Hub bleibt verfügbar.")
         end
     end
+
+    local Bridge = ArcadiaNexus.ConsolePortBridge
+    if Bridge and Bridge.Sync then
+        pcall(Bridge.Sync, Bridge)
+    end
 end
 
 local initF = CreateFrame("Frame", "NexusUIInitFrame")
@@ -285,15 +294,15 @@ local function ApplyScale(scale)
     if main then main:SetScale(scale) end
 
     -- DB speichern
-    if not ArcadiaNexusDB.settings then ArcadiaNexusDB.settings = {} end
-    ArcadiaNexusDB.settings.uiScale = scale
+    local CS = ArcadiaNexus.ClientSettingsStore
+    if CS then CS.SetNumber("uiScale", scale) end
 
     -- Toast-Anker neu positionieren (UIParent-verankert, skaliert nicht mit)
     local TM = ArcadiaNexus.ToastManager
     if TM and TM.UpdateAnchor then pcall(function() TM:UpdateAnchor() end) end
 
     -- GOTD-Badge neu positionieren
-    local db    = ArcadiaNexusDB.gotdAnchor
+    local db    = CS and CS.GetAnchor("gotdAnchor")
     local badge = _G["NexusGotdBadge"]
     if badge and db then
         badge:ClearAllPoints()

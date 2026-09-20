@@ -21,6 +21,8 @@ E.state     = "IDLE"
 E.gameState = nil
 
 local _gameLoop = ArcadiaNexus.GameLoop.Create("ArcadiaNexus_BB_LoopFrame")
+local _timerGuard = ArcadiaNexus.TimerGuard.New()
+E._timerGuard = _timerGuard
 
 -- ── Highscore (ScoreManager) ──────────────────────────────────
 local function GetHighScore(difficulty)
@@ -37,6 +39,7 @@ function E:_StartLoop()
 end
 
 function E:_StopLoop()
+    _timerGuard:Cancel()
     _gameLoop:Stop()
 end
 
@@ -87,11 +90,13 @@ function E:_Tick(dt)
     for _, act in ipairs(actions) do
         if act.type == "bounce_wall" then
             PlayBBFile(Settings, "soundOnBounce", SND_PADDLE)
+            if Renderer.OnWallHit then Renderer:OnWallHit(act.side, gs) end
         elseif act.type == "bounce_paddle" then
             PlayBBFile(Settings, "soundOnBounce", SND_PADDLE)
+            if Renderer.OnPaddleHit then Renderer:OnPaddleHit(gs) end
         elseif act.type == "break_block" then
             PlayBBFile(Settings, "soundOnBreak", SND_BLOCK_HIT)
-            Renderer:OnBlockBroken(act.row, act.col, act.blockType, gs)
+            Renderer:OnBlockBroken(act.row, act.col, act.blockType, gs, act.points)
         elseif act.type == "damage_block" then
             -- Gepanzerter/unzerstörbarer Block getroffen
             PlayBBFile(Settings, "soundOnBreak", SND_WALL_HIT)
@@ -117,12 +122,13 @@ function E:_Tick(dt)
                 E.state = "PAUSED"
                 self:_StopLoop()
                 local respawnSession = E._sessionId
-                C_Timer.After(1.0, function()
+                _timerGuard:After(1.0, function()
                     if not ArcadiaNexus.GameSession:IsSession(E, respawnSession) then return end
                     if E.state == "PAUSED" and E.gameState == gs then
                         Logic:ResetBall(gs)
                         E.state = "PLAYING"
                         E:_StartLoop()
+                        Renderer:UpdatePhysics(gs)
                         Renderer:UpdateHUD(gs)
                     end
                 end)
@@ -135,13 +141,13 @@ function E:_Tick(dt)
     end
 
     -- Renderer immer aktualisieren (auch vor Win/GameOver-Overlay)
-    Renderer:UpdatePhysics(gs)
+    Renderer:UpdatePhysics(gs, dt)
     Renderer:UpdateHUD(gs)
 
     if doGameOver then
         self:_HandleGameOver(false)
     elseif doLevelWin then
-        self:_HandleLevelWin()
+        self:_BeginLevelClear()
     end
 end
 
@@ -152,13 +158,37 @@ function E:HandleKey(key)
     elseif key == "LEFT_UP"   then if gs then gs.keyLeft  = false end
     elseif key == "RIGHT_DOWN" then if gs then gs.keyRight = true  end
     elseif key == "RIGHT_UP"  then if gs then gs.keyRight = false end
+    elseif key == "LAUNCH" then
+        if E.state ~= "PLAYING" or not gs then return end
+        local Logic = ArcadiaNexus.BB_Logic
+        local Renderer = ArcadiaNexus.BB_Renderer
+        if Logic and Logic.LaunchBall and Logic:LaunchBall(gs) then
+            if Renderer and Renderer.OnBallLaunched then Renderer:OnBallLaunched(gs) end
+        end
     elseif key == "PAUSE" then
         if E.state == "PLAYING" then
             self:Pause()
         elseif E.state == "PAUSED" then
             self:Resume()
         end
+    elseif key == "DEBUG" then
+        if not (ArcadiaNexus.IsDevMode and ArcadiaNexus.IsDevMode()) then return end
+        local S = ArcadiaNexus.BB_Settings
+        if S then S:Set("debugOverlay", not S:Get("debugOverlay")) end
+        local Renderer = ArcadiaNexus.BB_Renderer
+        if Renderer and Renderer.RefreshDevOverlay then Renderer:RefreshDevOverlay() end
     end
+end
+
+function E:DevDropPowerUp(puType)
+    if not (ArcadiaNexus.IsDevMode and ArcadiaNexus.IsDevMode()) then return end
+    if E.state ~= "PLAYING" and E.state ~= "PAUSED" then return end
+    local gs = self.gameState
+    local Logic = ArcadiaNexus.BB_Logic
+    if not gs or not Logic or not Logic.DevDropPowerUp then return end
+    if not Logic:DevDropPowerUp(gs, puType) then return end
+    local Renderer = ArcadiaNexus.BB_Renderer
+    if Renderer and Renderer.UpdatePhysics then Renderer:UpdatePhysics(gs) end
 end
 
 -- ── StartGame ──────────────────────────────────────────────────
@@ -271,6 +301,19 @@ function E:SaveAndPause()
 end
 
 -- ── Level-Win ─────────────────────────────────────────────────
+function E:_BeginLevelClear()
+    local gs = self.gameState
+    local Renderer = ArcadiaNexus.BB_Renderer
+    if not gs then return end
+    if Renderer and Renderer.OnLevelClear then Renderer:OnLevelClear(gs) end
+    local clearSession = E._sessionId
+    _timerGuard:After(0.45, function()
+        if not ArcadiaNexus.GameSession:IsSession(E, clearSession) then return end
+        if E.gameState ~= gs then return end
+        self:_HandleLevelWin()
+    end)
+end
+
 function E:_HandleLevelWin()
     self:_StopLoop()
     E.state = "PAUSED"

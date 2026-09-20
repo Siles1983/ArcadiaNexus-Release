@@ -64,6 +64,7 @@ function L:NewState(levelNum, levelDef, difficulty)
                       and math.floor(levelDef.goalScore * mod.goalMult + 0.5) or nil,
         goalCollect = goalCollect,
         movesLeft   = math.max(5, levelDef.moves + mod.moves),
+        movesStart  = math.max(5, levelDef.moves + mod.moves),
         timeLimit   = levelDef.timeLimit,
         timeLeft    = levelDef.timeLimit,
         timerActive = false,   -- Engine setzt das aus Settings
@@ -77,6 +78,9 @@ function L:NewState(levelNum, levelDef, difficulty)
         won         = false,
         timedOut    = false,
         stats       = { iceDestroyed = 0, powerUpsUsed = 0 },
+        endless     = false,
+        endlessWave = nil,
+        endlessRunScore = 0,
     }
 
     for r = 1, state.rows do
@@ -356,7 +360,6 @@ end
 --   { [col] = { { fromRow, toRow, gemType, isNew }, … } }
 function L:ApplyGravity(state)
     local fallInfo = {}
-    local n = state.gemCount
 
     for c = 1, state.cols do
         fallInfo[c] = {}
@@ -383,7 +386,7 @@ function L:ApplyGravity(state)
         -- Neue Gems oben einfüllen (gestaffelt über dem Board spawnen)
         for i = 1, newCount do
             local targetRow = freeRows[i]
-            local gemType   = math.random(1, n)
+            local gemType   = self:PickSpawnGem(state)
             state.board[targetRow][c] = gemType
             fallInfo[c][#fallInfo[c]+1] = {
                 toRow   = targetRow,
@@ -409,6 +412,53 @@ function L:ApplyGravity(state)
     end
 
     return fallInfo
+end
+
+function L:CountGemOnBoard(state, gemType)
+    local n = 0
+    for r = 1, state.rows do
+        for c = 1, state.cols do
+            if state.board[r][c] == gemType then n = n + 1 end
+        end
+    end
+    return n
+end
+
+-- COLLECT-Pity: hinterherhinkende Zielfarben etwas häufiger nachfüllen.
+-- SCORE und erfüllte Ziele bleiben uniform.
+function L:PickSpawnGem(state)
+    local n = math.max(1, state.gemCount or 1)
+    if state.goalType ~= "COLLECT" then
+        return math.random(1, n)
+    end
+    local weights = {}
+    local total = 0
+    for i = 1, n do
+        weights[i] = 1
+    end
+    for _, g in ipairs(state.goalCollect or {}) do
+        local gt = g.gemType
+        if gt and gt >= 1 and gt <= n then
+            local have = state.collected[gt] or 0
+            local need = (g.amount or 0) - have
+            if need > 0 then
+                local lag = need - self:CountGemOnBoard(state, gt)
+                if lag > 0 then
+                    weights[gt] = 1 + math.min(3, lag)
+                end
+            end
+        end
+    end
+    for i = 1, n do
+        total = total + weights[i]
+    end
+    local roll = math.random() * total
+    local acc = 0
+    for i = 1, n do
+        acc = acc + weights[i]
+        if roll <= acc then return i end
+    end
+    return n
 end
 
 -- ============================================================
@@ -443,27 +493,140 @@ function L:TrySwap(state, r1, c1, r2, c2)
 end
 
 -- ============================================================
--- Mögliche Züge / Shuffle
+-- Mögliche Züge / Shuffle / Solver
 -- ============================================================
-function L:HasPossibleMoves(state)
+-- Bester gültiger Swap: COLLECT-Zielfarben vor Länge, sonst längster Match.
+-- Rückgabe: { r1,c1,r2,c2, matches, matchCells, count } oder nil.
+function L:FindHintMove(state)
+    local collectWant = {}
+    if state.goalType == "COLLECT" then
+        for _, g in ipairs(state.goalCollect or {}) do
+            if (state.collected[g.gemType] or 0) < g.amount then
+                collectWant[g.gemType] = true
+            end
+        end
+    end
+
+    local best, bestScore = nil, -1
     for r = 1, state.rows do
         for c = 1, state.cols do
             if self:IsSwappable(state, r, c) then
-                for _, d in ipairs({ {0,1}, {1,0} }) do
+                for _, d in ipairs({ {0, 1}, {1, 0} }) do
                     local rr, cc = r + d[1], c + d[2]
                     if rr <= state.rows and cc <= state.cols
                        and self:IsSwappable(state, rr, cc) then
                         local board = state.board
                         board[r][c], board[rr][cc] = board[rr][cc], board[r][c]
-                        local matches = self:FindMatches(state)
+                        local matches, info = self:FindMatches(state)
                         board[r][c], board[rr][cc] = board[rr][cc], board[r][c]
-                        if next(matches) then return true end
+                        if next(matches) then
+                            local collectHits = 0
+                            local matchCells = {}
+                            for key, color in pairs(matches) do
+                                local mr, mc = key:match("(%d+),(%d+)")
+                                matchCells[#matchCells + 1] = { tonumber(mr), tonumber(mc) }
+                                if color and collectWant[color] then
+                                    collectHits = collectHits + 1
+                                end
+                            end
+                            local score = collectHits * 100 + (info and info.count or 0)
+                            if score > bestScore then
+                                bestScore = score
+                                best = {
+                                    r1 = r, c1 = c, r2 = rr, c2 = cc,
+                                    matches = matches,
+                                    matchCells = matchCells,
+                                    count = info and info.count or 0,
+                                }
+                            end
+                        end
                     end
                 end
             end
         end
     end
-    return false
+    return best
+end
+
+function L:HasPossibleMoves(state)
+    return self:FindHintMove(state) ~= nil
+end
+
+-- Eis-Zellen, die an ein Match angrenzen (vor RemoveMatches, für FX).
+function L:CollectAdjacentIce(state, removedCells)
+    local keys = {}
+    for key in pairs(removedCells or {}) do
+        local r, c = key:match("(%d+),(%d+)")
+        r, c = tonumber(r), tonumber(c)
+        for _, d in ipairs({ {-1, 0}, {1, 0}, {0, -1}, {0, 1} }) do
+            local rr, cc = r + d[1], c + d[2]
+            if rr >= 1 and rr <= state.rows and cc >= 1 and cc <= state.cols
+               and self:IsFrozen(state, rr, cc) then
+                keys[rr .. "," .. cc] = true
+            end
+        end
+    end
+    return keys
+end
+
+function L:ResolveUntilStable(state)
+    local matches, info = self:FindMatches(state)
+    local steps = 0
+    while next(matches) and steps < 40 do
+        self:RemoveMatches(state, matches, info)
+        self:ApplyGravity(state)
+        matches, info = self:FindMatches(state)
+        steps = steps + 1
+    end
+end
+
+-- Wendet einen Hint-Swap an und löst die Kaskade (ohne Power-Ups).
+function L:ApplyHintSwap(state, hint)
+    if not hint then return false end
+    local board = state.board
+    board[hint.r1][hint.c1], board[hint.r2][hint.c2] =
+        board[hint.r2][hint.c2], board[hint.r1][hint.c1]
+    local matches = self:FindMatches(state)
+    if not next(matches) then
+        board[hint.r1][hint.c1], board[hint.r2][hint.c2] =
+            board[hint.r2][hint.c2], board[hint.r1][hint.c1]
+        return false
+    end
+    state.movesLeft = state.movesLeft - 1
+    state.comboCount = 0
+    self:ResolveUntilStable(state)
+    return true
+end
+
+-- Greedy-Simulation (Hint-first, Shuffle bei Softlock, keine Power-Ups).
+function L:SimulateGreedyWin(state)
+    local s = self:Deserialize(self:Serialize(state))
+    s.timerActive = false
+    for _ = 1, 40 do
+        if self:IsGoalMet(s) then return true end
+        if s.movesLeft <= 0 then return false end
+        local hint = self:FindHintMove(s)
+        if not hint then
+            self:ShuffleBoard(s)
+            hint = self:FindHintMove(s)
+            if not hint then return false end
+        end
+        if not self:ApplyHintSwap(s, hint) then return false end
+    end
+    return self:IsGoalMet(s)
+end
+
+function L:EstimateWinRate(levelDef, difficulty, trials)
+    local wins = 0
+    local n = math.max(1, trials or 1)
+    for _ = 1, n do
+        local st = self:NewState(1, levelDef, difficulty or "easy")
+        self:InitGrid(st)
+        if self:SimulateGreedyWin(st) then
+            wins = wins + 1
+        end
+    end
+    return wins / n
 end
 
 -- Mischt die frei beweglichen Gems (eingefrorene bleiben fixiert)
@@ -571,6 +734,22 @@ end
 -- ============================================================
 -- Ziel- & Spielende-Prüfung
 -- ============================================================
+-- 1★ Gewinn · 2★ ≥20% Restzüge (oder ≥25% Restzeit) · 3★ ≥40% (oder ≥40% Restzeit)
+function L:GradeStars(state)
+    if not state or not state.won then return 0 end
+    local stars = 1
+    local startMoves = math.max(1, state.movesStart or state.movesLeft or 1)
+    local remain = (state.movesLeft or 0) / startMoves
+    if remain >= 0.20 then stars = 2 end
+    if remain >= 0.40 then stars = 3 end
+    if state.timerActive and (state.timeLimit or 0) > 0 then
+        local tr = (state.timeLeft or 0) / state.timeLimit
+        if tr >= 0.25 then stars = math.max(stars, 2) end
+        if tr >= 0.40 then stars = math.max(stars, 3) end
+    end
+    return stars
+end
+
 function L:IsGoalMet(state)
     if state.goalType == "SCORE" then
         return state.score >= (state.goalScore or math.huge)
@@ -649,6 +828,7 @@ function L:Serialize(state)
         goalScore   = state.goalScore,
         goalCollect = state.goalCollect,
         movesLeft   = state.movesLeft,
+        movesStart  = state.movesStart,
         timeLimit   = state.timeLimit,
         timeLeft    = state.timeLeft,
         timerActive = state.timerActive,
@@ -662,6 +842,9 @@ function L:Serialize(state)
             iceDestroyed = state.stats.iceDestroyed,
             powerUpsUsed = state.stats.powerUpsUsed,
         },
+        endless         = state.endless or false,
+        endlessWave     = state.endlessWave,
+        endlessRunScore = state.endlessRunScore or 0,
     }
 end
 
@@ -676,6 +859,7 @@ function L:Deserialize(saved)
         goalScore   = saved.goalScore,
         goalCollect = saved.goalCollect,
         movesLeft   = saved.movesLeft,
+        movesStart  = saved.movesStart or saved.movesLeft,
         timeLimit   = saved.timeLimit,
         timeLeft    = saved.timeLeft,
         timerActive = saved.timerActive,
@@ -692,6 +876,9 @@ function L:Deserialize(saved)
             iceDestroyed = saved.stats and saved.stats.iceDestroyed or 0,
             powerUpsUsed = saved.stats and saved.stats.powerUpsUsed or 0,
         },
+        endless         = saved.endless or false,
+        endlessWave     = saved.endlessWave,
+        endlessRunScore = saved.endlessRunScore or 0,
     }
     for r = 1, state.rows do
         state.board[r] = {}

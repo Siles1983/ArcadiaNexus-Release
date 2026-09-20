@@ -1039,4 +1039,6 @@ ArcadiaNexus.RegisterGame({
     engine    = "BLD_Engine",
     container = "_tetContainer",
     category  = "ARCADE",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\Blockdrop\\assets\\logo\\logo_blockdrop",
+    xp        = 10,
 })

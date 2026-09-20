@@ -9,7 +9,7 @@
       Insane (hard)   – Negamax mit Alpha-Beta (Tiefe 6), Bedrohungsanalyse
 
     Alle Methoden arbeiten spaltenbasiert:
-      GetBestMove(board, player, difficulty) → col (1-basiert) oder nil
+      GetBestMove(board, player, difficulty, allowPop) → col, pop
 ]]
 
 local ArcadiaNexus = _G.ArcadiaNexus
@@ -23,71 +23,102 @@ local function GetLogic()
     return Logic
 end
 
--- ============================================================
--- PUBLIC ENTRY
--- ============================================================
+local function ApplyAction(L, board, player, col, pop)
+    if pop then
+        return L:ApplyPopOut(board, col, player)
+    end
+    return L:ApplyMove(board, col, player)
+end
 
-function AI:GetBestMove(board, player, difficulty)
+local function FirstWinningAction(board, player, allowPop)
+    local L = GetLogic()
+    local cols = L:GetAvailableColumns(board)
+    for i = 1, #cols do
+        local clone = L:CloneBoard(board)
+        local row = L:ApplyMove(clone, cols[i], player)
+        if row and L:CheckWin(clone, cols[i], row, player) == "WIN" then
+            return cols[i], false
+        end
+    end
+    if allowPop then
+        local pops = L:GetPopColumns(board, player)
+        for i = 1, #pops do
+            local clone = L:CloneBoard(board)
+            if L:ApplyPopOut(clone, pops[i], player) and L:CheckAnyWin(clone, player) == "WIN" then
+                return pops[i], true
+            end
+        end
+    end
+    return nil
+end
+
+function AI:GetBestMove(board, player, difficulty, allowPop)
     difficulty = difficulty or "normal"
+    allowPop = allowPop and true or false
 
     if difficulty == "easy" then
-        return self:RandomMove(board)
+        local col, pop = FirstWinningAction(board, player, allowPop)
+        if col then return col, pop end
+        return self:RandomMove(board, player, allowPop)
     elseif difficulty == "hard" then
-        return self:NegamaxMove(board, player)
+        return self:NegamaxMove(board, player, allowPop)
     else
-        return self:StrategicMove(board, player)
+        return self:StrategicMove(board, player, allowPop)
     end
 end
 
--- ============================================================
--- CLASSIC – Zufall
--- ============================================================
-
-function AI:RandomMove(board)
+function AI:RandomMove(board, player, allowPop)
     local L = GetLogic()
-    local cols = L:GetAvailableColumns(board)
-    if #cols == 0 then return nil end
-    return cols[math.random(1, #cols)]
+    local drops = L:GetAvailableColumns(board)
+    if #drops > 0 then
+        return drops[math.random(1, #drops)], false
+    end
+    -- Pop nur wenn kein Wurf mehr möglich ist. Sonst nimmt Easy nach einem
+    -- Spieler-Pop oft denselben Stein der KI wieder vom Brett.
+    if not allowPop or not player then return nil end
+    local pops = L:GetPopColumns(board, player)
+    if #pops == 0 then return nil end
+    return pops[math.random(1, #pops)], true
 end
 
 -- ============================================================
 -- PRO – Win + Block + Mitte bevorzugen
 -- ============================================================
 
-function AI:StrategicMove(board, player)
+function AI:StrategicMove(board, player, allowPop)
     local L        = GetLogic()
     local opponent = (player == 1) and 2 or 1
     local cols     = L:GetAvailableColumns(board)
+    local pops     = allowPop and L:GetPopColumns(board, player) or {}
 
-    if #cols == 0 then return nil end
+    local col, pop = FirstWinningAction(board, player, allowPop)
+    if col then return col, pop end
 
-    -- Sofort gewinnen?
-    for _, col in ipairs(cols) do
+    for i = 1, #cols do
         local clone = L:CloneBoard(board)
-        local row   = L:ApplyMove(clone, col, player)
-        if row then
-            local result = L:CheckWin(clone, col, row, player)
-            if result == "WIN" then return col end
+        local row   = L:ApplyMove(clone, cols[i], opponent)
+        if row and L:CheckWin(clone, cols[i], row, opponent) == "WIN" then
+            return cols[i], false
         end
     end
 
-    -- Gegner blockieren?
-    for _, col in ipairs(cols) do
-        local clone = L:CloneBoard(board)
-        local row   = L:ApplyMove(clone, col, opponent)
-        if row then
-            local result = L:CheckWin(clone, col, row, opponent)
-            if result == "WIN" then return col end
-        end
+    if #cols == 0 then
+        if #pops == 0 then return nil end
+        return pops[1], true
     end
 
-    -- Mitte bevorzugen, dann Nähe zur Mitte
     local center = math.ceil(board.cols / 2)
     table.sort(cols, function(a, b)
         return math.abs(a - center) < math.abs(b - center)
     end)
 
-    return cols[1]
+    local roll = math.random()
+    if roll > 0.90 and cols[3] then
+        return cols[3], false
+    elseif roll > 0.70 and cols[2] then
+        return cols[2], false
+    end
+    return cols[1], false
 end
 
 -- ============================================================
@@ -189,57 +220,67 @@ end
 -- Negamax mit Alpha-Beta
 local MAX_DEPTH = 6
 
-local function Negamax(board, depth, alpha, beta, player)
+local function Negamax(board, depth, alpha, beta, player, allowPop)
     local L        = GetLogic()
     local opponent = (player == 1) and 2 or 1
     local cols     = L:GetAvailableColumns(board)
+    local pops     = allowPop and L:GetPopColumns(board, player) or {}
 
-    -- Terminal: voll oder Tiefe 0
-    if L:IsBoardFull(board) then return 0, nil end
+    if not L:HasMoves(board, player, allowPop) then return 0, nil, false end
     if depth == 0 then
-        return HeuristicScore(board, player) - HeuristicScore(board, opponent), nil
+        return HeuristicScore(board, player) - HeuristicScore(board, opponent), nil, false
     end
 
-    -- Gewinnen sofort prüfen (vor rekursiver Suche)
-    for _, col in ipairs(cols) do
-        local clone = L:CloneBoard(board)
-        local row   = L:ApplyMove(clone, col, player)
-        if row then
-            local result = L:CheckWin(clone, col, row, player)
-            if result == "WIN" then
-                -- Sofortiger Sieg: sehr hoher Wert
-                return 1000 + depth, col
-            end
-        end
+    local winCol, winPop = FirstWinningAction(board, player, allowPop)
+    if winCol then
+        return 1000 + depth, winCol, winPop
     end
 
-    -- Mittelspalten zuerst durchsuchen (Move Ordering)
     local center = math.ceil(board.cols / 2)
     table.sort(cols, function(a, b)
         return math.abs(a - center) < math.abs(b - center)
     end)
 
     local bestScore = -math.huge
-    local bestCol   = cols[1]
+    local bestCol   = cols[1] or pops[1]
+    local bestPop   = not cols[1] and pops[1] ~= nil
 
-    for _, col in ipairs(cols) do
+    local function Consider(col, pop)
         local clone = L:CloneBoard(board)
-        local row   = L:ApplyMove(clone, col, player)
-        if row then
-            local childScore = -Negamax(clone, depth - 1, -beta, -alpha, opponent)
-            if childScore > bestScore then
-                bestScore = childScore
-                bestCol   = col
-            end
-            alpha = math.max(alpha, bestScore)
-            if alpha >= beta then break end  -- Beta-Cutoff
+        if not ApplyAction(L, clone, player, col, pop) then return false end
+        local pWin = L:CheckAnyWin(clone, player)
+        local oWin = L:CheckAnyWin(clone, opponent)
+        local childScore
+        if pWin then
+            childScore = 1000 + depth
+        elseif oWin then
+            childScore = -1000 - depth
+        else
+            childScore = -Negamax(clone, depth - 1, -beta, -alpha, opponent, allowPop)
+        end
+        if childScore > bestScore then
+            bestScore = childScore
+            bestCol   = col
+            bestPop   = pop
+        end
+        alpha = math.max(alpha, bestScore)
+        return alpha >= beta
+    end
+
+    for i = 1, #cols do
+        if Consider(cols[i], false) then break end
+    end
+    if alpha < beta then
+        for i = 1, #pops do
+            if Consider(pops[i], true) then break end
         end
     end
 
-    return bestScore, bestCol
+    return bestScore, bestCol, bestPop
 end
 
-function AI:NegamaxMove(board, player)
-    local _, col = Negamax(board, MAX_DEPTH, -math.huge, math.huge, player)
-    return col or self:RandomMove(board)
+function AI:NegamaxMove(board, player, allowPop)
+    local _, col, pop = Negamax(board, MAX_DEPTH, -math.huge, math.huge, player, allowPop)
+    if col then return col, pop end
+    return self:RandomMove(board, player, allowPop)
 end

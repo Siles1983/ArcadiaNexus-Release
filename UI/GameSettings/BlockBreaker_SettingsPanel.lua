@@ -27,7 +27,8 @@ local function BuildBlockBreakerSettingsPanel(parent)
         },
         visuals = {
             items = {
-                { key = "screenFlash", label = L.lbl_screen_flash },
+                { key = "screenFlash",    label = L.lbl_screen_flash    },
+                { key = "reducedMotion",  label = L.lbl_reduced_motion  },
             },
         },
         theme = {
@@ -51,7 +52,7 @@ local function BuildBlockBreakerSettingsPanel(parent)
         },
         guide = {
             sections = {
-                GS.GuideSection(nil, L, { "guide_1", "guide_2", "guide_3", "guide_4", "guide_5", "guide_6" }),
+                GS.GuideSection(nil, L, { "guide_1", "guide_2", "guide_3", "guide_4", "guide_5", "guide_6", "guide_7", "guide_8" }),
             },
         },
         rebuild = BuildBlockBreakerSettingsPanel,

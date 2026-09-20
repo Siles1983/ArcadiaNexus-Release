@@ -1269,4 +1269,6 @@ ArcadiaNexus.RegisterGame({
     engine    = "CB_Engine",
     container = "_cbContainer",
     category  = "DENKSPIELE",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\Codebreaker\\assets\\logo\\logo_cb",
+    xp        = 10,
 })

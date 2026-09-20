@@ -24,9 +24,18 @@ local function Warn(msg)
 end
 
 local nextMatch = 0
-local function NewMatchId()
-    nextMatch = nextMatch + 1
-    return string.format("M%06d", nextMatch)
+local function NewMatchId(playerKey)
+    local MS = ArcadiaNexus.MatchStore
+    if MS and MS.NextSerial then
+        nextMatch = MS.NextSerial()
+    else
+        nextMatch = nextMatch + 1
+    end
+    local identity = (UnitGUID and UnitGUID("player")) or playerKey or "local"
+    local hash = 0
+    for i = 1, #identity do hash = (hash * 33 + identity:byte(i)) % 4294967296 end
+    local stamp = (GetServerTime and GetServerTime()) or (time and time()) or 0
+    return string.format("M%x-%x-%x", hash, stamp, nextMatch)
 end
 
 local ALLOWED = {
@@ -62,6 +71,7 @@ local function Transition(node, newState)
             if M.SaveTicket then M.SaveTicket(node) end
         end
     end
+    if newState == P.STATE.ABORTED and node.Dispose then node:Dispose() end
     return true
 end
 
@@ -91,11 +101,14 @@ function R.Create(opts)
         newPublic     = opts.newPublic or D.NewPublic,
         packPublic    = opts.packPublic,
         unpackPublic  = opts.unpackPublic,
+        packLobby     = opts.packLobby,
+        unpackLobby   = opts.unpackLobby,
         packStart     = opts.packStart,
         unpackStart   = opts.unpackStart,
         seedOnStart   = opts.seedOnStart,
         assignSeats   = opts.assignSeats,
         canTryStart   = opts.canTryStart,
+        announceFields = opts.announceFields,
         onState       = opts.onState,
         onPublic      = opts.onPublic,
         onReject      = opts.onReject,
@@ -110,6 +123,7 @@ function R.Create(opts)
         publicState   = nil,
         clientSeq     = 0,
         stateRevision = 0,
+        privateRevision = -1,
         processedIntent = {},
         lastClientSeq = {},
         seenResults   = {},
@@ -123,6 +137,25 @@ function R.Create(opts)
         _pendingPlay  = nil,
         _p            = nil,
     }
+
+    function node:Dispose()
+        if self._closed then return end
+        self._closed = true
+        for _, name in ipairs({ "_startGuard", "_rejoinGuard", "_joinGuard", "_syncGuard", "_intentGuard" }) do
+            if self[name] then self[name]:Cancel() end
+        end
+        self._privateParts, self._pendingPrivate, self._pendingPlay = nil, nil, nil
+        self._p, self._hostHidden = nil, nil
+        local detached = true
+        if self.transport and self.transport.Unregister then
+            detached = self.transport:Unregister(self.playerKey, self) ~= false
+        end
+        if detached and self.matchId and self.transport and self.transport.DiscardMatch then
+            self.transport:DiscardMatch(self.matchId)
+        end
+        local M = ArcadiaNexus.Match
+        if M and M.UntrackNode then M.UntrackNode(self) end
+    end
 
     local function Wire(dir, channel, payload, extra)
         local p = payload or ""
@@ -190,6 +223,7 @@ function R.Create(opts)
     end
 
     local function CancelRejoinWait()
+        if node._joinGuard then node._joinGuard:Cancel(); node._joinGuard = nil end
         if node._rejoinGuard then
             node._rejoinGuard:Cancel()
             node._rejoinGuard = nil
@@ -367,12 +401,16 @@ function R.Create(opts)
         if ackIntentId then f.ackIntentId = ackIntentId end
         if node.state == P.STATE.LOBBY then
             SeatWireFields(f)
+            if node.packLobby then
+                local extra = node.packLobby(node.publicState)
+                if extra then for k, v in pairs(extra) do if v ~= nil then f[k] = v end end end
+            end
         elseif node.state == P.STATE.PLAYING or node.state == P.STATE.FINISHED then
             if node.packPublic then
                 local extra = node.packPublic(pub)
                 if extra then
                     for k, v in pairs(extra) do
-                        if v ~= nil and v ~= "" then
+                        if v ~= nil then
                             f[k] = v
                         end
                     end
@@ -382,12 +420,33 @@ function R.Create(opts)
         return f
     end
 
+    local function SendPrivate(toKey, hid)
+        if hid == nil then return true end
+        local fields = { matchId = node.matchId, rev = node.stateRevision, h = hid }
+        local payload = Encode(P.TYPE.PRIVATE, fields)
+        if payload then SendUnicast(toKey, payload); return true end
+        -- 64 raw bytes fit even when escaping doubles them. No partial hand is
+        -- published; at most 64 parts / 4096 bytes can be buffered per node.
+        local value = tostring(hid)
+        local count = math.ceil(#value / 64)
+        if count > 64 then node:Abort("private-too-long"); return false end
+        local parts = {}
+        for i = 1, count do
+            fields.h, fields.part, fields.total = value:sub((i - 1) * 64 + 1, i * 64), i, count
+            parts[i] = Encode(P.TYPE.PRIVATEPART, fields)
+            if not parts[i] then node:Abort("private-too-long"); return false end
+        end
+        for i = 1, count do SendUnicast(toKey, parts[i]) end
+        return true
+    end
+
     local function BroadcastSnapshot(ackSeat, ackIntentId)
         node.stateRevision = node.stateRevision + 1
         local payload, err = Encode(P.TYPE.SNAPSHOT, SnapshotFields(ackSeat, ackIntentId))
         if not payload then
             Warn("snapshot " .. tostring(err))
-            return
+            node:Abort("snapshot-too-long")
+            return false
         end
         SendToMembers(payload)
         if node.isHost then
@@ -398,16 +457,12 @@ function R.Create(opts)
                     if key == node.playerKey then
                         node._p = hid
                     else
-                        local pp = Encode(P.TYPE.PRIVATE, {
-                            matchId = node.matchId,
-                            rev = node.stateRevision,
-                            h = hid,
-                        })
-                        SendUnicast(key, pp)
+                        if not SendPrivate(key, hid) then return false end
                     end
                 end
             end
         end
+        return true
     end
 
     local function SendWelcomeTo(toKey, seat)
@@ -417,6 +472,7 @@ function R.Create(opts)
             hostKey = node.playerKey,
             proto = node.proto,
             addon = node.addon,
+            cq = node.lastClientSeq[seat] or 0,
         }
         SeatWireFields(wfields)
         local welcome = Encode(P.TYPE.WELCOME, wfields)
@@ -427,12 +483,13 @@ function R.Create(opts)
                 hostKey = node.playerKey,
                 proto = node.proto,
                 addon = node.addon,
+                cq = node.lastClientSeq[seat] or 0,
             })
         end
         SendUnicast(toKey, welcome)
     end
 
-    local function RecoverGuest(fromKey)
+    local function RecoverGuest(fromKey, request)
         local seat = SeatOf(fromKey)
         if not seat then
             SendUnicast(fromKey, Encode(P.TYPE.REJECT, { reason = "no-seat", proto = node.proto }))
@@ -440,11 +497,29 @@ function R.Create(opts)
         end
         local toKey = node.seats[seat] or fromKey
         local now = (GetTime and GetTime()) or 0
-        if node._recoverAt and node._recoverWho == toKey and (now - node._recoverAt) < 2 then
+        node._recoverAt = node._recoverAt or {}
+        if GetTime and node._recoverAt[toKey] and (now - node._recoverAt[toKey]) < 2 then
             return
         end
-        node._recoverAt = now
-        node._recoverWho = toKey
+        node._recoverAt[toKey] = now
+        -- Periodic probes avoid repeatedly sending unchanged boards and hands.
+        if request and request.rv then
+            if request.started ~= "1" and node._startPayload then
+                SendUnicast(toKey, node._startPayload)
+            end
+            if tonumber(request.rv) ~= node.stateRevision then
+                SendUnicast(toKey, Encode(P.TYPE.SNAPSHOT, SnapshotFields()))
+            end
+            local hid = node.privateForSeat(seat, node.publicState, node._hostHidden)
+            if tonumber(request.pv) ~= node.stateRevision and hid ~= nil then
+                if not SendPrivate(toKey, hid) then return end
+            end
+            SendUnicast(toKey, Encode(P.TYPE.SYNCACK, {
+                matchId = node.matchId, rev = node.stateRevision,
+                hp = hid ~= nil and "1" or "0", cq = node.lastClientSeq[seat] or 0,
+            }))
+            return
+        end
         if node.state == P.STATE.LOBBY then
             SendWelcomeTo(toKey, seat)
             local snap = Encode(P.TYPE.SNAPSHOT, SnapshotFields())
@@ -459,13 +534,7 @@ function R.Create(opts)
             local snap = Encode(P.TYPE.SNAPSHOT, SnapshotFields())
             SendUnicast(toKey, snap)
             local hid = node.privateForSeat(seat, node.publicState, node._hostHidden)
-            if hid ~= nil then
-                SendUnicast(toKey, Encode(P.TYPE.PRIVATE, {
-                    matchId = node.matchId,
-                    rev = node.stateRevision,
-                    h = hid,
-                }))
-            end
+            SendPrivate(toKey, hid)
             return
         end
         if node.state == P.STATE.FINISHED then
@@ -475,6 +544,7 @@ function R.Create(opts)
             end
             local snap = Encode(P.TYPE.SNAPSHOT, SnapshotFields())
             SendUnicast(toKey, snap)
+            SendPrivate(toKey, node.privateForSeat(seat, node.publicState, node._hostHidden))
             SendUnicast(toKey, Encode(P.TYPE.RESULT, {
                 matchId = node.matchId, resultId = node.matchId .. "-R1",
                 count = node.publicState and node.publicState.count,
@@ -485,24 +555,37 @@ function R.Create(opts)
     end
 
     local function ApplyLobbyFields(fields)
-        ApplySeatFields(fields)
+        local revision = tonumber(fields.stateRevision)
+        if not revision or revision < node.stateRevision then return false end
+        if revision == node.stateRevision and node._hasSnapshot then return false end
+        if node.gotStart and fields.matchState == P.STATE.LOBBY then return false end
+        -- Playing snapshots contain game fields (Pairs uses s1/s2 for scores).
+        -- Only lobby and START packets own the seat map.
+        if fields.matchState == P.STATE.LOBBY then ApplySeatFields(fields) end
         node.publicState = node.publicState or node.newPublic()
         node.publicState.count = P.Tonumber(fields.count, node.publicState.count)
         node.publicState.lastSeat = P.Tonumber(fields.lastSeat, node.publicState.lastSeat)
         if node.unpackPublic then
             node.unpackPublic(node.publicState, fields)
         end
-        node.stateRevision = P.Tonumber(fields.stateRevision, node.stateRevision)
+        if fields.matchState == P.STATE.LOBBY and node.unpackLobby then
+            node.unpackLobby(node.publicState, fields)
+        end
+        node.stateRevision, node._hasSnapshot = revision, true
+        if node._pendingPrivate and node._pendingPrivate.rev == revision then
+            node._p, node.privateRevision = node._pendingPrivate.h, revision
+            node._pendingPrivate = nil
+        end
         if fields.ackSeat and tostring(P.Tonumber(fields.ackSeat, 0)) == tostring(node.seat) then
             node.lastAck = fields.ackIntentId
         end
-        for i = 1, node.maxSeats do
-            if node.seats[i] == node.playerKey then
-                node.seat = i
-                break
-            end
-        end
+        BindLocalSeat()
         if node.onPublic then node.onPublic(node) end
+        if node.gotStart and node.isFinished(node.publicState) then
+            Transition(node, P.STATE.FINISHED)
+            node:ConsumeResult(node.matchId .. "-R1")
+        end
+        return true
     end
 
     local function MaybeFinish()
@@ -521,6 +604,8 @@ function R.Create(opts)
     end
 
     function node:ConsumeResult(resultId)
+        if self._closed or not self.seat or self.state ~= P.STATE.FINISHED then return false end
+        if resultId ~= self.matchId .. "-R1" or not self.isFinished(self.publicState) then return false end
         if not resultId or resultId == "" then return false end
         if self.processedResultId == resultId or self.seenResults[resultId] then
             return false
@@ -542,6 +627,7 @@ function R.Create(opts)
     end
 
     function node:GetPrivateState()
+        if not self.isHost and self.privateRevision ~= self.stateRevision then return nil end
         return self._p
     end
 
@@ -589,12 +675,12 @@ function R.Create(opts)
     end
 
     function node:HostMatch()
-        if self.state ~= P.STATE.IDLE then return false end
+        if self._closed or self.state ~= P.STATE.IDLE then return false end
         if self.policy == P.POLICY.PIN and P.NormalizePin(self.pin) == "" then
             return false
         end
         self.isHost = true
-        self.matchId = NewMatchId()
+        self.matchId = NewMatchId(self.playerKey)
         self.hostKey = self.playerKey
         self.seat = 1
         self.seats = { self.playerKey }
@@ -619,8 +705,9 @@ function R.Create(opts)
     end
 
     function node:Join(hostKey, pin)
-        if self.state ~= P.STATE.IDLE then return false end
+        if self._closed or self.state ~= P.STATE.IDLE then return false end
         if not hostKey then return false end
+        if self.hostKey and not SamePlayer(self.hostKey, hostKey) then return false end
         self.hostKey = hostKey
         self.gotStart = false
         self._pendingPlay = nil
@@ -637,12 +724,29 @@ function R.Create(opts)
             self.pin = pin
         end
         local payload = Encode(P.TYPE.JOIN, fields)
+        if not payload then return false end
         SendUnicast(hostKey, payload)
+        if ArcadiaNexus.TimerGuard and self.state == P.STATE.IDLE and not self._closed then
+            CancelRejoinWait()
+            self._joinGuard = ArcadiaNexus.TimerGuard.New()
+            local tries = 0
+            self._joinGuard:EveryTicker(2, function()
+                if self._closed or self.state ~= P.STATE.IDLE then return end
+                tries = tries + 1
+                if tries >= 8 then
+                    self.rejectReason = "join-timeout"
+                    if self.onReject then self.onReject(self, { reason = self.rejectReason }) end
+                    Transition(self, P.STATE.ABORTED)
+                    return
+                end
+                SendUnicast(hostKey, payload)
+            end)
+        end
         return true
     end
 
     function node:Rejoin(hostKey, matchId)
-        if self.state ~= P.STATE.IDLE then return false end
+        if self._closed or self.state ~= P.STATE.IDLE then return false end
         if not hostKey or not matchId or matchId == "" then return false end
         self.hostKey = hostKey
         self.matchId = matchId
@@ -660,7 +764,7 @@ function R.Create(opts)
             end
         end
         PulseSync()
-        if ArcadiaNexus.TimerGuard then
+        if ArcadiaNexus.TimerGuard and self.state == P.STATE.IDLE and not self._closed then
             CancelRejoinWait()
             self._rejoinGuard = ArcadiaNexus.TimerGuard.New()
             local tries = 0
@@ -735,6 +839,7 @@ function R.Create(opts)
         local payload, err = Encode(P.TYPE.START, fields)
         if not payload then
             Warn("start aborted: " .. tostring(err))
+            self:Abort("start-too-long")
             return false
         end
         if not Transition(self, P.STATE.PLAYING) then return false end
@@ -742,7 +847,7 @@ function R.Create(opts)
         self._startPayload = payload
         self._startAcks = { [self.playerKey] = true }
         SendToMembers(payload)
-        BroadcastSnapshot()
+        if not BroadcastSnapshot() then return false end
         if ArcadiaNexus.TimerGuard then
             if self._startGuard then self._startGuard:Cancel() end
             self._startGuard = ArcadiaNexus.TimerGuard.New()
@@ -791,7 +896,7 @@ function R.Create(opts)
     function node:SendIntent(kind, extra)
         extra = extra or {}
         local seat = P.Tonumber(extra.senderSeat, self.seat)
-        if self.state ~= P.STATE.PLAYING or not seat then return false end
+        if self._closed or self.state ~= P.STATE.PLAYING or not seat then return false end
         self.clientSeq = self.clientSeq + 1
         local intentId = P.IntentId(seat, self.clientSeq)
         local fields = {
@@ -816,10 +921,30 @@ function R.Create(opts)
     end
 
     function node:RequestSnapshot()
-        if self.isHost or not self.matchId or not self.seat then return false end
+        if self._closed or self.isHost or not self.matchId or not self.seat then return false end
         if self.state ~= P.STATE.PLAYING and self.state ~= P.STATE.FINISHED then return false end
         SendUnicast(self.hostKey, Encode(P.TYPE.SYNC, { matchId = self.matchId }))
         return true
+    end
+
+    function node:StartSyncWatch()
+        if self.isHost or self._closed or self._syncGuard or not ArcadiaNexus.TimerGuard then return end
+        self._hostSeenAt = (GetTime and GetTime()) or 0
+        self._syncGuard = ArcadiaNexus.TimerGuard.New()
+        self._syncGuard:EveryTicker(15, function()
+            if self._closed then return end
+            local now = (GetTime and GetTime()) or 0
+            if GetTime and now - self._hostSeenAt >= 90 then
+                self.rejectReason = "host-timeout"
+                if self.onReject then self.onReject(self, { reason = self.rejectReason }) end
+                Transition(self, P.STATE.ABORTED)
+                return
+            end
+            SendUnicast(self.hostKey, Encode(P.TYPE.SYNC, {
+                matchId = self.matchId, rv = self._hasSnapshot and self.stateRevision or -1,
+                pv = self.privateRevision, started = self.gotStart and "1" or "0",
+            }))
+        end)
     end
 
     function node:Leave()
@@ -831,11 +956,12 @@ function R.Create(opts)
         if self.hostKey then
             SendUnicast(self.hostKey, payload)
         end
+        local ok = Transition(self, P.STATE.ABORTED)
         self.matchId = nil
         self.seat = nil
         self._p = nil
         self._hostHidden = nil
-        return Transition(self, P.STATE.ABORTED) or Transition(self, P.STATE.IDLE)
+        return ok
     end
 
     function node:Abort(reason)
@@ -843,6 +969,10 @@ function R.Create(opts)
             return false
         end
         if self.isHost then
+            if reason == "start-too-long" or reason == "snapshot-too-long" or reason == "private-too-long" then
+                self.rejectReason = reason
+                if self.onReject then self.onReject(self, { reason = reason }) end
+            end
             local payload = Encode(P.TYPE.ABORT, {
                 matchId = self.matchId,
                 reason = reason or "host-abort",
@@ -897,7 +1027,7 @@ function R.Create(opts)
         self.processedIntent[intentId] = true
         self.lastClientSeq[seat] = cseq
         self._p = self.privateForSeat(self.seat, self.publicState, self._hostHidden)
-        BroadcastSnapshot(seat, intentId)
+        if not BroadcastSnapshot(seat, intentId) then return end
         -- CHAT_MSG_ADDON liefert dem Sender keinen eigenen Broadcast zurück.
         -- Der Host besitzt den aktualisierten autoritativen State bereits und
         -- muss seine lokale View daher direkt neu zeichnen.
@@ -906,6 +1036,7 @@ function R.Create(opts)
     end
 
     function node:OnMessage(fromKey, payload, channel)
+        if self._closed then return end
         Wire("rx", channel, payload, "from=" .. tostring(fromKey)
             .. " ss=" .. tostring(self.seats and (self.seats[1] and "y" or "n"))
             .. " seat=" .. tostring(self.seat)
@@ -918,30 +1049,64 @@ function R.Create(opts)
         local t = msg.type
         local f = msg.fields
 
-        if t == P.TYPE.PRIVATE then
+        if not self.isHost and FromHost(fromKey) and f.matchId == self.matchId then
+            self._hostSeenAt = (GetTime and GetTime()) or 0
+        end
+
+        if t == P.TYPE.SYNCACK then
+            if self.isHost or not FromHost(fromKey) or channel ~= P.CHANNEL.UNICAST
+                or f.matchId ~= self.matchId then return end
+            if self.state == P.STATE.FINISHED and tonumber(f.rev) == self.stateRevision
+                and (f.hp == "0" or self.privateRevision == self.stateRevision) and self._syncGuard then
+                self._syncGuard:Cancel()
+            end
+            return
+        end
+
+        if t == P.TYPE.PRIVATE or t == P.TYPE.PRIVATEPART then
             if channel ~= P.CHANNEL.UNICAST then
                 Warn("private on broadcast ignored")
                 return
             end
             if not FromHost(fromKey) then return end
             if f.matchId ~= self.matchId then return end
+            local revision = tonumber(f.rev or f.stateRevision)
+            if not revision or revision < self.stateRevision or revision <= self.privateRevision then return end
+            if self._pendingPrivate and revision < self._pendingPrivate.rev then return end
             local h = f.h
             if h == nil or h == "" then
                 Warn("private without h ignored")
                 return
             end
-            if tostring(h) == "1" then
-                self._p = 1
-            else
-                self._p = tostring(h)
+            if t == P.TYPE.PRIVATEPART then
+                local part, total = tonumber(f.part), tonumber(f.total)
+                if not part or not total or part % 1 ~= 0 or total % 1 ~= 0
+                    or part < 1 or part > total or total > 64 or #h > 64 then return end
+                local buffer = self._privateParts
+                if buffer and revision < buffer.rev then return end
+                if not buffer or buffer.rev ~= revision then
+                    buffer = { rev = revision, total = total, parts = {}, count = 0 }
+                    self._privateParts = buffer
+                end
+                if buffer.total ~= total then return end
+                if not buffer.parts[part] then buffer.count = buffer.count + 1 end
+                buffer.parts[part] = h
+                if buffer.count ~= total then return end
+                h = table.concat(buffer.parts)
+                self._privateParts = nil
             end
-            self.stateRevision = P.Tonumber(f.rev or f.stateRevision, self.stateRevision)
+            h = tostring(h) == "1" and 1 or tostring(h)
+            if revision > self.stateRevision then
+                self._pendingPrivate = { rev = revision, h = h }
+                return
+            end
+            self._p, self.privateRevision = h, revision
             if self.onPublic then self.onPublic(self) end
             return
         end
 
         if t == P.TYPE.JOIN then
-            if not self.isHost or self.state ~= P.STATE.LOBBY then return end
+            if not self.isHost then return end
             if channel ~= P.CHANNEL.UNICAST then return end
             local theirProto = P.Tonumber(f.proto, 0)
             local theirGame = P.Tonumber(f.gameProto, 0)
@@ -957,7 +1122,11 @@ function R.Create(opts)
                 }))
                 return
             end
-            if SeatOf(fromKey) then return end
+            if SeatOf(fromKey) then RecoverGuest(fromKey); return end
+            if self.state ~= P.STATE.LOBBY then
+                SendUnicast(fromKey, Encode(P.TYPE.REJECT, { reason = "no-match", proto = self.proto }))
+                return
+            end
             if self.policy == P.POLICY.PIN then
                 if P.NormalizePin(f.pin) ~= P.NormalizePin(self.pin) then
                     SendUnicast(fromKey, Encode(P.TYPE.REJECT, { reason = "pin", proto = self.proto }))
@@ -1007,18 +1176,28 @@ function R.Create(opts)
             if self.state ~= P.STATE.IDLE then return end
             if channel ~= P.CHANNEL.UNICAST then return end
             if not self.hostKey or not FromHost(fromKey) then return end
+            if tonumber(f.proto) ~= self.proto then
+                self.rejectReason = "proto-mismatch"
+                if self.onReject then self.onReject(self, { reason = self.rejectReason }) end
+                Transition(self, P.STATE.ABORTED)
+                return
+            end
+            if self.matchId and f.matchId ~= self.matchId then return end
             CancelRejoinWait()
             self.matchId = f.matchId
             self.seat = P.Tonumber(f.seat, nil)
             self.hostKey = fromKey
+            self.clientSeq = math.max(self.clientSeq, tonumber(f.cq) or 0)
             self.publicState = self.newPublic()
             ApplySeatFields(f)
             Transition(self, P.STATE.LOBBY)
+            self:StartSyncWatch()
             if self.onPublic then self.onPublic(self) end
             return
         end
 
         if t == P.TYPE.REJECT then
+            if channel ~= P.CHANNEL.UNICAST then return end
             if not FromHost(fromKey) then return end
             CancelRejoinWait()
             self.rejectReason = f.reason
@@ -1030,6 +1209,7 @@ function R.Create(opts)
         end
 
         if t == P.TYPE.READY then
+            if channel ~= P.CHANNEL.UNICAST then return end
             if not self.isHost or self.state ~= P.STATE.LOBBY then return end
             if f.matchId ~= self.matchId then return end
             local seat = SeatOf(fromKey)
@@ -1050,7 +1230,7 @@ function R.Create(opts)
             end
             CancelRejoinWait()
             if self.gotStart then
-                ApplySeatFields(f)
+                SendUnicast(self.hostKey, Encode(P.TYPE.STARTACK, { matchId = self.matchId }))
                 return
             end
             self.publicState = self.publicState or self.newPublic()
@@ -1058,12 +1238,13 @@ function R.Create(opts)
             if self.unpackStart then
                 self.unpackStart(self.publicState, f)
             end
-            if self._pendingPlay then
-                ApplyLobbyFields(self._pendingPlay)
-                self._pendingPlay = nil
-            end
             self.gotStart = true
             Transition(self, P.STATE.PLAYING)
+            if self._pendingPlay then
+                local pending = self._pendingPlay
+                self._pendingPlay = nil
+                ApplyLobbyFields(pending)
+            end
             if self.hostKey then
                 SendUnicast(self.hostKey, Encode(P.TYPE.STARTACK, {
                     matchId = self.matchId,
@@ -1074,7 +1255,7 @@ function R.Create(opts)
         end
 
         if t == P.TYPE.STARTACK then
-            if not self.isHost then return end
+            if not self.isHost or channel ~= P.CHANNEL.UNICAST or not SeatOf(fromKey) then return end
             if f.matchId ~= self.matchId then return end
             self._startAcks = self._startAcks or {}
             self._startAcks[fromKey] = true
@@ -1096,7 +1277,7 @@ function R.Create(opts)
                 SendUnicast(fromKey, Encode(P.TYPE.REJECT, { reason = "no-match", proto = self.proto }))
                 return
             end
-            RecoverGuest(fromKey)
+            RecoverGuest(fromKey, f)
             return
         end
 
@@ -1104,8 +1285,9 @@ function R.Create(opts)
             if self.isHost then return end
             if not FromHost(fromKey) then return end
             if f.matchId ~= self.matchId then return end
-            if f.matchState == P.STATE.PLAYING and not self.gotStart then
-                self._pendingPlay = f
+            if (f.matchState == P.STATE.PLAYING or f.matchState == P.STATE.FINISHED) and not self.gotStart then
+                if not self._pendingPlay or (tonumber(f.stateRevision) or -1) >
+                    (tonumber(self._pendingPlay.stateRevision) or -1) then self._pendingPlay = f end
                 Warn("snapshot playing before start; held seat=" .. tostring(self.seat))
                 return
             end
@@ -1116,6 +1298,10 @@ function R.Create(opts)
         if t == P.TYPE.RESULT then
             if not FromHost(fromKey) then return end
             if f.matchId ~= self.matchId then return end
+            if not self.gotStart or not self.publicState or not self.isFinished(self.publicState) then
+                self:RequestSnapshot()
+                return
+            end
             if self.state == P.STATE.PLAYING then
                 Transition(self, P.STATE.FINISHED)
             end
@@ -1126,6 +1312,10 @@ function R.Create(opts)
         if t == P.TYPE.ABORT then
             if not FromHost(fromKey) then return end
             if f.matchId ~= self.matchId then return end
+            if f.reason == "start-too-long" or f.reason == "snapshot-too-long" or f.reason == "private-too-long" then
+                self.rejectReason = f.reason
+                if self.onReject then self.onReject(self, { reason = f.reason }) end
+            end
             self._p = nil
             self._hostHidden = nil
             Transition(self, P.STATE.ABORTED)
@@ -1152,7 +1342,7 @@ function R.Create(opts)
     if node.transport and node.transport.Register then
         node.transport:Register(node.playerKey, function(fromKey, payload, channel)
             node:OnMessage(fromKey, payload, channel)
-        end)
+        end, node)
     end
 
     local M = ArcadiaNexus.Match

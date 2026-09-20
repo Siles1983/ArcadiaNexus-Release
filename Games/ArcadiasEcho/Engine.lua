@@ -22,8 +22,10 @@ local E = ArcadiaNexus.AE_Engine
 E._sessionId = nil
 
 E.activeGame  = nil
-E._timers     = {}   -- aktive C_Timer-Handles (zum Abbrechen)
 E._inputBlock = false
+
+local _timerGuard = ArcadiaNexus.TimerGuard.New()
+E._timerGuard     = _timerGuard
 
 -- ============================================================
 -- Sound
@@ -47,8 +49,7 @@ end
 -- CancelTimers – bricht alle laufenden Sequenz-Timer ab
 -- ============================================================
 function E:CancelTimers()
-    -- C_Timer.After-Handles können nicht direkt gecancelt werden in WotLK-API
-    -- Wir nutzen ein Flag: _running. Callbacks prüfen es.
+    _timerGuard:Cancel()
     self._running = false
 end
 
@@ -74,7 +75,7 @@ function E:StartGame(config)
     ArcadiaNexus.Engine:Emit("AE_GAME_STARTED", board)
 
     -- Kurze Pause, dann erste Runde starten
-    C_Timer.After(0.6, function()
+    _timerGuard:After(0.6, function()
         if not self._running then return end
         self:StartNextRound()
     end)
@@ -123,12 +124,12 @@ function E:PlaySequence(board, step)
     ArcadiaNexus.Engine:Emit("AE_SEQUENCE_SHOW", board, step)
     PlaySS("flash")
 
-    C_Timer.After(flashOn, function()
+    _timerGuard:After(flashOn, function()
         if not self._running then return end
         -- Symbol ausschalten
         if R then R:FlashSymbol(symIdx, false) end
 
-        C_Timer.After(flashOff, function()
+        _timerGuard:After(flashOff, function()
             if not self._running then return end
             -- Nächster Schritt
             self:PlaySequence(board, step + 1)
@@ -147,7 +148,8 @@ function E:HandleInput(symIdx)
 
     -- Kurzes Aufleuchten als Feedback
     if R then R:FlashSymbol(symIdx, true) end
-    C_Timer.After(0.18, function()
+    _timerGuard:After(0.18, function()
+        if not self._running then return end
         if R then R:FlashSymbol(symIdx, false) end
     end)
 
@@ -180,7 +182,7 @@ function E:HandleInput(symIdx)
         if R then R:OnRoundComplete(board) end
         ArcadiaNexus.Engine:Emit("AE_ROUND_COMPLETE", board)
         -- Kurze Pause, dann nächste Runde
-        C_Timer.After(1.2, function()
+        _timerGuard:After(1.2, function()
             if not self._running then return end
             self:StartNextRound()
         end)

@@ -3,7 +3,7 @@
 --  State-Machine, Lifecycle, Timer, PowerUp-Fluss, GAME_RESULT.
 --  KEINE UI-Frames (Renderer), KEINE Spielregeln (Logic).
 --
---  States: IDLE | PLAYING | ANIMATING | POWERUP_TARGETING
+--  States: IDLE | MAP | PLAYING | ANIMATING | POWERUP_TARGETING
 --          | LEVEL_COMPLETE | GAMEOVER
 --
 --  Session-Ownership:
@@ -30,6 +30,8 @@ E.activeSlot = nil
 
 local _timerGuard = ArcadiaNexus.TimerGuard.New()
 E._timerGuard = _timerGuard   -- Renderer nutzt denselben Guard für Effekte
+local _idleGuard = ArcadiaNexus.TimerGuard.New()
+local IDLE_HINT_SEC = 5
 
 local _gameLoop = ArcadiaNexus.GameLoop.Create("ArcadiaNexus_AJ_LoopFrame")
 
@@ -46,6 +48,34 @@ local function Loc()
     return ArcadiaNexus.GetLocaleTable(GAME_ID)
 end
 
+function E:_CancelIdleHint()
+    _idleGuard:Cancel()
+    local R = ArcadiaNexus.AJ_Renderer
+    if R and R.ClearMoveHint then R:ClearMoveHint() end
+end
+
+function E:_ArmIdleHint()
+    self:_CancelIdleHint()
+    if E.state ~= "PLAYING" then return end
+    local Settings = ArcadiaNexus.AJ_Settings
+    if Settings and Settings:Get("hintSparkle") == false then return end
+    local gs = self.gameState
+    if not gs or gs.gameOver then return end
+    local sid = E._sessionId
+    _idleGuard:After(IDLE_HINT_SEC, function()
+        local Session = ArcadiaNexus.GameSession
+        if Session and not Session:IsSession(E, sid) then return end
+        if E.state ~= "PLAYING" then return end
+        local Logic = ArcadiaNexus.AJ_Logic
+        local R = ArcadiaNexus.AJ_Renderer
+        if not Logic or not R or not E.gameState then return end
+        local hint = Logic:FindHintMove(E.gameState)
+        if hint and R.ShowMoveHint then
+            R:ShowMoveHint(hint)
+        end
+    end)
+end
+
 local function PlayAJ(event)
     local S = ArcadiaNexus.AJ_Settings
     if not S or not S:Get("soundEnabled") then return end
@@ -53,11 +83,22 @@ local function PlayAJ(event)
         PlaySoundFile("Sound\\Spells\\ShiningRay.ogg", "Master")
     elseif event == "powerup" and S:Get("soundOnPowerup") then
         PlaySound(SOUNDKIT.UI_LEGENDARY_LOOT_TOAST or 63971, "SFX")
+    elseif event == "lowmoves" and S:Get("soundOnLowMoves") ~= false
+           and S:Get("soundOnGameover") ~= false then
+        PlaySound(SOUNDKIT.ALARM_CLOCK_WARNING_3 or 18871, "SFX")
     elseif event == "win" and S:Get("soundOnGameover") then
         PlaySound(SOUNDKIT.READY_CHECK or 8960, "SFX")
     elseif event == "loss" and S:Get("soundOnGameover") then
         PlaySoundFile("Sound\\Doodad\\BellTollHorde.ogg", "Master")
     end
+end
+
+local function CopyInv(src)
+    local t = { fire = 0, frost = 0, chain = 0, bomb = 0, holy = 0 }
+    if type(src) == "table" then
+        for k, v in pairs(src) do t[k] = v end
+    end
+    return t
 end
 
 local function GetHighScore(difficulty)
@@ -108,8 +149,9 @@ end
 -- config = {
 --   slot   = 1..3   (Pflicht)
 --   mode   = "new" | "continue"
---            new:      Slot wird (nach Renderer-Confirm) überschrieben
---            continue: Slot laden; Mid-Level-Resume falls vorhanden
+--   level  = optional, Karten-Sprung (nur unlocked)
+--   skipMid = true  → Mid-Level ignorieren
+--   startPowerUps = { inv, progress }  → Restart-Inventar
 -- }
 function E:StartGame(config)
     -- ── Validierung ZUERST (kein BeginGame bei kaputtem Setup) ──
@@ -129,6 +171,7 @@ function E:StartGame(config)
     if mode == "continue" and not save then return end
 
     _timerGuard:Cancel()
+    _idleGuard:Cancel()
     _gameLoop:Stop()
     _animGen        = _animGen + 1
     _selected       = nil
@@ -138,17 +181,38 @@ function E:StartGame(config)
     -- ── Slot vorbereiten ────────────────────────────────────────
     if mode == "new" then
         Settings:SaveSlot(slot, {
-            level       = 1,
-            totalScore  = 0,
-            difficulty  = Settings:Get("difficulty"),
-            timerActive = Settings:Get("timerActive"),
-            powerUps    = { fire=0, frost=0, chain=0, bomb=0, holy=0 },
-            progress    = { fire=0, frost=0, chain=0, bomb=0, holy=0 },
+            level        = 1,
+            clearedLevel = 0,
+            totalScore   = 0,
+            difficulty   = Settings:Get("difficulty"),
+            timerActive  = Settings:Get("timerActive"),
+            powerUps     = { fire=0, frost=0, chain=0, bomb=0, holy=0 },
+            progress     = { fire=0, frost=0, chain=0, bomb=0, holy=0 },
+            stars        = {},
+            endlessWave     = 0,
+            endlessRunScore = 0,
         })
         save = Settings:LoadSlot(slot)
+        self:OpenMap(slot, 1)
+        return
     end
 
-    local levelNum = math.min(save.level or 1, Levels.COUNT)
+    local requested = config.level or save.level or 1
+    if config.endless then
+        return self:StartEndless(config)
+    end
+    if requested > Levels.COUNT then
+        self:OpenMap(slot, Levels.COUNT)
+        return
+    end
+
+    local levelNum = math.min(requested, Levels.COUNT)
+    if not Settings:IsLevelUnlocked(save, levelNum, Levels.COUNT) then
+        levelNum = math.min(save.level or 1, Levels.COUNT)
+        if not Settings:IsLevelUnlocked(save, levelNum, Levels.COUNT) then
+            levelNum = 1
+        end
+    end
     local levelDef = Levels:GetLevel(levelNum)
     if not levelDef then return end
 
@@ -164,10 +228,17 @@ function E:StartGame(config)
     Settings:SetActiveSlot(slot)
     self.activeSlot = slot
     self.totalScore = save.totalScore or 0
-    self.powerUps   = PU:NewState(save.powerUps, save.progress)
+    if config.startPowerUps then
+        self.powerUps = PU:NewState(config.startPowerUps.inv, config.startPowerUps.progress)
+    else
+        self.powerUps = PU:NewState(save.powerUps, save.progress)
+    end
 
     -- ── Mid-Level-Resume oder frisches Level ───────────────────
-    local mid = (mode == "continue") and Settings:LoadMidLevel(slot) or nil
+    local mid = (mode == "continue" and not config.skipMid) and Settings:LoadMidLevel(slot) or nil
+    if mid and mid.logic and mid.logic.endless then
+        mid = nil
+    end
     if mid and mid.logic and mid.logic.level == levelNum then
         self.gameState = Logic:Deserialize(mid.logic)
         self.powerUps  = PU:NewState(mid.powerUps or save.powerUps,
@@ -177,9 +248,20 @@ function E:StartGame(config)
         self.gameState = Logic:NewState(levelNum, levelDef, save.difficulty or "easy")
         self.gameState.timerActive = save.timerActive or false
         Logic:InitGrid(self.gameState)
+        if not config.startPowerUps then
+            self.powerUps = PU:NewState(save.powerUps, save.progress)
+        end
     end
 
+    self._playingLevel = levelNum
+    self._playingEndless = false
+    self._levelStartPU = {
+        inv      = CopyInv(self.powerUps and self.powerUps.inv),
+        progress = CopyInv(self.powerUps and self.powerUps.progress),
+    }
+
     self.gameState.highScore = GetHighScore(self.gameState.difficulty)
+    self.gameState.mapBestStars = Settings:GetStar(save, levelNum)
 
     E.state = "PLAYING"
     Renderer:OnGameStarted(self.gameState)
@@ -187,6 +269,98 @@ function E:StartGame(config)
     if self.gameState.timerActive then
         self:_StartTimeMode()
     end
+    self:_ArmIdleHint()
+end
+
+-- Endlos nach Kampagne 100. config: slot, wave, skipMid, startPowerUps, resetRun
+function E:StartEndless(config)
+    local Logic    = ArcadiaNexus.AJ_Logic
+    local Levels   = ArcadiaNexus.AJ_Levels
+    local Renderer = ArcadiaNexus.AJ_Renderer
+    local Settings = ArcadiaNexus.AJ_Settings
+    local PU       = ArcadiaNexus.AJ_PowerUps
+    if not Logic or not Levels or not Renderer or not Settings or not PU then return end
+
+    config = config or {}
+    local slot = config.slot or self.activeSlot or Settings:GetActiveSlot()
+    local save = Settings:LoadSlot(slot)
+    if not save or (save.clearedLevel or 0) < Levels.COUNT then
+        self:OpenMap(slot, Levels.COUNT)
+        return
+    end
+
+    _timerGuard:Cancel()
+    _idleGuard:Cancel()
+    _gameLoop:Stop()
+    _animGen        = _animGen + 1
+    _selected       = nil
+    _pendingPowerUp = nil
+    _moveCount      = 0
+
+    if config.resetRun then
+        save.endlessWave = 1
+        save.endlessRunScore = 0
+        Settings:ClearMidLevel(slot)
+    end
+
+    local wave = math.max(1, tonumber(config.wave) or save.endlessWave or 1)
+    local def = Levels:GetEndlessDef(wave)
+    if not def or not Levels:ValidateDef(def) then return end
+
+    local GS = ArcadiaNexus.GameSession
+    if E._sessionId and GS:IsCurrent(GAME_ID, E._sessionId) then
+        ArcadiaNexus.Lifecycle:ResumeGame(GAME_ID, E._sessionId)
+    else
+        E._sessionId = ArcadiaNexus.Lifecycle:RestartGame(GAME_ID, E._sessionId)
+    end
+
+    Settings:SetActiveSlot(slot)
+    self.activeSlot = slot
+    self.totalScore = save.totalScore or 0
+    if config.startPowerUps then
+        self.powerUps = PU:NewState(config.startPowerUps.inv, config.startPowerUps.progress)
+    else
+        self.powerUps = PU:NewState(save.powerUps, save.progress)
+    end
+
+    local mid = (not config.skipMid) and Settings:LoadMidLevel(slot) or nil
+    if mid and mid.logic and mid.logic.endless and mid.logic.endlessWave == wave then
+        self.gameState = Logic:Deserialize(mid.logic)
+        self.powerUps  = PU:NewState(mid.powerUps or save.powerUps,
+                                     mid.progress or save.progress)
+        Settings:ClearMidLevel(slot)
+    else
+        self.gameState = Logic:NewState(Levels.COUNT, def, save.difficulty or "easy")
+        self.gameState.timerActive = save.timerActive or false
+        Logic:InitGrid(self.gameState)
+        if not config.startPowerUps then
+            self.powerUps = PU:NewState(save.powerUps, save.progress)
+        end
+        Settings:ClearMidLevel(slot)
+    end
+
+    self.gameState.endless = true
+    self.gameState.endlessWave = wave
+    self.gameState.endlessRunScore = save.endlessRunScore or 0
+    self.gameState.highScore = GetHighScore(self.gameState.difficulty)
+    self.gameState.mapBestStars = 0
+
+    save.endlessWave = wave
+    save.timestamp = time()
+
+    self._playingLevel = Levels.COUNT
+    self._playingEndless = true
+    self._levelStartPU = {
+        inv      = CopyInv(self.powerUps and self.powerUps.inv),
+        progress = CopyInv(self.powerUps and self.powerUps.progress),
+    }
+
+    E.state = "PLAYING"
+    Renderer:OnGameStarted(self.gameState)
+    if self.gameState.timerActive then
+        self:_StartTimeMode()
+    end
+    self:_ArmIdleHint()
 end
 
 -- ============================================================
@@ -198,6 +372,7 @@ function E:StopGame()
         E._sessionId = nil
     end
     _timerGuard:Cancel()
+    _idleGuard:Cancel()
     _gameLoop:Stop()
     _animGen        = _animGen + 1
     _selected       = nil
@@ -219,6 +394,7 @@ function E:SaveAndPause()
         ArcadiaNexus.Lifecycle:PauseGame(GAME_ID, E._sessionId)
     end
     _timerGuard:Cancel()
+    _idleGuard:Cancel()
     _gameLoop:Stop()
     _animGen        = _animGen + 1
     _selected       = nil
@@ -255,6 +431,54 @@ end
 -- ============================================================
 -- Eingabe: Zelle geklickt
 -- ============================================================
+-- Gültiger Nachbar-Tausch oder Ungültig-Animation. false = kein Tauschversuch.
+function E:_AttemptSwap(r1, c1, r2, c2)
+    local gs = self.gameState
+    local Logic = ArcadiaNexus.AJ_Logic
+    local R     = ArcadiaNexus.AJ_Renderer
+    if not gs or not Logic or not R then return false end
+    if not Logic:IsAdjacent(r1, c1, r2, c2) then return false end
+    if not Logic:IsSwappable(gs, r1, c1) or not Logic:IsSwappable(gs, r2, c2) then
+        return false
+    end
+
+    local valid, matches, info = Logic:TrySwap(gs, r1, c1, r2, c2)
+    _selected = nil
+    R:ClearSelection()
+
+    if not valid then
+        R:AnimateInvalidSwap(r1, c1, r2, c2, function()
+            local R2 = ArcadiaNexus.AJ_Renderer
+            if R2 then R2:ShowHint(Loc()["hint_invalid"]) end
+            E:_ArmIdleHint()
+        end)
+        return true
+    end
+
+    _moveCount = _moveCount + 1
+    if (gs.movesLeft or 0) >= 1 and (gs.movesLeft or 0) <= 3 then
+        PlayAJ("lowmoves")
+    end
+    E.state = "ANIMATING"
+    local myGen = _animGen
+    R:AnimateSwap(r1, c1, r2, c2, gs, function()
+        if myGen ~= _animGen then return end
+        self:_ProcessCascade(gs, matches, info, myGen)
+    end)
+    return true
+end
+
+-- Ziehen auf den Nachbarn (Klick-Auswahl bleibt separat).
+function E:OnCellDrag(r1, c1, r2, c2)
+    if E.state == "POWERUP_TARGETING" or E.state ~= "PLAYING" then return end
+    self:_CancelIdleHint()
+    local gs = self.gameState
+    if not gs or gs.gameOver then return end
+    if self:_AttemptSwap(r1, c1, r2, c2) then return end
+    -- Nicht benachbart / nicht tauschbar: Zielzelle wie Klick behandeln.
+    self:OnCellClick(r2, c2, "LeftButton", false)
+end
+
 function E:OnCellClick(row, col, button, isShift)
     if E.state == "POWERUP_TARGETING" then
         if button == "RightButton" then
@@ -266,7 +490,11 @@ function E:OnCellClick(row, col, button, isShift)
     end
 
     if E.state ~= "PLAYING" then return end
-    if button == "RightButton" then return end
+    self:_CancelIdleHint()
+    if button == "RightButton" then
+        self:_ArmIdleHint()
+        return
+    end
     local gs = self.gameState
     if not gs or gs.gameOver then return end
 
@@ -275,12 +503,16 @@ function E:OnCellClick(row, col, button, isShift)
     local L     = Loc()
     if not Logic or not R then return end
 
-    if not Logic:IsSwappable(gs, row, col) then return end
+    if not Logic:IsSwappable(gs, row, col) then
+        self:_ArmIdleHint()
+        return
+    end
 
     if not _selected then
         _selected = { row = row, col = col }
         R:SetSelection(row, col)
         R:ShowHint(L["hint_swap"])
+        self:_ArmIdleHint()
         return
     end
 
@@ -289,33 +521,14 @@ function E:OnCellClick(row, col, button, isShift)
         _selected = nil
         R:ClearSelection()
         R:ShowHint(L["hint_select"])
+        self:_ArmIdleHint()
         return
     end
-    if not Logic:IsAdjacent(r1, c1, row, col) then
-        _selected = { row = row, col = col }
-        R:SetSelection(row, col)
-        return
-    end
+    if self:_AttemptSwap(r1, c1, row, col) then return end
 
-    local valid, matches, info = Logic:TrySwap(gs, r1, c1, row, col)
-    _selected = nil
-    R:ClearSelection()
-
-    if not valid then
-        R:AnimateInvalidSwap(r1, c1, row, col, function()
-            local R2 = ArcadiaNexus.AJ_Renderer
-            if R2 then R2:ShowHint(Loc()["hint_invalid"]) end
-        end)
-        return
-    end
-
-    _moveCount = _moveCount + 1
-    E.state = "ANIMATING"
-    local myGen = _animGen
-    R:AnimateSwap(r1, c1, row, col, gs, function()
-        if myGen ~= _animGen then return end
-        self:_ProcessCascade(gs, matches, info, myGen)
-    end)
+    _selected = { row = row, col = col }
+    R:SetSelection(row, col)
+    self:_ArmIdleHint()
 end
 
 -- ============================================================
@@ -329,6 +542,7 @@ function E:_ProcessCascade(gs, matches, info, myGen)
     local L     = Loc()
     if not Logic or not R or not PU then return end
 
+    local iceKeys = Logic.CollectAdjacentIce and Logic:CollectAdjacentIce(gs, matches) or {}
     local removed, gained = Logic:RemoveMatches(gs, matches, info)
     if removed == 0 then
         E.state = "PLAYING"
@@ -362,6 +576,7 @@ function E:_ProcessCascade(gs, matches, info, myGen)
 
     R:UpdateHUD(gs)
     if gs.comboCount > 1 then R:ShowCombo(gs.comboCount) end
+    if R.ShowImpactFx then R:ShowImpactFx(gained, gs.comboCount, matches) end
 
     R:AnimatePulseAndFade(matches, gs, function()
         if myGen ~= _animGen then return end
@@ -379,7 +594,7 @@ function E:_ProcessCascade(gs, matches, info, myGen)
                 self:_CheckEndOfTurn(gs)
             end
         end)
-    end)
+    end, { iceKeys = iceKeys, combo = gs.comboCount })
 end
 
 -- ── Nach stabilem Board: Ziel / Züge / Zeit / Softlock prüfen ──
@@ -405,7 +620,10 @@ function E:_CheckEndOfTurn(gs)
     if not Logic:HasPossibleMoves(gs) then
         self:_DoShuffle(gs)
     else
-        if R then R:ShowHint(L["hint_select"]) end
+        if R then
+            R:ShowHint(L["hint_select"])
+            self:_ArmIdleHint()
+        end
     end
 end
 
@@ -425,6 +643,7 @@ function E:_DoShuffle(gs)
         E.state = "PLAYING"
         R:DrawGrid(gs)
         R:ShowHint(L["hint_select"])
+        E:_ArmIdleHint()
     end)
 end
 
@@ -433,6 +652,7 @@ end
 -- ============================================================
 function E:OnPowerUpClick(id)
     if E.state ~= "PLAYING" and E.state ~= "POWERUP_TARGETING" then return end
+    self:_CancelIdleHint()
     local PU = ArcadiaNexus.AJ_PowerUps
     local R  = ArcadiaNexus.AJ_Renderer
     local gs = self.gameState
@@ -464,6 +684,7 @@ function E:CancelTargeting()
     E.state = "PLAYING"
     local R = ArcadiaNexus.AJ_Renderer
     if R then R:ExitTargetingMode() end
+    self:_ArmIdleHint()
 end
 
 --- Renderer-Hover: Wirkungsbereich für Highlight.
@@ -515,6 +736,10 @@ function E:_AfterPowerUp(gs, result)
     local myGen = _animGen
     R:UpdateHUD(gs)
 
+    if result.gainedScore and result.gainedScore > 0 and R.ShowImpactFx then
+        R:ShowImpactFx(result.gainedScore, 1, result.removedKeys)
+    end
+
     local function afterRemoval()
         if myGen ~= _animGen then return end
         local fallInfo = Logic:ApplyGravity(gs)
@@ -559,35 +784,69 @@ function E:_HandleLevelComplete()
     local gs       = self.gameState
     local Settings = ArcadiaNexus.AJ_Settings
     local Levels   = ArcadiaNexus.AJ_Levels
+    local Logic    = ArcadiaNexus.AJ_Logic
     local R        = ArcadiaNexus.AJ_Renderer
     if not gs then return end
 
     _timerGuard:Cancel()
+    _idleGuard:Cancel()
     _gameLoop:Stop()
     _animGen = _animGen + 1
     E.state  = "LEVEL_COMPLETE"
 
-    local isFinal = gs.level >= Levels.COUNT
+    local isEndless = gs.endless == true
+    local isFinal = (not isEndless) and gs.level >= Levels.COUNT
     self.totalScore = self.totalScore + gs.score
 
-    -- Kumulative Achievement-Zähler
+    local prevSave = Settings:LoadSlot(self.activeSlot) or {}
+    local stars = Settings:CopyStars(prevSave.stars)
+    local grade, prevStar = 0, 0
+    if not isEndless then
+        prevStar = stars[gs.level] or 0
+        grade = Logic:GradeStars(gs)
+        stars[gs.level] = math.max(prevStar, grade)
+        gs.lastStars = grade
+        gs.bestStars = stars[gs.level]
+    else
+        gs.lastStars = 0
+        gs.bestStars = 0
+    end
+
+    local cleared = math.max(tonumber(prevSave.clearedLevel) or 0, isEndless and (prevSave.clearedLevel or 0) or gs.level)
+    local cursor = tonumber(prevSave.level) or 1
+    if not isEndless and gs.level >= (tonumber(prevSave.clearedLevel) or 0) then
+        cursor = gs.level + 1
+    end
+
+    local wave = gs.endlessWave or 0
+    local runScore = (prevSave.endlessRunScore or 0) + (isEndless and gs.score or 0)
+    if isEndless then
+        gs.endlessRunScore = runScore
+        Settings:NoteEndlessBest(wave)
+        Settings:AddStats({ totalEndlessWaves = 1 })
+    end
+
     Settings:AddStats({
-        totalLevels   = 1,
+        totalLevels   = isEndless and 0 or 1,
         totalPowerUps = gs.stats.powerUpsUsed,
         totalIce      = gs.stats.iceDestroyed,
-        totalTimeWins = gs.timerActive and 1 or 0,
+        totalTimeWins = (not isEndless and gs.timerActive) and 1 or 0,
         totalCombo5   = (gs.maxCombo >= 5) and 1 or 0,
+        totalStars    = isEndless and 0 or math.max(0, stars[gs.level] - prevStar),
     })
     local totals = Settings:GetStats()
 
-    -- Auto-Save in den aktiven Slot (nächstes Level, Inventar, kein MidLevel)
     Settings:SaveSlot(self.activeSlot, {
-        level       = isFinal and gs.level or (gs.level + 1),
-        totalScore  = self.totalScore,
-        difficulty  = gs.difficulty,
-        timerActive = gs.timerActive,
-        powerUps    = self.powerUps.inv,
-        progress    = self.powerUps.progress,
+        level        = cursor,
+        clearedLevel = cleared,
+        totalScore   = self.totalScore,
+        difficulty   = gs.difficulty,
+        timerActive  = gs.timerActive,
+        powerUps     = self.powerUps.inv,
+        progress     = self.powerUps.progress,
+        stars        = stars,
+        endlessWave     = isEndless and (wave + 1) or (prevSave.endlessWave or 0),
+        endlessRunScore = isEndless and runScore or (prevSave.endlessRunScore or 0),
     })
 
     -- Leaderboard-Score: hard × 1,5 (GDD §3.3 – nur Leaderboard)
@@ -608,12 +867,19 @@ function E:_HandleLevelComplete()
             powerUpsUsed    = gs.stats.powerUpsUsed,
             iceDestroyed    = gs.stats.iceDestroyed,
             timeMode        = gs.timerActive,
+            stars           = gs.lastStars,
+            bestStars       = gs.bestStars,
+            totalStars      = totals.totalStars,
+            endlessWave     = isEndless and wave or nil,
+            endlessBestWave = totals.endlessBestWave,
         },
     })
 
     PlayAJ("win")
     if R then
-        if isFinal then
+        if isEndless then
+            R:ShowEndlessWaveWin(gs, self.totalScore)
+        elseif isFinal then
             R:ShowFinalWin(gs, self.totalScore)
         else
             R:ShowLevelWin(gs, self.totalScore)
@@ -621,15 +887,104 @@ function E:_HandleLevelComplete()
     end
 end
 
--- ── Weiter zum nächsten Level (Renderer-Button) ────────────────
-function E:ContinueToNextLevel()
-    if E.state ~= "LEVEL_COMPLETE" then return end
-    self:StartGame({ slot = self.activeSlot, mode = "continue" })
+function E:OpenMap(slot, focusLevel)
+    local Settings = ArcadiaNexus.AJ_Settings
+    local Renderer = ArcadiaNexus.AJ_Renderer
+    if not Settings or not Renderer then return end
+    slot = slot or self.activeSlot or Settings:GetActiveSlot()
+    local save = Settings:LoadSlot(slot)
+    if not save then return end
+
+    self:_CancelIdleHint()
+    _timerGuard:Cancel()
+    _gameLoop:Stop()
+    _animGen = _animGen + 1
+    if E._sessionId then
+        ArcadiaNexus.Lifecycle:EndGame(GAME_ID, E._sessionId)
+        E._sessionId = nil
+    end
+    Settings:SetActiveSlot(slot)
+    self.activeSlot = slot
+    self.totalScore = save.totalScore or 0
+    self.gameState  = nil
+    E.state = "MAP"
+    Renderer:ShowLevelMap(save, focusLevel)
 end
 
--- ── Aktuelles Level neu starten (Retry / "Level neu starten") ──
+function E:SelectMapLevel(level)
+    if E.state ~= "MAP" then return end
+    self:StartGame({
+        slot    = self.activeSlot,
+        mode    = "continue",
+        level   = level,
+        skipMid = true,
+    })
+end
+
+function E:MapBackToSlots()
+    if E.state ~= "MAP" then return end
+    E.state = "IDLE"
+    local R = ArcadiaNexus.AJ_Renderer
+    if R then R:EnterSlotMenu() end
+end
+
+-- ── Weiter: zurück zur Karte ──────────────────────────────────
+function E:SelectEndless()
+    if E.state ~= "MAP" then return end
+    self:StartEndless({
+        slot     = self.activeSlot,
+        skipMid  = true,
+        resetRun = false,
+    })
+end
+
+function E:ContinueToNextLevel()
+    if E.state ~= "LEVEL_COMPLETE" then return end
+    local gs = self.gameState
+    if gs and gs.endless then
+        self:StartEndless({
+            slot    = self.activeSlot,
+            wave    = (gs.endlessWave or 1) + 1,
+            skipMid = true,
+        })
+        return
+    end
+    local nextLevel = gs and (gs.level + 1) or 1
+    self:OpenMap(self.activeSlot, nextLevel)
+end
+
+function E:ContinueCampaign()
+    local Settings = ArcadiaNexus.AJ_Settings
+    local Levels   = ArcadiaNexus.AJ_Levels
+    if not Settings or not Levels or not self.activeSlot then return end
+    local save = Settings:LoadSlot(self.activeSlot)
+    if not save then return end
+    local nextLevel = math.max((save.clearedLevel or save.level or 1) + 1, 1)
+    if nextLevel > Levels.COUNT then nextLevel = Levels.COUNT end
+    save.midLevel = nil
+    self:OpenMap(self.activeSlot, nextLevel)
+end
+
 function E:RestartLevel()
-    self:StartGame({ slot = self.activeSlot, mode = "continue" })
+    if self._playingEndless or (self.gameState and self.gameState.endless) then
+        local wave = self.gameState and self.gameState.endlessWave or 1
+        self:StartEndless({
+            slot          = self.activeSlot,
+            wave          = wave,
+            skipMid       = true,
+            startPowerUps = self._levelStartPU,
+        })
+        return
+    end
+    local lvl = self._playingLevel
+        or (self.gameState and self.gameState.level)
+    self:StartGame({
+        slot          = self.activeSlot,
+        mode          = "continue",
+        level         = lvl,
+        skipMid       = true,
+        startPowerUps = self._levelStartPU,
+    })
 end
 
 -- ============================================================
@@ -640,6 +995,7 @@ function E:_HandleGameOver()
     if not gs or E.state == "IDLE" or E.state == "GAMEOVER" then return end
 
     _timerGuard:Cancel()
+    _idleGuard:Cancel()
     _gameLoop:Stop()
     _animGen = _animGen + 1
     E.state  = "GAMEOVER"
@@ -678,6 +1034,8 @@ function E:_HandleGameOver()
                 powerUpsUsed    = gs.stats.powerUpsUsed,
                 iceDestroyed    = gs.stats.iceDestroyed,
                 timeMode        = gs.timerActive,
+                endlessWave     = gs.endless and gs.endlessWave or nil,
+                endlessBestWave = Settings:GetStats().endlessBestWave,
             },
         })
     end

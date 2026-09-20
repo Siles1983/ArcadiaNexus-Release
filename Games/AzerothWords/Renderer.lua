@@ -809,4 +809,6 @@ ArcadiaNexus.RegisterGame({
     renderer  = "WRD_Renderer",
     engine    = "WRD_Engine",
     container = "_wrdContainer",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothWords\\assets\\logo\\logo_aw",
+    xp        = 12,
 })

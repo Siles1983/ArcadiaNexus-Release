@@ -6,7 +6,7 @@
     Verantwortlichkeiten:
       - Prüft Achievement-Conditions (via GameResultProcessor)
       - Verwaltet Bronze/Silber/Gold-Stufen pro Achievement-Gruppe
-      - Schreibt ausschließlich in ArcadiaNexusDB.achievements
+      - Schreibt ausschließlich über AchievementStore
       - Emittiert ACHIEVEMENT_UNLOCKED (für UI-Toast)
       - Emittiert ACHIEVEMENT_XP (XPManager hört darauf)
       - Ausfall darf den Rest des Addons NICHT beeinflussen
@@ -27,20 +27,7 @@ local AM = ArcadiaNexus.AchievementManager
 -- ============================================================
 
 function AM:Init()
-    -- DB sichern
-    if not ArcadiaNexusDB.achievements then
-        ArcadiaNexusDB.achievements = {
-            unlocked = {},   -- [achId] = timestamp
-            progress = {},   -- [groupId] = { tier=0, current=0 }
-        }
-    end
-    if not ArcadiaNexusDB.achievements.unlocked then
-        ArcadiaNexusDB.achievements.unlocked = {}
-    end
-    if not ArcadiaNexusDB.achievements.progress then
-        ArcadiaNexusDB.achievements.progress = {}
-    end
-
+    ArcadiaNexus.AchievementStore.Get()
     AM:_CheckRetroactive()
 end
 
@@ -108,24 +95,20 @@ function AM:_Check(data)
 end
 
 function AM:_CheckGroup(group, data)
-    local db       = ArcadiaNexusDB.achievements
     local groupId  = group.id
     local tiers    = group.tiers  -- { { id, target, xp }, ... } Bronze/Silber/Gold
 
     if not tiers or #tiers == 0 then return end
 
     -- Aktuellen Fortschrittsstand aus DB lesen
-    if not db.progress[groupId] then
-        db.progress[groupId] = { tier = 0, current = 0 }
-    end
-    local prog = db.progress[groupId]
+    local prog = ArcadiaNexus.AchievementStore.EnsureGroup(groupId)
 
     -- Alle bereits freigeschalteten Tiers überspringen
     local nextTierIdx = prog.tier + 1
     if nextTierIdx > #tiers then return end  -- Alle Tiers bereits erreicht
 
     -- Aktuellen Wert via condition ermitteln (pcall-geschützt)
-    local ok, value = pcall(group.condition, data, ArcadiaNexusDB)
+    local ok, value = pcall(group.condition, data, ArcadiaNexus.AchievementStore.ConditionDB())
     if not ok or type(value) ~= "number" then return end
 
     -- Fortschritt aktualisieren (nur wenn value > current, für kumulative)
@@ -138,7 +121,7 @@ function AM:_CheckGroup(group, data)
         local tier = tiers[i]
         if prog.current >= tier.target then
             -- Nur freischalten wenn noch nicht in unlocked
-            if not db.unlocked[tier.id] then
+            if not ArcadiaNexus.AchievementStore.IsUnlocked(tier.id) then
                 AM:_Unlock(tier, group, i)
                 prog.tier = i
             end
@@ -153,8 +136,7 @@ end
 -- ============================================================
 
 function AM:_Unlock(tier, group, tierIdx)
-    local db = ArcadiaNexusDB.achievements
-    db.unlocked[tier.id] = GetServerTime()
+    ArcadiaNexus.AchievementStore.Unlock(tier.id)
 
     -- XP via Event an XPManager (keine direkte Kopplung)
     local xp = tier.xp or 20
@@ -191,21 +173,20 @@ end
 -- ============================================================
 
 function AM:GetUnlocked()
-    return ArcadiaNexusDB.achievements and ArcadiaNexusDB.achievements.unlocked or {}
+    return ArcadiaNexus.AchievementStore.GetUnlocked()
 end
 
 function AM:GetProgress()
-    return ArcadiaNexusDB.achievements and ArcadiaNexusDB.achievements.progress or {}
+    return ArcadiaNexus.AchievementStore.GetProgress()
 end
 
 function AM:IsUnlocked(achId)
-    local db = ArcadiaNexusDB.achievements
-    return db and db.unlocked and db.unlocked[achId] ~= nil
+    return ArcadiaNexus.AchievementStore.IsUnlocked(achId)
 end
 
 function AM:GetStats()
     local achData  = ArcadiaNexus.AchievementData or {}
-    local unlocked = ArcadiaNexusDB.achievements and ArcadiaNexusDB.achievements.unlocked or {}
+    local unlocked = ArcadiaNexus.AchievementStore.GetUnlocked()
 
     local totalTiers   = 0
     local unlockedCnt  = 0

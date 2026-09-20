@@ -467,7 +467,8 @@ local function SetAtlasSafe(tex, atlasName)
 end
 
 local function BuildGotdBadge()
-    local db  = ArcadiaNexusDB and ArcadiaNexusDB.gotdAnchor
+    local CS  = ArcadiaNexus.ClientSettingsStore
+    local db  = CS and CS.GetAnchor("gotdAnchor")
     local dbx = (db and db.x) or 0
     local dby = (db and db.y) or -57
 

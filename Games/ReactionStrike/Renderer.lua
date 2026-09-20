@@ -764,4 +764,6 @@ ArcadiaNexus.RegisterGame({
     renderer  = "RS_Renderer",
     engine    = "RS_Engine",
     container = "_rsContainer",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\ReactionStrike\\assets\\logo\\logo_reaktionstrike",
+    xp        = 8,
 })

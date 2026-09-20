@@ -3,7 +3,7 @@
     Zentrales Event-System
 
     API:
-        ArcadiaNexus.EventBus:On(event, callback)
+        dispose = ArcadiaNexus.EventBus:On(event, callback)
         ArcadiaNexus.EventBus:Emit(event, data, ...)
         ArcadiaNexus.EventBus:Off(event, callback)
         ArcadiaNexus.EventBus:Clear(event)
@@ -27,6 +27,7 @@ EventBus._listeners = {}
 
 --- Registriert einen Listener für ein Event.
 --- WICHTIG: Immer in Init()-Funktionen aufrufen, NICHT auf Modul-Ebene!
+--- Gibt eine Dispose-Funktion zurück. Derselbe Callback wird pro Event nur einmal registriert.
 function EventBus:On(event, callback)
     if not event or not callback then
         GH_LogWarn("EventBus", "On() mit nil-Argument: event=" .. tostring(event))
@@ -35,7 +36,18 @@ function EventBus:On(event, callback)
     if not self._listeners[event] then
         self._listeners[event] = {}
     end
-    table.insert(self._listeners[event], callback)
+    local list = self._listeners[event]
+    for i = 1, #list do
+        if list[i] == callback then
+            return function()
+                EventBus:Off(event, callback)
+            end
+        end
+    end
+    table.insert(list, callback)
+    return function()
+        EventBus:Off(event, callback)
+    end
 end
 
 -- ============================================================

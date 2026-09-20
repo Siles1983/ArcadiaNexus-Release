@@ -667,4 +667,6 @@ ArcadiaNexus.RegisterGame({
     engine    = "AE_Engine",
     container = "_aeContainer",
     category  = "GESCHICK",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\ArcadiasEcho\\assets\\logo\\logo_arcadias_echo",
+    xp        = 10,
 })

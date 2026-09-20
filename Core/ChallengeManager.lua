@@ -28,8 +28,8 @@ local DAILY_POOL = {
       desc_de="Erreiche 500 Punkte in Snake",                 desc_en="Reach 500 points in Snake",
       goal=500, metric="score",       reward={xp=25,  gold=2} },
 
-    { id="d_memory_win", diff="EASY",   gameId="MEMORY",    title_de="Gutes Gedächtnis",     title_en="Good Memory",
-      desc_de="Gewinne 1x Memory",                            desc_en="Win 1 game of Memory",
+    { id="d_pairs_win",  diff="EASY",   gameId="ARCADIAPAIRS", title_de="Gutes Gedächtnis",   title_en="Good Memory",
+      desc_de="Gewinne 1x Arcadia Pairs",                     desc_en="Win 1 game of Arcadia Pairs",
       goal=1,  metric="wins",         reward={xp=25,  gold=2} },
 
     -- MITTEL
@@ -45,8 +45,8 @@ local DAILY_POOL = {
       desc_de="Gewinne 1x auf Schwer",                        desc_en="Win 1 game on Hard",
       goal=1,  metric="wins_hard",    reward={xp=50,  gold=5} },
 
-    { id="d_tetris1000", diff="MEDIUM", gameId="TETRIS",    title_de="Block-Künstler",       title_en="Block Artist",
-      desc_de="Erreiche 1000 Punkte in Tetris",               desc_en="Reach 1000 points in Tetris",
+    { id="d_blockdrop1000", diff="MEDIUM", gameId="BLOCKDROP", title_de="Block-Künstler",    title_en="Block Artist",
+      desc_de="Erreiche 1000 Punkte in BlockDrop",            desc_en="Reach 1000 points in BlockDrop",
       goal=1000, metric="score",      reward={xp=45,  gold=4} },
 
     -- SCHWER
@@ -123,12 +123,44 @@ end
 -- ============================================================
 local AU = ArcadiaNexus.ArrayUtils
 
+local function IsKnownGame(gameId)
+    if gameId == nil then return true end
+    local GR = ArcadiaNexus.GameRegistry
+    if not GR or not GR.Exists then return false end
+    return GR.Exists(gameId)
+end
+
+local function FilterKnownChallenges(pool)
+    local out = {}
+    for _, c in ipairs(pool) do
+        if IsKnownGame(c.gameId) then
+            out[#out + 1] = c
+        else
+            GH_LogWarn("ChallengeManager", "Challenge '" .. tostring(c.id) ..
+                "' ignoriert: unbekannte gameId '" .. tostring(c.gameId) .. "'")
+        end
+    end
+    return out
+end
+
+function CM:_HasInvalidActive()
+    local db = ArcadiaNexus.StatsStore.GetChallenges()
+    local function scan(list)
+        if type(list) ~= "table" then return false end
+        for _, ch in ipairs(list) do
+            if ch and not IsKnownGame(ch.gameId) then return true end
+        end
+        return false
+    end
+    return scan(db.daily and db.daily.active) or scan(db.weekly and db.weekly.active)
+end
+
 -- ============================================================
 -- CHALLENGE-GENERIERUNG
 -- ============================================================
 function CM:_GenerateDailies(dayTs)
     local easy, medium, hard = {}, {}, {}
-    for _, c in ipairs(DAILY_POOL) do
+    for _, c in ipairs(FilterKnownChallenges(DAILY_POOL)) do
         if     c.diff == "EASY"   then table.insert(easy,   c)
         elseif c.diff == "MEDIUM" then table.insert(medium, c)
         elseif c.diff == "HARD"   then table.insert(hard,   c)
@@ -147,7 +179,7 @@ end
 
 function CM:_GenerateWeekly(weekTs)
     local pool = {}
-    for _, c in ipairs(WEEKLY_POOL) do table.insert(pool, c) end
+    for _, c in ipairs(FilterKnownChallenges(WEEKLY_POOL)) do table.insert(pool, c) end
     AU.ShuffleSeeded(pool, weekTs)
     return pool[1]
 end
@@ -156,13 +188,16 @@ end
 -- INIT / RESET-CHECK
 -- ============================================================
 function CM:Init()
-    if not ArcadiaNexusDB.challenges then
-        ArcadiaNexusDB.challenges = { daily={}, weekly={}, history={ completedTotal=0, goldEarned=0 } }
-    end
-    local db = ArcadiaNexusDB.challenges
-    if not db.history then db.history = { completedTotal=0, goldEarned=0 } end
+    ArcadiaNexus.StatsStore.GetChallenges()
 
     self:_ResetIfNeeded()
+    if self:_HasInvalidActive() then
+        GH_LogWarn("ChallengeManager", "Aktive Challenges mit unbekannter gameId – neu auslosen")
+        local db = ArcadiaNexus.StatsStore.GetChallenges()
+        db.daily = nil
+        db.weekly = nil
+        self:_ResetIfNeeded()
+    end
 end
 
 function CM:HandleGameResult(data)
@@ -173,7 +208,7 @@ function CM:HandleGameResult(data)
 end
 
 function CM:_ResetIfNeeded()
-    local db    = ArcadiaNexusDB.challenges
+    local db    = ArcadiaNexus.StatsStore.GetChallenges()
     local today = self:_DateInt()
     local week  = self:_WeekInt()
     local dayTs = self:_GetDayTimestamp()
@@ -232,7 +267,7 @@ end
 local _hardWinStreak = 0
 
 function CM:_UpdateProgress(data)
-    local db = ArcadiaNexusDB.challenges
+    local db = ArcadiaNexus.StatsStore.GetChallenges()
     if not db then return end
 
     -- Hard-win streak tracking
@@ -327,7 +362,7 @@ function CM:_Complete(ch)
     end
 
     -- Statistik
-    local hist = ArcadiaNexusDB.challenges.history
+    local hist = ArcadiaNexus.StatsStore.GetChallenges().history
     if hist then
         hist.completedTotal = (hist.completedTotal or 0) + 1
         hist.goldEarned     = (hist.goldEarned or 0) + (ch.reward.gold or 0)
@@ -354,17 +389,17 @@ end
 -- PUBLIC GETTER
 -- ============================================================
 function CM:GetDailies()
-    local db = ArcadiaNexusDB.challenges
+    local db = ArcadiaNexus.StatsStore.GetChallenges()
     return (db and db.daily and db.daily.active) or {}
 end
 
 function CM:GetWeekly()
-    local db = ArcadiaNexusDB.challenges
+    local db = ArcadiaNexus.StatsStore.GetChallenges()
     return (db and db.weekly and db.weekly.active) or {}
 end
 
 function CM:GetHistory()
-    local db = ArcadiaNexusDB.challenges
+    local db = ArcadiaNexus.StatsStore.GetChallenges()
     return (db and db.history) or { completedTotal=0, goldEarned=0 }
 end
 

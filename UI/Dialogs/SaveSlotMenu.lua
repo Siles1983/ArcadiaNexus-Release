@@ -25,7 +25,9 @@
       onNewGame     function(slot)
       onContinue    function(slot)
       confirmParent (Frame, unused – Confirm hängt immer am Slot-Menü, damit es vorne liegt)
-      layout        { rowW, rowH, rowGap, rowOfsX, titleY, firstY, btnY, btnW, btnH }
+
+    Layout is owned by this helper (design canvas 600×498). Games must not pass
+    per-game slot pixel offsets. `config.layout` remains an emergency override only.
 ]]
 
 ArcadiaNexus    = ArcadiaNexus or {}
@@ -40,10 +42,38 @@ local DEFAULT_LAYOUT = {
     rowOfsX = -12,
     titleY  = -60,
     firstY  = -100,
-    btnY    = 40,
+    btnY    = 150,
     btnW    = 144,
     btnH    = 32,
 }
+
+-- Slot-UI uses the game design canvas so every game shares the same pixels,
+-- even when config.parent is a smaller clipped field / playfield.
+local function ResolveMenuHost(parent)
+    local f = parent
+    for _ = 1, 12 do
+        if not f then break end
+        local vp = f._gameViewport
+        if vp and vp.canvas then
+            return vp.canvas, vp.designW, vp.designH
+        end
+        local p = f.GetParent and f:GetParent()
+        if p and p._gameViewport and p._gameViewport.canvas == f then
+            local hostVp = p._gameViewport
+            return f, hostVp.designW, hostVp.designH
+        end
+        f = p
+    end
+    return parent, nil, nil
+end
+
+local function DesignSize()
+    local Layout = ArcadiaNexus.Layout
+    if Layout and Layout.GetGameDesignSize then
+        return Layout.GetGameDesignSize()
+    end
+    return 600, 498
+end
 
 local function UILocale()
     return ArcadiaNexus.GetLocaleTable and ArcadiaNexus.GetLocaleTable("UI") or {}
@@ -82,9 +112,20 @@ function UI.CreateSaveSlotMenu(config)
         lay[k] = (config.layout and config.layout[k]) or v
     end
 
-    local menu = CreateFrame("Frame", nil, parent)
-    menu:SetAllPoints(parent)
-    menu:SetFrameLevel((parent:GetFrameLevel() or 1) + 20)
+    local host, hostW, hostH = ResolveMenuHost(parent)
+    local dw, dh = DesignSize()
+    if hostW and hostW > 0 then dw = hostW end
+    if hostH and hostH > 0 then dh = hostH end
+
+    local menu = CreateFrame("Frame", nil, host)
+    menu:ClearAllPoints()
+    menu:SetSize(dw, dh)
+    menu:SetPoint("CENTER", host, "CENTER")
+    local hostLevel = (host.GetFrameLevel and host:GetFrameLevel()) or 1
+    local parentLevel = (parent.GetFrameLevel and parent:GetFrameLevel()) or 1
+    local raise = hostLevel
+    if parentLevel > raise then raise = parentLevel end
+    menu:SetFrameLevel(raise + 40)
     menu:Hide()
 
     local title = menu:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
@@ -290,14 +331,38 @@ function UI.CreateSaveSlotMenu(config)
     end)
     api._contBtn = contBtn
 
+    local function PushGamepadOverlay()
+        local GI = ArcadiaNexus.GameInput
+        if not GI or not GI.OnUiOverlay then return end
+        local list = {}
+        for i = 1, #rows do
+            list[#list + 1] = rows[i]
+        end
+        if api._newBtn then list[#list + 1] = api._newBtn end
+        if api._contBtn then list[#list + 1] = api._contBtn end
+        pcall(GI.OnUiOverlay, list, {
+            onCancel = function()
+                api:Hide()
+            end,
+        })
+    end
+
     function api:Show()
         menu:Show()
         Refresh()
+        PushGamepadOverlay()
     end
 
     function api:Hide()
+        local wasShown = menu:IsShown()
         menu:Hide()
         UI.HideChoicePopup(ConfirmParent())
+        if wasShown then
+            local GI = ArcadiaNexus.GameInput
+            if GI and GI.OnUiOverlayClosed then
+                pcall(GI.OnUiOverlayClosed)
+            end
+        end
     end
 
     function api:IsShown()

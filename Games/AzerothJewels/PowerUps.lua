@@ -50,6 +50,24 @@ function P:GetProgressFraction(pu, id)
     return math.min(1, (pu.progress[id] or 0) / def.chargeTarget)
 end
 
+-- Für UI-Tooltips: Typ, Ziel, Stand, Rest, Inventar.
+function P:GetChargeInfo(pu, id)
+    local def = P.DEFS[id]
+    if not def or not pu then return nil end
+    local target = def.chargeTarget
+    local prog = pu.progress[id] or 0
+    local inv = pu.inv[id] or 0
+    return {
+        chargeType = def.chargeType,
+        needsTarget = def.needsTarget,
+        target     = target,
+        progress   = prog,
+        remain     = math.max(0, target - prog),
+        inv        = inv,
+        full       = inv >= P.MAX_INVENTORY,
+    }
+end
+
 function P:CanUse(pu, id)
     return (pu.inv[id] or 0) > 0
 end

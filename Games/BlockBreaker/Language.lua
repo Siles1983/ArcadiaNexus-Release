@@ -14,6 +14,8 @@ ArcadiaNexus.RegisterLocale("BLOCKBREAKER", "deDE", {
     lbl_time          = "Zeit",
     lbl_highscore     = "Highscore",
     lbl_endless       = "Endlos",
+    lbl_combo         = "Combo",
+    hint_serve        = "Leertaste",
 
     -- Buttons
     btn_start         = "Spiel starten",
@@ -78,14 +80,29 @@ ArcadiaNexus.RegisterLocale("BLOCKBREAKER", "deDE", {
     sound_win         = "Sieg",
     sound_lose        = "Niederlage",
     lbl_screen_flash  = "Screen-Flash",
+    lbl_reduced_motion = "Weniger Bewegung",
 
     -- Spielanleitung
     guide_1           = "A / Linkspfeil: Paddle nach links",
     guide_2           = "D / Rechtspfeil: Paddle nach rechts",
-    guide_3           = "Leertaste: Pause / Fortsetzen",
+    guide_3           = "Leertaste: Ball starten, danach Pause. P: Pause / Fortsetzen",
     guide_4           = "Zerstöre alle Blöcke um das Level zu beenden.",
     guide_5           = "Gepanzerte Blöcke (heller Rahmen) brauchen 2 Treffer.",
     guide_6           = "Power-Ups fallen aus goldenen Blöcken.",
+    guide_7           = "Extra-Ball: Leben geht erst verloren, wenn der letzte Ball fällt.",
+    guide_8           = "Nach Start, Levelwechsel und Lebenverlust klebt der Ball am Paddle, bis du ihn mit Leertaste startest.",
+
+    -- DevMode (F8)
+    dev_pu_title      = "F8  PUs",
+    dev_pu_lives      = "Leben",
+    dev_pu_score250   = "+250",
+    dev_pu_score500   = "+500",
+    dev_pu_big        = "Breit",
+    dev_pu_bullet     = "Ball",
+    dev_pu_fast       = "Turbo",
+    dev_pu_slow       = "Langsam",
+    dev_pu_small      = "Schmal",
+    dev_pu_strength   = "Stärke",
 
     -- Settings-Boxen
     box_difficulty    = "Schwierigkeit",
@@ -123,6 +140,8 @@ ArcadiaNexus.RegisterLocale("BLOCKBREAKER", "enUS", {
     lbl_time          = "Time",
     lbl_highscore     = "Highscore",
     lbl_endless       = "Endless",
+    lbl_combo         = "Combo",
+    hint_serve        = "Space",
 
     -- Buttons
     btn_start         = "Start Game",
@@ -187,14 +206,29 @@ ArcadiaNexus.RegisterLocale("BLOCKBREAKER", "enUS", {
     sound_win         = "Victory",
     sound_lose        = "Defeat",
     lbl_screen_flash  = "Screen Flash",
+    lbl_reduced_motion = "Reduce motion",
 
     -- Spielanleitung
     guide_1           = "A / Left Arrow: Move paddle left",
     guide_2           = "D / Right Arrow: Move paddle right",
-    guide_3           = "Space: Pause / Resume",
+    guide_3           = "Space: serve the ball, then Pause. P: Pause / Resume",
     guide_4           = "Destroy all blocks to complete the level.",
     guide_5           = "Armored blocks (bright border) require 2 hits.",
     guide_6           = "Power-Ups drop from golden blocks.",
+    guide_7           = "Extra ball: a life is lost only when the last ball falls.",
+    guide_8           = "After start, next level, or a lost life the ball sticks to the paddle until you serve with Space.",
+
+    -- DevMode (F8)
+    dev_pu_title      = "F8  PUs",
+    dev_pu_lives      = "Life",
+    dev_pu_score250   = "+250",
+    dev_pu_score500   = "+500",
+    dev_pu_big        = "Wide",
+    dev_pu_bullet     = "Ball",
+    dev_pu_fast       = "Fast",
+    dev_pu_slow       = "Slow",
+    dev_pu_small      = "Narrow",
+    dev_pu_strength   = "Power",
 
     -- Settings-Boxen
     box_difficulty    = "Difficulty",

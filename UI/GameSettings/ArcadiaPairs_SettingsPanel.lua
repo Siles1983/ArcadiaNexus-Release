@@ -21,32 +21,18 @@ local function CreateIconPreview(parent, x, y, size)
     return tex
 end
 
-local DECK_PREVIEW_ICONS = {
-    classes = {
-        "Interface\\Icons\\Ability_Warrior_Charge",
-        "Interface\\Icons\\Ability_Rogue_Stealth",
-        "Interface\\Icons\\Spell_Fire_FlameBolt",
-        "Interface\\Icons\\Spell_Frost_FrostBolt02",
-        "Interface\\Icons\\Spell_Holy_Heal",
-        "Interface\\Icons\\Spell_Shadow_DeathCoil",
-    },
-    items = {
-        "Interface\\Icons\\INV_Potion_54",
-        "Interface\\Icons\\INV_Misc_Key_04",
-        "Interface\\Icons\\INV_Misc_Book_09",
-        "Interface\\Icons\\Trade_Engineering",
-        "Interface\\Icons\\INV_Misc_Gem_Ruby_02",
-        "Interface\\Icons\\INV_Scroll_08",
-    },
-    mounts = {
-        "Interface\\Icons\\Ability_Mount_RidingHorse",
-        "Interface\\Icons\\Ability_Mount_GriffonMount",
-        "Interface\\Icons\\INV_Sword_39",
-        "Interface\\Icons\\INV_Axe_09",
-        "Interface\\Icons\\INV_Shield_06",
-        "Interface\\Icons\\INV_Misc_Gem_01",
-    },
-}
+local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+
+local function ThemePreviewIcons(theme)
+    local Logic = ArcadiaNexus.AP_Logic
+    local names = Logic and Logic.GetDeckIcons and Logic:GetDeckIcons(theme) or {}
+    local out = {}
+    for i = 1, 6 do
+        local name = names[i]
+        out[i] = name and ("Interface\\Icons\\" .. name) or FALLBACK_ICON
+    end
+    return out
+end
 
 local function BuildArcadiaPairsSettingsPanel(parent)
     local S  = ArcadiaNexus.AP_Settings
@@ -75,7 +61,7 @@ local function BuildArcadiaPairsSettingsPanel(parent)
     end
 
     local function UpdateThemePreview()
-        local deck = DECK_PREVIEW_ICONS[S:Get("theme")] or DECK_PREVIEW_ICONS.classes
+        local deck = ThemePreviewIcons(S:Get("theme"))
         for i, tex in ipairs(themePreviewTexs) do
             tex:SetTexture(deck[i] or "Interface\\Icons\\INV_Misc_QuestionMark")
             tex:SetVertexColor(1, 1, 1, 1)
@@ -157,7 +143,7 @@ local function BuildArcadiaPairsSettingsPanel(parent)
             sections = {
                 GS.GuideSection(nil, L, {
                     "guide_goal", "guide_click", "guide_match",
-                    "guide_miss", "guide_timer", "guide_hint",
+                    "guide_miss", "guide_timer", "guide_hint", "guide_mp",
                 }),
             },
         },

@@ -10,7 +10,7 @@
 --  - OnHide → SaveAndPause (kein Spiel läuft im Hintergrund)
 --  - GAME_RESULT-Event bei Win/Loss (uppercase)
 --  - Spielregeln NUR in Logic.lua, UI NUR in Renderer.lua
---  - PlaySound: direkte Integer-IDs (kein SOUNDKIT-nil-Risiko)
+--  - Custom-WAVs via PlaySoundFile; Win bleibt SOUNDKIT-ID
 -- ============================================================
 
 ArcadiaNexus.AD_Engine = {}
@@ -23,18 +23,40 @@ E.gameState = nil
 
 local _gameLoop = ArcadiaNexus.GameLoop.Create("ArcadiaNexus_AD_LoopFrame")
 
--- ── Sound-IDs (direkte Integer, kein SOUNDKIT) ────────────────
-local SND_SHOOT      = 774   -- IG_MAINMENU_OPTION_CHECKBOX_ON
-local SND_ALIENDEATH = 8959  -- UI_ACHIEVEMENT_TOAST_SPARK
-local SND_PLAYERHIT  = 847   -- INTERFACE_SOUND_LOST_TARGET_UNIT
-local SND_WEAPONDROP = 1115  -- UI_GARRISON_MISSION_COMPLETE
-local SND_WIN        = 8959  -- UI_ACHIEVEMENT_TOAST_SPARK
-local SND_LOSE       = 847   -- IG_QUEST_ABANDON
+-- ── Custom-WAVs (alle 0,5 s) ──────────────────────────────────
+-- Kein StopSound: Samples dürfen überlappen, Retrigger wird gedrosselt.
+local SND_PATH          = "Interface\\AddOns\\ArcadiaNexus\\Games\\AlienDefense\\assets\\sound\\"
+local SND_PLAYER_SHOOT  = SND_PATH .. "playership_shoot.wav"
+local SND_ALIEN_SHOOT   = SND_PATH .. "enemyship_shoot.wav"
+local SND_ENEMY_DEFEAT  = SND_PATH .. "enemy_defeat.wav"
+local SND_PLAYER_DEFEAT = SND_PATH .. "playership_defeat.wav"
+local SND_POWER_UP      = SND_PATH .. "power_up.wav"
+local SND_WIN           = 8959  -- UI_ACHIEVEMENT_TOAST_SPARK
 
-local function PlayADSound(Settings, key, soundId)
-    if Settings and Settings:Get(key) then
-        PlaySound(soundId, "Master")
-    end
+local SND_GAP = {
+    soundOnShoot      = 0.22, -- SINGLE 0.25 s → jedes Feuer, max. ~2 Stimmen
+    soundOnAlienShoot = 0.18, -- Dual-Salve im selben Tick = 1 Stimme
+    soundOnAlienDeath = 0.16, -- Laser-Mehrfachkill im selben Tick = 1 Stimme
+    soundOnPlayerHit  = 0.45,
+    soundOnWeaponDrop = 0.40,
+    soundOnLose       = 0.45,
+}
+
+local _lastPlay = {}
+
+local function Now()
+    if GetTime then return GetTime() end
+    return 0
+end
+
+local function PlayADFile(Settings, key, path)
+    if not Settings or not Settings:Get(key) then return end
+    local t = Now()
+    local last = _lastPlay[key]
+    local gap = SND_GAP[key] or 0.20
+    if last and (t - last) < gap then return end
+    _lastPlay[key] = t
+    PlaySoundFile(path, "Master")
 end
 
 -- ── Loop-Frame ────────────────────────────────────────────────
@@ -64,30 +86,32 @@ function E:_Tick(dt)
 
     for _, act in ipairs(actions) do
         if act.type == "player_shoot" then
-            PlayADSound(Settings, "soundOnShoot", SND_SHOOT)
+            PlayADFile(Settings, "soundOnShoot", SND_PLAYER_SHOOT)
+            Renderer:OnPlayerShoot(act.weapon)
             if act.laserFlash and Settings and Settings:Get("screenFlash") then
                 Renderer:FlashScreen(0.2, 0.9, 0.9, 0.08)
             end
 
         elseif act.type == "alien_killed" then
-            PlayADSound(Settings, "soundOnAlienDeath", SND_ALIENDEATH)
+            PlayADFile(Settings, "soundOnAlienDeath", SND_ENEMY_DEFEAT)
             Renderer:OnAlienKilled(act.alien, gs)
 
         elseif act.type == "player_hit" then
-            PlayADSound(Settings, "soundOnPlayerHit", SND_PLAYERHIT)
+            PlayADFile(Settings, "soundOnPlayerHit", SND_PLAYER_DEFEAT)
             if Settings and Settings:Get("screenFlash") then
                 Renderer:FlashScreen(1, 0.1, 0.1)
             end
+            Renderer:OnPlayerHit(gs)
             Renderer:UpdateHUD(gs)
 
         elseif act.type == "alien_shoot" then
-            -- kein separater Sound (Alien-Schuss ist visuell)
+            PlayADFile(Settings, "soundOnAlienShoot", SND_ALIEN_SHOOT)
 
         elseif act.type == "drop_spawned" then
             Renderer:OnDropSpawned(act.wtype, act.x, act.y, gs)
 
         elseif act.type == "weapon_collected" then
-            PlayADSound(Settings, "soundOnWeaponDrop", SND_WEAPONDROP)
+            PlayADFile(Settings, "soundOnWeaponDrop", SND_POWER_UP)
             Renderer:OnWeaponCollected(act.wtype, gs)
 
         elseif act.type == "weapon_expired" then
@@ -97,10 +121,10 @@ function E:_Tick(dt)
             -- Renderer zeigt Bonus im Overlay
 
         elseif act.type == "formation_step" then
-            -- Renderer liest Positionen aus State — kein expliziter Aufruf nötig
+            Renderer:OnFormationStep()
 
         elseif act.type == "formation_descent" then
-            -- optional: kurzer visueller Hinweis
+            Renderer:OnFormationDescent()
 
         elseif act.type == "wave_cleared" then
             doWaveWin = true
@@ -111,7 +135,7 @@ function E:_Tick(dt)
     end
 
     -- Renderer immer aktualisieren (letzter Alien-Frame verschwindet korrekt)
-    Renderer:UpdatePhysics(gs)
+    Renderer:UpdatePhysics(gs, dt)
     Renderer:UpdateHUD(gs)
 
     if doGameOver then
@@ -318,8 +342,8 @@ function E:_HandleGameOver()
     if gs.score > (gs.highScore or 0) then gs.highScore = gs.score end
 
     if Settings then
-        if Settings:Get("soundOnLose") then
-            PlaySound(SND_LOSE, "Master")
+        if gs.invaded then
+            PlayADFile(Settings, "soundOnLose", SND_PLAYER_DEFEAT)
         end
         Settings:ClearProgress()
     end

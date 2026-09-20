@@ -36,10 +36,24 @@ end
 function GRP:Process(data)
     if not data or not data.gameId or not data.result then return end
 
+    -- Persist before callbacks: reload/reentrant result delivery is a no-op.
+    if data.resultId then
+        local name, realm
+        if UnitFullName then name, realm = UnitFullName("player") end
+        realm = realm or (GetNormalizedRealmName and GetNormalizedRealmName()) or ""
+        if not name or not data.matchHost then return false end
+        local character = name .. "-" .. tostring(realm):gsub("%s+", "")
+        local key = data.matchHost .. ":" .. data.gameId .. ":" .. data.resultId
+        if not ArcadiaNexus.MatchStore.TryMarkResult(character, key) then
+            return false
+        end
+    end
+
     self:_RunStep("ScoreManager", ArcadiaNexus.ScoreManager, "HandleGameResult", data)
     self:_RunStep("XPManager", ArcadiaNexus.XPManager, "HandleGameResult", data)
     self:_RunStep("AchievementManager", ArcadiaNexus.AchievementManager, "HandleGameResult", data)
     self:_RunStep("ChallengeManager", ArcadiaNexus.ChallengeManager, "HandleGameResult", data)
+    return true
 end
 
 function GRP:_RunStep(label, module, method, data)

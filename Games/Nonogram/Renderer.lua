@@ -193,6 +193,8 @@ ArcadiaNexus.RegisterGame({
     renderer  = "NON_Renderer",
     engine    = "NON_Engine",
     container = "_nonContainer",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\Nonogram\\assets\\logo\\logo_nonogram",
+    xp        = 16,
 })
 
 -- ============================================================

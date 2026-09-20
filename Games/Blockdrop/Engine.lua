@@ -25,8 +25,10 @@ end
 
 E.state        = "IDLE"
 E._board       = nil
-E._timer       = nil
 E._keyFrame    = nil
+
+local _timerGuard = ArcadiaNexus.TimerGuard.New()
+E._timerGuard     = _timerGuard
 
 local L, R, S, CE
 
@@ -48,30 +50,35 @@ function E:_setupKeyFrame()
     kf:EnableKeyboard(false)
     kf:SetPropagateKeyboardInput(false)
     kf:SetScript("OnKeyDown", function(_, key)
-        if E.state ~= "PLAYING" then return end
-        local b = E._board
-        if key == "A" or key == "LEFT" then
-            L:MoveLeft(b); R:UpdatePiece(b)
-            PlaySnd("move")
-        elseif key == "D" or key == "RIGHT" then
-            L:MoveRight(b); R:UpdatePiece(b)
-            PlaySnd("move")
-        elseif key == "W" or key == "UP" then
-            L:Rotate(b); R:UpdatePiece(b)
-            PlaySnd("rotate")
-        elseif key == "S" or key == "DOWN" then
-            if L:Tick(b, b.piece) then
-                R:UpdatePiece(b)
-            end
-        elseif key == "SPACE" then
-            L:HardDrop(b)
-            R:UpdatePiece(b)
-            PlaySnd("move")
-        end
+        E:HandlePlayKey(key)
     end)
     -- Kein OnMouseDown auf keyFrame – wuerde Buttons blockieren.
     -- Rechtsklick-Rotation wird im _gridFrame des Renderers abgefangen.
     self._keyFrame = kf
+end
+
+function E:HandlePlayKey(key)
+    if E.state ~= "PLAYING" then return end
+    local b = E._board
+    if not b or not L or not R then return end
+    if key == "A" or key == "LEFT" then
+        L:MoveLeft(b); R:UpdatePiece(b)
+        PlaySnd("move")
+    elseif key == "D" or key == "RIGHT" then
+        L:MoveRight(b); R:UpdatePiece(b)
+        PlaySnd("move")
+    elseif key == "W" or key == "UP" then
+        L:Rotate(b); R:UpdatePiece(b)
+        PlaySnd("rotate")
+    elseif key == "S" or key == "DOWN" then
+        if L:Tick(b, b.piece) then
+            R:UpdatePiece(b)
+        end
+    elseif key == "SPACE" then
+        L:HardDrop(b)
+        R:UpdatePiece(b)
+        PlaySnd("move")
+    end
 end
 
 function E:EnableKeys(enable)
@@ -197,17 +204,14 @@ end
 function E:_startTick()
     self:_stopTick()
     local interval = L:GetTickInterval(self._board and self._board.level or 0)
-    self._timer = C_Timer.NewTicker(interval, function()
+    _timerGuard:EveryTicker(interval, function()
         if E.state ~= "PLAYING" then return end
         E:_tick()
     end)
 end
 
 function E:_stopTick()
-    if self._timer then
-        self._timer:Cancel()
-        self._timer = nil
-    end
+    _timerGuard:Cancel()
 end
 
 -- ============================================================

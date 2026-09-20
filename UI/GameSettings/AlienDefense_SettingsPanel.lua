@@ -18,6 +18,7 @@ local function BuildAlienDefenseSettingsPanel(parent)
             rowSpacing = 26,
             items = {
                 { key = "soundOnShoot",      label = L.sound_shoot      },
+                { key = "soundOnAlienShoot", label = L.sound_alienshoot },
                 { key = "soundOnAlienDeath", label = L.sound_aliendeath },
                 { key = "soundOnPlayerHit",  label = L.sound_playerhit  },
                 { key = "soundOnWeaponDrop", label = L.sound_weapondrop },

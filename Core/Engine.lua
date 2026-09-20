@@ -30,7 +30,11 @@ end
 -- ==========================================
 
 function Engine:On(event, callback)
-    ArcadiaNexus.EventBus:On(event, callback)
+    return ArcadiaNexus.EventBus:On(event, callback)
+end
+
+function Engine:Off(event, callback)
+    return ArcadiaNexus.EventBus:Off(event, callback)
 end
 
 function Engine:Emit(event, ...)

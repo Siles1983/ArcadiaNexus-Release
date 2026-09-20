@@ -13,6 +13,7 @@ S.Defaults = {
     difficulty        = "easy",
     endlessMode       = false,
     soundOnShoot      = true,
+    soundOnAlienShoot = true,
     soundOnAlienDeath = true,
     soundOnPlayerHit  = true,
     soundOnWeaponDrop = true,

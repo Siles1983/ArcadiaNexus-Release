@@ -96,10 +96,13 @@ end
 
 function N:_ScheduleModelRefresh(modelFrame, viewSide, override)
     if not modelFrame or not C_Timer or not C_Timer.After then return end
+    local guard = modelFrame._tcRefreshGuard or ArcadiaNexus.TimerGuard.New()
+    modelFrame._tcRefreshGuard = guard
+    guard:Cancel()
     local delays = { 0, 0.05, 0.12, 0.25 }
     for _, delay in ipairs(delays) do
-        C_Timer.After(delay, function()
-            if not modelFrame or not modelFrame.GetParent then return end
+        guard:After(delay, function()
+            if not modelFrame:IsShown() then return end
             N:ApplyView(modelFrame, viewSide, override)
             if modelFrame.SetAnimation and not modelFrame._tcAnimLock then
                 modelFrame:SetAnimation(N.ANIM.idle)
@@ -157,7 +160,7 @@ function N:ApplyModel(modelFrame, def, viewSide, override, forceReload)
     if modelFrame.SetAnimation then
         modelFrame._tcAnimLock = true
         modelFrame:SetAnimation(self.ANIM.idle)
-        C_Timer.After(0.3, function()
+        modelFrame._tcRefreshGuard:After(0.3, function()
             if modelFrame then modelFrame._tcAnimLock = nil end
         end)
     end
@@ -174,6 +177,8 @@ end
 
 function N:ClearModelCache(modelFrame)
     if not modelFrame then return end
+    if modelFrame._tcRefreshGuard then modelFrame._tcRefreshGuard:Cancel() end
+    modelFrame._tcAnimLock = nil
     modelFrame._tcCreatureID = nil
     modelFrame._tcDisplayID = nil
     modelFrame._tcViewSide = nil

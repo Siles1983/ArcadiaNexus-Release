@@ -10,6 +10,10 @@ local E = ArcadiaNexus.TC_Engine
 E._sessionId = nil
 E.state = "IDLE"
 E.gameState = nil
+E.mode = "hotseat"
+E.match = nil
+E._resultEmitted = false
+E._mpChar = "thrall"
 
 local _timerGuard = ArcadiaNexus.TimerGuard.New()
 E._timerGuard = _timerGuard
@@ -51,6 +55,8 @@ end
 
 function E:_InvalidateTimers()
     _timerGuard:Cancel()
+    E._unoPending = false
+    E._unoToken = (E._unoToken or 0) + 1
 end
 
 function E:_SetState(newState)
@@ -60,6 +66,19 @@ function E:_SetState(newState)
 end
 
 function E:_NotifyBoard()
+    local M = ArcadiaNexus.Match
+    if E.mode ~= "hotseat" and M and M.NotifyGameView then
+        M.NotifyGameView(E, "TAVERNCARDS", function()
+            local R = ArcadiaNexus.TC_Renderer
+            if R and R.Render then R:Render() end
+        end)
+        return
+    end
+    if E.mode ~= "hotseat" then
+        local R = ArcadiaNexus.TC_Renderer
+        if R and R.Render then R:Render() end
+        return
+    end
     local R = ArcadiaNexus.TC_Renderer
     if R and R.UpdateBoard then R:UpdateBoard(E.gameState) end
 end
@@ -164,16 +183,200 @@ function E:_BuildConfig(config)
     }
 end
 
+local function MpLogic()
+    return ArcadiaNexus.TC_Logic
+end
+
+local function MatchOpts(engine)
+    return MpLogic().MatchOpts(engine)
+end
+
+function E:MaybeScheduleUno()
+    if not self.match or not self.match.isHost then return end
+    local hid = self.match._hostHidden
+    if type(hid) ~= "table" or not hid.unoWindow or hid.unoWindow.resolved then
+        return
+    end
+    if self._unoPending then return end
+    self._unoPending = true
+    local sid = E._sessionId
+    local tok = (self._unoToken or 0) + 1
+    self._unoToken = tok
+    _timerGuard:After(3, function()
+        if tok ~= E._unoToken then return end
+        E._unoPending = false
+        if not ArcadiaNexus.GameSession:IsSession(E, sid) then return end
+        if not E.match or not E.match.isHost then return end
+        local h = E.match._hostHidden
+        if type(h) ~= "table" or not h.unoWindow or h.unoWindow.resolved then return end
+        E.match:SendIntent("UNO_EXPIRE", {})
+        E:_NotifyBoard()
+    end)
+end
+
+function E:OnMatchPublic()
+    local M = ArcadiaNexus.Match
+    if M and M.HandleGamePublic then M.HandleGamePublic(self) end
+    if self.match and self.match.isHost then
+        local hid = self.match._hostHidden
+        if type(hid) == "table" and hid.unoWindow and not hid.unoWindow.resolved then
+            self:MaybeScheduleUno()
+        else
+            self._unoPending = false
+            self._unoToken = (self._unoToken or 0) + 1
+        end
+    end
+    self:_NotifyBoard()
+end
+
+function E:OnMatchState(st)
+    local M = ArcadiaNexus.Match
+    if M and M.HandleGameState then
+        M.HandleGameState(self, "TAVERNCARDS", st, {
+            onPlaying = function()
+                self._unoPending = false
+                local R = ArcadiaNexus.TC_Renderer
+                local gs = self:GetBoardState()
+                if R and R.OnGameStarted then R:OnGameStarted(gs) end
+            end,
+        })
+    end
+    self:_NotifyBoard()
+end
+
+function E:OnMatchReject(f)
+    local M = ArcadiaNexus.Match
+    if M and M.HandleGameReject then M.HandleGameReject(self, "TAVERNCARDS", f) end
+    self:_NotifyBoard()
+end
+
+function E:OnMatchResult(node, resultId)
+    if self.match ~= node or not self._sessionId or node:GetState() ~= "FINISHED" then return end
+    if self._resultEmitted then return end
+    self._resultEmitted = true
+    local board = self:GetBoardState()
+    local result = (board and board.result) or "LOSS"
+    ArcadiaNexus.Engine:Emit("GAME_RESULT", {
+        gameId = "TAVERNCARDS",
+        resultId = resultId,
+        matchHost = node.hostKey,
+        difficulty = "normal",
+        score = 0,
+        result = result,
+        stats = { vsHuman = 1 },
+    })
+    local R = ArcadiaNexus.TC_Renderer
+    if R and R.ShowMatchResult then
+        R:ShowMatchResult(result, board)
+    end
+end
+
+function E:SetReady(ready)
+    local M = ArcadiaNexus.Match
+    if M and M.SetEngineReady then M.SetEngineReady(self, ready) end
+    self:_NotifyBoard()
+end
+
+function E:TryStartMatch()
+    local M = ArcadiaNexus.Match
+    if M and M.TryEngineStart then M.TryEngineStart(self) end
+    self:_NotifyBoard()
+end
+
+function E:GetBoardState()
+    if self.mode ~= "hotseat" and self.match then
+        local priv = self.match.GetPrivateState and self.match:GetPrivateState()
+        return MpLogic().BoardStateFromMatch(self.match:GetPublicState(), priv, self.match.seat or 1)
+    end
+    return self.gameState
+end
+
+function E:GetView()
+    local lobbyPlayers = {}
+    local pub
+    local seat = 1
+    if self.mode ~= "hotseat" and self.match then
+        pub = self.match:GetPublicState() or MpLogic().EmptyPublic()
+        seat = self.match.seat or 1
+        if self.state == "LOBBY" then
+            local seats = self.match.seats or {}
+            local ready = self.match.ready or {}
+            local seen = {}
+            for i = 1, 4 do
+                local k = seats[i]
+                if k and k ~= "" and not seen[k] then
+                    seen[k] = true
+                    lobbyPlayers[#lobbyPlayers + 1] = {
+                        key = k,
+                        name = k:match("^([^-]+)") or k,
+                        ready = ready[i] and true or false,
+                        self = k == self.match.playerKey,
+                    }
+                end
+            end
+        end
+    end
+    return {
+        state = self.state,
+        mode = self.mode,
+        pub = pub,
+        seat = seat,
+        mp = self.mode ~= "hotseat",
+        isHost = self.match and self.match.isHost,
+        matchState = self.match and self.match:GetState(),
+        notice = self._notice,
+        lobbyPlayers = lobbyPlayers,
+    }
+end
+
+function E:HideView()
+    local M = ArcadiaNexus.Match
+    if M and M.HideEngineView then M.HideEngineView(self) end
+end
+
+function E:StopMatchQuiet()
+    local M = ArcadiaNexus.Match
+    if M and M.StopEngineMatch then M.StopEngineMatch(self) end
+end
+
 function E:StartGame(config)
+    config = config or {}
+    self._unoPending = false
+    local mode = config.mode or "hotseat"
+    if mode == "host" or mode == "join" or mode == "rejoin" then
+        local M = ArcadiaNexus.Match
+        if not M or not M.BeginNetworkedGame then
+            self._notice = "nomp"
+            self:_NotifyBoard()
+            return
+        end
+        M.BeginNetworkedGame(self, "TAVERNCARDS", config, function()
+            self:_NotifyBoard()
+        end, MatchOpts, {
+            onBefore = function()
+                self:_InvalidateTimers()
+                self.gameState = nil
+                local S = ArcadiaNexus.TC_Settings
+                self._mpChar = config.playerCharacter or (S and S:Get("playerCharacter")) or "thrall"
+            end,
+        })
+        return
+    end
+    self.mode = mode
+    self._resultEmitted = false
+    self._notice = nil
+
+    self:StopMatchQuiet()
     self:_InvalidateTimers()
     local S = ArcadiaNexus.TC_Settings
     if S then S:ClearPausedState() end
-    local cfg = self:_BuildConfig(config or {})
+    local cfg = self:_BuildConfig(config)
     if cfg.aiCount < 1 or cfg.aiCount > 3 then return end
 
     E._sessionId = ArcadiaNexus.Lifecycle:RestartGame("TAVERNCARDS", E._sessionId)
     local Logic = ArcadiaNexus.TC_Logic
     E.gameState = Logic:NewGameState(cfg)
+    self.mode = "hotseat"
     E:_SetState("DEALING")
     PlaySoundKey("shuffle")
 
@@ -207,7 +410,9 @@ function E:StopGame()
         ArcadiaNexus.Lifecycle:EndGame("TAVERNCARDS", E._sessionId)
         E._sessionId = nil
     end
+    self:StopMatchQuiet()
     self:_InvalidateTimers()
+    self.mode = "hotseat"
 
     local gs = E.gameState
     local S = ArcadiaNexus.TC_Settings
@@ -229,6 +434,10 @@ function E:StopGame()
 end
 
 function E:SaveAndPause()
+    if self.mode ~= "hotseat" then
+        self:HideView()
+        return
+    end
     local gs = E.gameState
     local S = ArcadiaNexus.TC_Settings
     if E._sessionId then
@@ -265,13 +474,16 @@ function E:_BeginTurn()
     local Rules = ArcadiaNexus.TC_Rules
     local player = gs.players[gs.currentPlayer]
 
-    if gs.forceDrawPlayer and gs.forceDrawPlayer == gs.currentPlayer then
-        self:_DrawPenaltyCards(gs.pendingDraw or 4)
+    if gs.forceDrawPlayer then
+        local victim = gs.forceDrawPlayer
+        self:_DrawPenaltyCards(gs.pendingDraw or 4, victim)
         gs.forceDrawPlayer = nil
         gs.pendingDraw = 0
         gs.pendingType = nil
-        self:_AdvanceTurn()
-        return
+        if victim == gs.currentPlayer then
+            self:_AdvanceTurn()
+            return
+        end
     end
 
     if gs.wild4Challengable and gs.currentPlayer ~= gs.wild4PlayedBy then
@@ -279,7 +491,8 @@ function E:_BeginTurn()
             _timerGuard:After(ArcadiaNexus.TC_AI:GetDelay(gs.difficulty, "think"), function()
                 if not E.gameState then return end
                 if ArcadiaNexus.TC_AI:ShouldChallengeWild4(gs) then
-                    E:_ResolveChallenge(true)
+                    local g2 = E.gameState
+                    E:_ResolveChallenge(ArcadiaNexus.TC_Rules:PlayerHadPlayableBeforeWild4(g2, g2.wild4PlayedBy))
                 else
                     gs.wild4Challengable = false
                     E:_HandlePendingDrawStart()
@@ -350,6 +563,11 @@ function E:_RunAITurn()
 end
 
 function E:PlayerDraw(fromAI)
+    if E.mode ~= "hotseat" and E.match then
+        E.match:SendIntent("DRAW", {})
+        E:_NotifyBoard()
+        return
+    end
     local gs = E.gameState
     if not gs or E.state ~= "PLAYING" then return end
     if not fromAI and gs.players[gs.currentPlayer].isAI then return end
@@ -396,6 +614,13 @@ function E:PlayerDraw(fromAI)
 end
 
 function E:PlayerPlayCard(handIndex, wildColor)
+    if E.mode ~= "hotseat" and E.match then
+        local extra = { i = handIndex }
+        if wildColor then extra.c = wildColor end
+        E.match:SendIntent("PLAY", extra)
+        E:_NotifyBoard()
+        return
+    end
     local gs = E.gameState
     if not gs or E.state ~= "PLAYING" then return end
     if gs.players[gs.currentPlayer].isAI then return end
@@ -404,6 +629,11 @@ function E:PlayerPlayCard(handIndex, wildColor)
 end
 
 function E:PlayerPassAfterDraw()
+    if E.mode ~= "hotseat" and E.match then
+        E.match:SendIntent("PASS", {})
+        E:_NotifyBoard()
+        return
+    end
     local gs = E.gameState
     if not gs or not gs.drawnThisTurn then return end
     gs.drawnThisTurn = nil
@@ -470,6 +700,11 @@ function E:_ExecutePlay(playerIndex, handIndex, wildColor)
 end
 
 function E:PlayerPickColor(color)
+    if E.mode ~= "hotseat" and E.match then
+        E.match:SendIntent("COLOR", { c = color })
+        E:_NotifyBoard()
+        return
+    end
     local gs = E.gameState
     if not gs or not gs.pendingColorPick then return end
     local pick = gs.pendingColorPick
@@ -494,6 +729,11 @@ function E:PlayerPickColor(color)
 end
 
 function E:PlayerCallUno()
+    if E.mode ~= "hotseat" and E.match then
+        E.match:SendIntent("UNO", {})
+        E:_NotifyBoard()
+        return
+    end
     local gs = E.gameState
     if not gs or not gs.unoWindow or gs.unoWindow.resolved then return end
     if gs.unoWindow.playerIndex ~= 1 then return end
@@ -505,6 +745,11 @@ function E:PlayerCallUno()
 end
 
 function E:PlayerCatchUno()
+    if E.mode ~= "hotseat" and E.match then
+        E.match:SendIntent("CATCH", {})
+        E:_NotifyBoard()
+        return
+    end
     local gs = E.gameState
     if not gs or not gs.unoWindow or gs.unoWindow.resolved then return end
     local target = gs.unoWindow.playerIndex
@@ -518,10 +763,20 @@ function E:PlayerCatchUno()
 end
 
 function E:PlayerChallengeWild4()
+    if E.mode ~= "hotseat" and E.match then
+        E.match:SendIntent("CHALLENGE", {})
+        E:_NotifyBoard()
+        return
+    end
     self:_ResolveChallenge(ArcadiaNexus.TC_Rules:PlayerHadPlayableBeforeWild4(E.gameState, E.gameState.wild4PlayedBy))
 end
 
 function E:PlayerAcceptWild4()
+    if E.mode ~= "hotseat" and E.match then
+        E.match:SendIntent("ACCEPT", {})
+        E:_NotifyBoard()
+        return
+    end
     local gs = E.gameState
     if not gs then return end
     gs.wild4Challengable = false
@@ -534,8 +789,9 @@ function E:_ResolveChallenge(challengerWins)
     E:_BeginTurn()
 end
 
-function E:_DrawPenaltyCards(n)
-    ArcadiaNexus.TC_Logic:DrawCardsForPlayer(E.gameState, E.gameState.currentPlayer, n)
+function E:_DrawPenaltyCards(n, playerIndex)
+    local gs = E.gameState
+    ArcadiaNexus.TC_Logic:DrawCardsForPlayer(gs, playerIndex or gs.currentPlayer, n)
     PlaySoundKey("draw")
     E:_NotifyBoard()
 end

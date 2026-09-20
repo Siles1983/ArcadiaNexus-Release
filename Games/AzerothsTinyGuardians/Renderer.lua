@@ -2261,4 +2261,6 @@ ArcadiaNexus.RegisterGame({
     renderer  = "ATG_Renderer",
     engine    = "ATG_Engine",
     container = "_atgContainer",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothsTinyGuardians\\assets\\logo\\logo_atg",
+    xp        = 10,
 })

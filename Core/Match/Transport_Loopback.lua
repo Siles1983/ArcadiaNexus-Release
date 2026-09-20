@@ -19,6 +19,9 @@ function MT.CreateLoopback(opts)
     local proto = Proto()
     local maxLen = proto and proto.MAX_PAYLOAD or 255
     local handlers = {}
+    local owners = {}
+    local held = {}
+    local holding = false
     local dropNext = opts.dropNext or 0
     local duplicateNext = opts.duplicateNext or 0
     local truncate = opts.truncate == true
@@ -32,12 +35,16 @@ function MT.CreateLoopback(opts)
         _delivered = 0,
     }
 
-    function T:Register(playerKey, fn)
+    function T:Register(playerKey, fn, owner)
         handlers[playerKey] = fn
+        owners[playerKey] = owner
     end
 
-    function T:Unregister(playerKey)
+    function T:Unregister(playerKey, owner)
+        if owner and owners[playerKey] ~= owner then return false end
         handlers[playerKey] = nil
+        owners[playerKey] = nil
+        return true
     end
 
     function T:SetDropNext(n)
@@ -46,6 +53,17 @@ function MT.CreateLoopback(opts)
 
     function T:SetDuplicateNext(n)
         duplicateNext = n or 0
+    end
+
+    function T:SetHold(value) holding = value == true end
+    function T:FlushHeld(reverse)
+        local pending = held
+        held = {}
+        if reverse then
+            for i = #pending, 1, -1 do pending[i]() end
+        else
+            for i = 1, #pending do pending[i]() end
+        end
     end
 
     local function DeliverOnce(fromKey, payload, channel, toKey)
@@ -91,6 +109,7 @@ function MT.CreateLoopback(opts)
                 DeliverOnce(fromKey, payload, channel, toKey)
             end
         end
+        if holding then held[#held + 1] = go; return end
         if (not sync) or (delaySec and delaySec > 0) then
             local wait = delaySec or 0
             if C_Timer and C_Timer.After then

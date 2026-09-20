@@ -8,7 +8,9 @@
         ArcadiaNexus.RegisterGame(info)           – Facade (Bootstrap.lua)
         ArcadiaNexus.GameRegistry.Register(info)
         ArcadiaNexus.GameRegistry.GetById(id)
+        ArcadiaNexus.GameRegistry.GetLogo(id)
         ArcadiaNexus.GameRegistry.GetLabel(id)
+        ArcadiaNexus.GameRegistry.GetBaseXP(id)
         ArcadiaNexus.GameRegistry.Exists(id)
         ArcadiaNexus.GameRegistry.ShouldShowGame(game, opts)
         ArcadiaNexus.GameRegistry.FILTER_SIDEBAR / FILTER_HUB_MANAGE / FILTER_REGISTRY
@@ -72,6 +74,7 @@ end
 GR.FILTER_SIDEBAR     = { includeDevOnly = true,  respectHidden = true }
 GR.FILTER_HUB_MANAGE  = { includeDevOnly = false, respectHidden = false }
 GR.FILTER_REGISTRY    = { includeDevOnly = true,  respectHidden = false }
+GR.DEFAULT_BASE_XP    = 10
 
 local function NotifyHubRegistryChanged()
     local UI = ArcadiaNexus.UI
@@ -101,7 +104,7 @@ function GR.IsVisible(info, opts)
     end
 
     if opts.respectHidden ~= false then
-        if ArcadiaNexusDB and ArcadiaNexusDB.hiddenGames and ArcadiaNexusDB.hiddenGames[info.id] then
+        if ArcadiaNexus.HiddenGamesStore and ArcadiaNexus.HiddenGamesStore.IsHidden(info.id) then
             return false
         end
     end
@@ -168,6 +171,15 @@ function GR.Register(info)
         return false
     end
 
+    if info.xp ~= nil then
+        if type(info.xp) ~= "number" or info.xp < 0 then
+            GH_LogWarn("GameRegistry", "Ungültiges xp für " .. tostring(info.id) .. " – Default " .. tostring(GR.DEFAULT_BASE_XP))
+            info.xp = nil
+        else
+            info.xp = math.floor(info.xp)
+        end
+    end
+
     local CR = ArcadiaNexus.CategoryRegistry
     if info.category and CR and CR.ResolveId then
         info.category = CR.ResolveId(info.category) or info.category
@@ -197,6 +209,33 @@ function GR.GetById(id)
     return byId[id]
 end
 
+local function LogoPathFromTex(tex)
+    if not tex then return nil end
+    local path = tex._anLogoPath
+    if type(path) == "string" and path ~= "" then
+        return path
+    end
+    return nil
+end
+
+--- Logo-Pfad: Idle-Textur von `CreateGameLogo` (tatsächliches Asset), sonst `RegisterGame.logo`.
+--- Ohne Renderer-Init bleibt nur `RegisterGame.logo` (InitRenderers läuft beim Hub-Start).
+--- @return string|nil
+function GR.GetLogo(id)
+    local rnd = GR.GetRenderer(id)
+    local fromIdle = rnd and (
+        LogoPathFromTex(rnd._logoTex)
+        or LogoPathFromTex(rnd._logo)
+        or LogoPathFromTex(rnd._F and rnd._F.logoTex)
+    )
+    if fromIdle then return fromIdle end
+    local info = GR.GetById(id)
+    if info and type(info.logo) == "string" and info.logo ~= "" then
+        return info.logo
+    end
+    return nil
+end
+
 --- @return string
 function GR.GetLabel(id)
     local info = GR.GetById(id)
@@ -204,6 +243,17 @@ function GR.GetLabel(id)
         return info.label
     end
     return id or "–"
+end
+
+--- Basis-XP für GAME_RESULT. Ohne Feld oder ungültig: DEFAULT_BASE_XP.
+--- @return number
+function GR.GetBaseXP(id)
+    local info = GR.GetById(id)
+    local xp = info and info.xp
+    if type(xp) ~= "number" or xp < 0 then
+        return GR.DEFAULT_BASE_XP
+    end
+    return xp
 end
 
 --- opts: { visibleOnly?, includeDevOnly?, respectHidden?, category?, excludeId?, requireContainer? }

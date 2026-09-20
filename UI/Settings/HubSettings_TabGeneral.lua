@@ -14,6 +14,7 @@
 
 local UI          = ArcadiaNexus.UI
 local HubSettings = ArcadiaNexus.HubSettings
+local CS          = ArcadiaNexus.ClientSettingsStore
 
 local function L(key)
     local tbl = ArcadiaNexus.GetLocaleTable and ArcadiaNexus.GetLocaleTable("UI")
@@ -29,6 +30,7 @@ function HubSettings:_BuildTabGeneral(parent)
     local GAP   = 8
     local P     = UI.BOX_PAD
     local ROW_H = 160
+    local TOAST_ROW_H = 240  -- Toast/GOTD: extra Höhe für Toast-Checkbox + gestapelte Buttons
     local COL_W = 200   -- Platzhalter; _RefreshSettingsLayout korrigiert aus ScrollFrame-Breite
 
     -- ── Box 1: UI-Skalierung (links oben) ────────────────────
@@ -48,7 +50,7 @@ function HubSettings:_BuildTabGeneral(parent)
     scaleDesc:SetTextColor(0.75, 0.70, 0.55)
 
     -- Slider darunter (leeres Label, Wertanzeige kommt vom internen valFS)
-    local curScale = (ArcadiaNexusDB and ArcadiaNexusDB.settings and ArcadiaNexusDB.settings.uiScale) or 1.0
+    local curScale = CS.GetNumber("uiScale", 1.0)
     local scaleSlider = UI.CreateSlider(
         scaleContent,
         "",          -- kein internes Label, Beschreibung steht bereits als FontString oben
@@ -62,7 +64,7 @@ function HubSettings:_BuildTabGeneral(parent)
     self._scaleSlider = scaleSlider
 
     local function RefreshScaleSlider()
-        local cur = (ArcadiaNexusDB and ArcadiaNexusDB.settings and ArcadiaNexusDB.settings.uiScale) or 1.0
+        local cur = CS.GetNumber("uiScale", 1.0)
         if HubSettings._scaleSlider then HubSettings._scaleSlider:SetValue(cur) end
     end
     self._refreshScaleBtns = RefreshScaleSlider
@@ -88,8 +90,7 @@ function HubSettings:_BuildTabGeneral(parent)
     lockCB:SetPoint("TOPLEFT", lockContent, "TOPLEFT", 0, -38)
     lockCB:SetScript("OnClick", function(self)
         local val = self:GetChecked() and true or false
-        if not ArcadiaNexusDB.settings then ArcadiaNexusDB.settings = {} end
-        ArcadiaNexusDB.settings.lockUI = val
+        CS.SetFlag("lockUI", val)
         local fref = ArcadiaNexus.UI and ArcadiaNexus.UI.GetF and ArcadiaNexus.UI.GetF()
         if fref and fref.main then fref.main:SetMovable(not val) end
     end)
@@ -98,7 +99,7 @@ function HubSettings:_BuildTabGeneral(parent)
     -- ── Box 3: Achievement Toast (links unten) ───────────────
     local toastBox, toastContent = UI.CreateBox(parent,
         L("hubsettings_toast_section") or "Achievement Toast",
-        P, ROW_H + GAP, COL_W, ROW_H)
+        P, ROW_H + GAP, COL_W, TOAST_ROW_H)
     UI.CenterBoxTitle(toastBox)
     self._toastBox = toastBox
 
@@ -116,19 +117,36 @@ function HubSettings:_BuildTabGeneral(parent)
     toastDesc:SetText(L("hubsettings_toast_desc") or "Anker anzeigen und an die gewünschte Position ziehen.")
     toastDesc:SetTextColor(0.75, 0.70, 0.55)
 
-    -- Zurücksetzen + Vorschau nebeneinander, zentriert unter Beschreibung
-    local resetBtn = UI.CreateButton(toastContent, L("hubsettings_reset") or "Zurücksetzen", 110, 26)
-    resetBtn:SetPoint("TOPRIGHT", toastContent, "TOP", -2, -58)
+    -- Checkbox: Toast ein/aus, links über dem Zurücksetzen-Button
+    local toastCB = UI.CreateCheckbox(toastContent,
+        L("hubsettings_toast_show") or "Toast anzeigen", 0, 0)
+    toastCB:ClearAllPoints()
+    toastCB:SetPoint("TOPLEFT", toastDesc, "BOTTOMLEFT", 0, -8)
+    local showToast = CS.GetFlag("showToast", true)
+    toastCB:SetChecked(showToast)
+    toastCB:SetScript("OnClick", function(selfBtn)
+        local val = selfBtn:GetChecked() and true or false
+        CS.SetFlag("showToast", val)
+        local TM = ArcadiaNexus.ToastManager
+        if not val and TM and TM.ClearAll then
+            TM:ClearAll()
+        end
+    end)
+    self._toastShowCB = toastCB
+
+    -- Buttons linksbündig gestapelt (wie Spiel des Tages)
+    local resetBtn = UI.CreateButton(toastContent, L("hubsettings_reset") or "Zurücksetzen", 180, 26)
+    resetBtn:SetPoint("TOPLEFT", toastCB, "BOTTOMLEFT", 0, -8)
     resetBtn:SetScript("OnClick", function()
-        ArcadiaNexusDB.toastAnchor = { x=0, y=-200 }
+        CS.ResetAnchor("toastAnchor")
         local TM = ArcadiaNexus.ToastManager
         if TM and TM.UpdateAnchor then TM:UpdateAnchor() end
         HubSettings:_UpdateCoordDisplay()
         if HubSettings._anchorActive then HubSettings:_HideAnchor() end
     end)
 
-    local previewBtn = UI.CreateButton(toastContent, L("hubsettings_toast_preview") or "Vorschau", 110, 26)
-    previewBtn:SetPoint("TOPLEFT", toastContent, "TOP", 2, -58)
+    local previewBtn = UI.CreateButton(toastContent, L("hubsettings_toast_preview") or "Vorschau", 180, 26)
+    previewBtn:SetPoint("TOPLEFT", resetBtn, "BOTTOMLEFT", 0, -6)
     previewBtn:SetScript("OnClick", function()
         local TM = ArcadiaNexus.ToastManager
         if TM and TM.PreviewStack then
@@ -145,9 +163,8 @@ function HubSettings:_BuildTabGeneral(parent)
         end
     end)
 
-    -- Anker-Button linksbündig unter Zurücksetzen, Breite passend zum Label
     local anchorBtn = UI.CreateButton(toastContent, L("hubsettings_toast_anchor_show") or "Anker anzeigen & verschieben", 220, 26)
-    anchorBtn:SetPoint("TOPLEFT", resetBtn, "BOTTOMLEFT", 0, -6)
+    anchorBtn:SetPoint("TOPLEFT", previewBtn, "BOTTOMLEFT", 0, -6)
     anchorBtn:SetScript("OnClick", function() HubSettings:_ToggleAnchor() end)
     self._anchorBtn    = anchorBtn
     self._anchorBtnLbl = anchorBtn
@@ -155,7 +172,7 @@ function HubSettings:_BuildTabGeneral(parent)
     -- ── Box 4: Spiel des Tages (rechts unten) ────────────────
     local gotdBox, gotdContent = UI.CreateBox(parent,
         L("hubsettings_gotd_section") or "Spiel des Tages",
-        P*2 + COL_W + GAP, ROW_H + GAP, COL_W, ROW_H)
+        P*2 + COL_W + GAP, ROW_H + GAP, COL_W, TOAST_ROW_H)
     UI.CenterBoxTitle(gotdBox)
     self._gotdBox = gotdBox
 
@@ -181,13 +198,11 @@ function HubSettings:_BuildTabGeneral(parent)
         L("hubsettings_gotd_show") or "Box anzeigen", 0, 0)
     showCB:ClearAllPoints()
     showCB:SetPoint("TOPLEFT", gotdContent, "TOPLEFT", 0, -37)
-    local showGotd = (ArcadiaNexusDB and ArcadiaNexusDB.settings and ArcadiaNexusDB.settings.showGotd)
-    if showGotd == nil then showGotd = true end
+    local showGotd = CS.GetFlag("showGotd", true)
     showCB:SetChecked(showGotd)
     showCB:SetScript("OnClick", function(self)
         local val = self:GetChecked()
-        if not ArcadiaNexusDB.settings then ArcadiaNexusDB.settings = {} end
-        ArcadiaNexusDB.settings.showGotd = val and true or false
+        CS.SetFlag("showGotd", val and true or false)
         if ArcadiaNexus.UI and ArcadiaNexus.UI.UpdateBadge then
             pcall(ArcadiaNexus.UI.UpdateBadge)
         end
@@ -205,9 +220,81 @@ function HubSettings:_BuildTabGeneral(parent)
     local gotdResetBtn = UI.CreateButton(gotdContent, L("hubsettings_reset") or "Zurücksetzen", 180, 26)
     gotdResetBtn:SetPoint("TOPLEFT", gotdAnchorBtn, "BOTTOMLEFT", 0, -6)
     gotdResetBtn:SetScript("OnClick", function()
-        ArcadiaNexusDB.gotdAnchor = { x=0, y=-200 }
+        CS.ResetAnchor("gotdAnchor", 0, -200)
         if HubSettings._gotdAnchorActive then HubSettings:_HideGotdAnchor() end
     end)
+
+    -- ── Box 5: Gamepad / ConsolePort (volle Breite) ──────────
+    local CP_ROW_Y = ROW_H + GAP + TOAST_ROW_H + GAP
+    local cpBox, cpContent = UI.CreateBox(parent,
+        L("hubsettings_cp_section") or "Gamepad",
+        P, CP_ROW_Y, COL_W * 2 + GAP, 112)
+    UI.CenterBoxTitle(cpBox)
+    self._cpBox = cpBox
+
+    local cpDesc = cpContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    cpDesc:SetPoint("TOPLEFT",  cpContent, "TOPLEFT",  0, 0)
+    cpDesc:SetPoint("TOPRIGHT", cpContent, "TOPRIGHT", 0, 0)
+    cpDesc:SetJustifyH("LEFT")
+    cpDesc:SetWordWrap(true)
+    cpDesc:SetText(L("hubsettings_cp_desc")
+        or "ConsolePort steuert den Hub per Interface-Cursor (D-Pad).")
+    cpDesc:SetTextColor(0.75, 0.70, 0.55)
+
+    local cpCB = UI.CreateCheckbox(cpContent,
+        L("hubsettings_cp_enable") or "ConsolePort-Cursor im Hub", 0, 0)
+    cpCB:ClearAllPoints()
+    cpCB:SetPoint("TOPLEFT", cpContent, "TOPLEFT", 0, -36)
+    cpCB:SetScript("OnClick", function(selfBtn)
+        local Bridge = ArcadiaNexus.ConsolePortBridge
+        if Bridge and Bridge.SetEnabled then
+            Bridge.SetEnabled(selfBtn:GetChecked() and true or false)
+        else
+            CS.SetFlag("consolePortCursor", selfBtn:GetChecked() and true or false)
+        end
+        HubSettings:_RefreshConsolePortRow()
+    end)
+    self._cpCursorCB = cpCB
+
+    local cpStatus = cpContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    cpStatus:SetPoint("TOPLEFT",  cpCB, "BOTTOMLEFT", 0, -6)
+    cpStatus:SetPoint("TOPRIGHT", cpContent, "TOPRIGHT", 0, -6)
+    cpStatus:SetJustifyH("LEFT")
+    cpStatus:SetWordWrap(true)
+    self._cpStatusFS = cpStatus
+
+    self:_RefreshConsolePortRow()
+end
+
+function HubSettings:_RefreshConsolePortRow()
+    local Bridge = ArcadiaNexus.ConsolePortBridge
+    local has = Bridge and Bridge.HasAddon() == true
+    local on  = Bridge and Bridge.IsSettingEnabled() == true
+        or (not Bridge and CS.GetFlag("consolePortCursor", true))
+
+    if self._cpCursorCB then
+        self._cpCursorCB:SetChecked(on)
+        if has then
+            if self._cpCursorCB.Enable then self._cpCursorCB:Enable() end
+        else
+            if self._cpCursorCB.Disable then self._cpCursorCB:Disable() end
+        end
+    end
+
+    if not self._cpStatusFS then return end
+    if not has then
+        self._cpStatusFS:SetText(L("hubsettings_cp_missing")
+            or "ConsolePort ist nicht geladen.")
+        self._cpStatusFS:SetTextColor(1.00, 0.55, 0.20)
+    elseif on then
+        self._cpStatusFS:SetText(L("hubsettings_cp_active")
+            or "Cursor-Stack aktiv.")
+        self._cpStatusFS:SetTextColor(0.40, 0.90, 0.40)
+    else
+        self._cpStatusFS:SetText(L("hubsettings_cp_off")
+            or "Aus.")
+        self._cpStatusFS:SetTextColor(0.60, 0.60, 0.60)
+    end
 end
 
 -- ============================================================
@@ -268,7 +355,7 @@ function HubSettings:_ShowAnchor()
         self._anchorFrame = af
     end
 
-    local db = ArcadiaNexusDB and ArcadiaNexusDB.toastAnchor
+    local db = CS.GetAnchor("toastAnchor")
     self._anchorFrame:ClearAllPoints()
     self._anchorFrame:SetPoint("TOP", UIParent, "TOP", (db and db.x) or 0, (db and db.y) or -200)
     self._anchorFrame:Show()
@@ -329,7 +416,7 @@ function HubSettings:_ShowGotdAnchor()
         af:SetScript("OnDragStop", function(self)
             self:StopMovingOrSizing()
             HubSettings:_SaveAnchorPos(self, "gotdAnchor")
-            local db = ArcadiaNexusDB and ArcadiaNexusDB.gotdAnchor
+            local db = CS.GetAnchor("gotdAnchor")
             local badge = _G["NexusGotdBadge"]
             if badge and db then
                 badge:ClearAllPoints()
@@ -343,7 +430,7 @@ function HubSettings:_ShowGotdAnchor()
         self._gotdAnchorFrame = af
     end
 
-    local db = ArcadiaNexusDB and ArcadiaNexusDB.gotdAnchor
+    local db = CS.GetAnchor("gotdAnchor")
     self._gotdAnchorFrame:ClearAllPoints()
     self._gotdAnchorFrame:SetPoint("TOP", UIParent, "TOP",
         (db and db.x) or 0, (db and db.y) or -220)
@@ -370,9 +457,7 @@ function HubSettings:_SaveAnchorPos(frame, dbKey)
     local fh = frame:GetHeight() or 0
     local nx = cx - uw / 2
     local ny = (cy + fh / 2) - uh
-    if not ArcadiaNexusDB[dbKey] then ArcadiaNexusDB[dbKey] = {} end
-    ArcadiaNexusDB[dbKey].x = nx
-    ArcadiaNexusDB[dbKey].y = ny
+    CS.SetAnchor(dbKey, nx, ny)
     if dbKey == "gotdAnchor" then
         local badge = _G["NexusGotdBadge"]
         if badge then
@@ -393,21 +478,31 @@ local function RefreshGeneralLayout(hs, pw)
     local GAP   = 8
     local P     = UI.BOX_PAD
     local ROW_H = 160
+    local TOAST_ROW_H = 240
+    local CP_H  = 112
     local col   = math.floor((pw - P * 2 - GAP) / 2)
     local rightX = P + col + GAP
+    local row2Y = ROW_H + GAP
     local boxes = {
-        { hs._scaleBox, P,       0           },
-        { hs._lockBox,  rightX,  0           },
-        { hs._toastBox, P,       ROW_H + GAP },
-        { hs._gotdBox,  rightX,  ROW_H + GAP },
+        { hs._scaleBox, P,       0,     col, ROW_H },
+        { hs._lockBox,  rightX,  0,     col, ROW_H },
+        { hs._toastBox, P,       row2Y, col, TOAST_ROW_H },
+        { hs._gotdBox,  rightX,  row2Y, col, TOAST_ROW_H },
     }
     for _, b in ipairs(boxes) do
         if b[1] then
             b[1]:ClearAllPoints()
-            b[1]:SetSize(col, ROW_H)
+            b[1]:SetSize(b[4], b[5])
             b[1]:SetPoint("TOPLEFT", parent, "TOPLEFT", b[2], -b[3])
         end
     end
+    if hs._cpBox then
+        local fullW = pw - P * 2
+        hs._cpBox:ClearAllPoints()
+        hs._cpBox:SetSize(fullW, CP_H)
+        hs._cpBox:SetPoint("TOPLEFT", parent, "TOPLEFT", P, -(row2Y + TOAST_ROW_H + GAP))
+    end
+    parent._contentHeight = row2Y + TOAST_ROW_H + GAP + CP_H
 end
 
 ArcadiaNexus.RegisterHubSettingsTab({

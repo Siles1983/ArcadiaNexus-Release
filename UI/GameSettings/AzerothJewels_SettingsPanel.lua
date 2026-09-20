@@ -1,6 +1,6 @@
 --[[
     Azeroth Jewels – AzerothJewels_SettingsPanel.lua
-    Layout: P2 (Sound full + Guide) via GameSettingsBuilder
+    Layout: Sound | Hilfe + Guide via BuildSoundVisualGuide
 ]]
 
 local GS = ArcadiaNexus.GameSettings
@@ -10,10 +10,9 @@ local function BuildAzerothJewelsSettingsPanel(parent)
     if not S then return end
     local L = ArcadiaNexus.GetLocaleTable("AZEROTHJEWELS")
 
-    GS.Build(parent, {
+    GS.BuildSoundVisualGuide(parent, {
         settings = S,
         locale   = L,
-        layout   = "noTheme",
         sound = {
             masterLabel = L.sound_enabled,
             rowSpacing  = 26,
@@ -21,13 +20,21 @@ local function BuildAzerothJewelsSettingsPanel(parent)
                 { key = "soundOnMatch",    label = L.sound_match    },
                 { key = "soundOnPowerup",  label = L.sound_powerup  },
                 { key = "soundOnGameover", label = L.sound_gameover },
+                { key = "soundOnLowMoves", label = L.sound_lowmoves },
+            },
+        },
+        visuals = {
+            items = {
+                { key = "hintSparkle",   label = L.lbl_hint_sparkle },
+                { key = "reducedMotion", label = L.lbl_reduced_motion },
+                { key = "impactFx",      label = L.lbl_impact_fx },
             },
         },
         guide = {
             sections = {
                 GS.GuideSection(nil, L, {
                     "guide_1", "guide_2", "guide_3",
-                    "guide_4", "guide_5", "guide_6", "guide_7",
+                    "guide_4", "guide_5", "guide_6", "guide_7", "guide_8", "guide_9",
                 }),
             },
         },

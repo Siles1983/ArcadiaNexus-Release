@@ -20,6 +20,8 @@ S.Defaults = {
     soundOnWin      = true,
     soundOnLose     = true,
     screenFlash     = true,
+    reducedMotion   = false,
+    debugOverlay    = true,  -- DevMode: F8 blendet Spawn-Buttons / Preview-HUD aus
 }
 
 local DB_KEY = "BLOCKBREAKER"

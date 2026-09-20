@@ -107,6 +107,8 @@ ArcadiaNexus.RegisterGame({
     renderer  = "SHG_Renderer",
     engine    = "SHG_Engine",
     container = "_shgContainer",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\ShellGame\\Assets\\logo\\logo_gcs",
+    xp        = 10,
 })
 
 -- ── Asset-Pfade ───────────────────────────────────────────────

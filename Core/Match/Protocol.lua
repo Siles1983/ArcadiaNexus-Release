@@ -9,7 +9,7 @@ local P = ArcadiaNexus.MatchProtocol
 
 P.WIRE = "AN1"
 P.PREFIX = "ANMATCH"
-P.MATCH_PROTO = 1
+P.MATCH_PROTO = 2
 P.MAX_PAYLOAD = 255
 P.MAX_PREFIX = 16
 
@@ -24,10 +24,12 @@ P.TYPE = {
     INTENT   = "INTENT",
     SNAPSHOT = "SNAPSHOT",
     PRIVATE  = "PRIVATE",
+    PRIVATEPART = "PRIVATEPART", -- bounded, revision-bound private reassembly
     RESULT   = "RESULT",
     ABORT    = "ABORT",
     LEAVE    = "LEAVE",
     SYNC     = "SYNC", -- optional: seated client requests a fresh authoritative snapshot
+    SYNCACK  = "SYNCACK", -- host liveness / revision acknowledgement
     INVITED  = "INVITED", -- Host → Gast: Whitelist-Freigabe, kein Auto-Join
 }
 
@@ -106,9 +108,12 @@ end
 
 local function Unesc(s)
     s = tostring(s or "")
-    s = s:gsub("\\p", "|")
-    s = s:gsub("\\\\", "\\")
-    return s
+    -- Decode each escape once: a literal backslash followed by p is not a pipe.
+    return (s:gsub("\\(.)", function(c)
+        if c == "p" then return "|" end
+        if c == "\\" then return "\\" end
+        return "\\" .. c
+    end))
 end
 
 function P.AddonVersion()
@@ -147,6 +152,7 @@ function P.Decode(payload)
     if type(payload) ~= "string" or payload == "" then
         return nil, "empty"
     end
+    if #payload > P.MAX_PAYLOAD then return nil, "too-long" end
     local parts = {}
     local buf = payload
     local start = 1

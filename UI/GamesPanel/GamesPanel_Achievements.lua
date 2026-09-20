@@ -160,8 +160,11 @@ local function BuildAchievementCategoryPanel(parent)
     --- Öffnet den Hub auf dem Erfolge-Tab und zeigt die passende Gruppe.
     function ArcadiaNexus.UI.OpenAchievementFromToast(ach)
         if not ach then return end
-        local gameId = ach.gameId
-        if not gameId and ach.groupId and ArcadiaNexus.AchievementData then
+        -- Die Gruppenregistrierung ist die maßgebliche Zuordnung. Das hält
+        -- Toasts auch dann beim richtigen Spiel, wenn ein Event aus einer
+        -- älteren Quelle kein gameId mitliefert.
+        local gameId
+        if ach.groupId and ArcadiaNexus.AchievementData then
             for _, group in ipairs(ArcadiaNexus.AchievementData) do
                 if group.id == ach.groupId then
                     gameId = group.gameId
@@ -169,7 +172,13 @@ local function BuildAchievementCategoryPanel(parent)
                 end
             end
         end
-        gameId = gameId or "ALLGEMEIN"
+        gameId = gameId or ach.gameId or "ALLGEMEIN"
+
+        -- Das Ziel muss schon vor dem Anzeigen des Hauptfensters vorliegen:
+        -- dessen OnShow kann Tabs initialisieren bzw. aktivieren.
+        ArcadiaNexus.UI._pendingAchNav = { gameId = gameId, groupId = ach.groupId }
+        local AUI = ArcadiaNexus.AchievementUI
+        if AUI then AUI._pendingFocusGroup = ach.groupId end
 
         local main = ArcadiaNexus.UI.GetF and ArcadiaNexus.UI.GetF().main
         if main and not main:IsShown() then
@@ -177,9 +186,6 @@ local function BuildAchievementCategoryPanel(parent)
             main:Show()
         end
 
-        ArcadiaNexus.UI._pendingAchNav = { gameId = gameId, groupId = ach.groupId }
-        local AUI = ArcadiaNexus.AchievementUI
-        if AUI then AUI._pendingFocusGroup = ach.groupId end
         if _G.NexusTabs and NexusTabs.SetActive then
             NexusTabs.SetActive("ACHIEVEMENTS")
         else

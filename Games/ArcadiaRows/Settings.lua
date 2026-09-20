@@ -37,6 +37,12 @@ S.Defaults = {
     soundOnWin   = true,
     soundOnLoss  = true,
     soundOnDraw  = true,
+
+    -- Anzeige
+    instantDrops = false,
+
+    -- Regeln (nur Hotseat / KI; MATCH ignoriert Pop-out)
+    popOut = false,
 }
 
 -- ============================================================
@@ -129,4 +135,38 @@ function S:_EnforceRules(changedKey)
         and db[changedKey] == true then
         db["soundEnabled"] = true
     end
+end
+
+function S:GetPuzzleIndex(diff)
+    local db = GetDB()
+    db.puzzleIndex = db.puzzleIndex or {}
+    return db.puzzleIndex[diff] or 1
+end
+
+function S:SetPuzzleIndex(diff, idx)
+    local db = GetDB()
+    db.puzzleIndex = db.puzzleIndex or {}
+    db.puzzleIndex[diff] = idx
+end
+
+function S:GetPuzzlesSolved()
+    local db = GetDB()
+    return db.puzzlesSolved or 0
+end
+
+function S:IncrementPuzzlesSolved()
+    local db = GetDB()
+    db.puzzlesSolved = (db.puzzlesSolved or 0) + 1
+    return db.puzzlesSolved
+end
+
+function S:GetPopWins()
+    local db = GetDB()
+    return db.popWins or 0
+end
+
+function S:IncrementPopWins()
+    local db = GetDB()
+    db.popWins = (db.popWins or 0) + 1
+    return db.popWins
 end

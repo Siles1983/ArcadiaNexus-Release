@@ -34,6 +34,9 @@ local SEP_HEIGHT   = 8
 local BOX_BOT_PAD  = 10
 local VALUE_COLUMN_OFFSET = 86
 local VALUE_COLUMN_WIDTH  = 72
+-- Anzeigegröße des Bestenlisten-Hintergrundlogos in Pixel.
+-- Quell-TGA bleibt 512×512; hier nur die Darstellung skalieren.
+local BG_LOGO_SIZE = 356
 
 local RANK_COLORS = {
     [1] = { 1.00, 0.82, 0.00 },
@@ -52,6 +55,7 @@ local _panel         = nil
 local _scroll        = nil
 local _scrollChild   = nil
 local _sectionBoxPool = nil
+local _bgLogo        = nil
 
 local function GetPanel()
     if _panel then return _panel end
@@ -80,7 +84,64 @@ local function EnsureScrollFrame()
     sc:SetHeight(1)
     sf:SetScrollChild(sc)
     _scrollChild = sc
+
+    -- Clip-Frame = sichtbarer Canvas. Das Logo bleibt als Wasserzeichen
+    -- mittig stehen, während die Scroll-Child-Inhalte darüber hinwegrollen.
+    local clip = CreateFrame("Frame", nil, sf)
+    clip:SetAllPoints(sf)
+    clip:EnableMouse(false)
+    if clip.SetMouseClickEnabled then clip:SetMouseClickEnabled(false) end
+    if clip.SetClipsChildren then clip:SetClipsChildren(true) end
+    local sfLevel = (sf.GetFrameLevel and sf:GetFrameLevel()) or 1
+    clip:SetFrameLevel(sfLevel + 1)
+    if sc.SetFrameLevel then sc:SetFrameLevel(sfLevel + 2) end
+
+    local holder = CreateFrame("Frame", nil, clip)
+    holder:SetSize(BG_LOGO_SIZE, BG_LOGO_SIZE)
+    holder:EnableMouse(false)
+    if holder.SetMouseClickEnabled then holder:SetMouseClickEnabled(false) end
+    holder:SetFrameLevel(sfLevel + 1)
+    local tex = holder:CreateTexture(nil, "BACKGROUND")
+    tex:SetAllPoints(holder)
+    tex:Hide()
+    holder.tex = tex
+    function holder:SetLogo(assetPath)
+        if self._path == assetPath and tex:IsShown() then return end
+        self._path = assetPath
+        if not assetPath or assetPath == "" then
+            tex:Hide()
+            return
+        end
+        if tex.SetTexCoord then tex:SetTexCoord(0, 1, 0, 1) end
+        tex:SetTexture(assetPath)
+        tex:Show()
+        self:Show()
+    end
+    _bgLogo = holder
+
+    local function CenterLogo()
+        if not _bgLogo then return end
+        _bgLogo:SetSize(BG_LOGO_SIZE, BG_LOGO_SIZE)
+        _bgLogo:ClearAllPoints()
+        _bgLogo:SetPoint("CENTER", clip, "CENTER")
+    end
+    holder.Center = CenterLogo
+    sf:SetScript("OnSizeChanged", function(self, w)
+        if _scrollChild then
+            _scrollChild:SetWidth(math.max((w or self:GetWidth() or 0) - 2, 10))
+        end
+        CenterLogo()
+    end)
+    CenterLogo()
     return sc
+end
+
+local function ApplyGameLogo(gameId)
+    if not _bgLogo or not _bgLogo.SetLogo then return end
+    local GR = ArcadiaNexus.GameRegistry
+    local path = GR and GR.GetLogo and GR.GetLogo(gameId)
+    _bgLogo:SetLogo(path)
+    if _bgLogo.Center then _bgLogo:Center() end
 end
 
 local function ResetBoxRegions(box)
@@ -211,6 +272,8 @@ local function MakeBox(parent, yOffset, boxHeight)
     box:SetPoint("TOPLEFT",  parent, "TOPLEFT",  8,  -yOffset)
     box:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -8, -yOffset)
     box:SetHeight(boxHeight)
+    local parentLevel = (parent.GetFrameLevel and parent:GetFrameLevel()) or 1
+    box:SetFrameLevel(parentLevel + 3)
     box:SetBackdropColor(0.05, 0.04, 0.03, 0.80)
     box:SetBackdropBorderColor(0.55, 0.45, 0.20, 0.80)
     ResetBoxRegions(box)
@@ -420,6 +483,7 @@ function LB.ShowGame(gameId)
     if not sc then return end
 
     ClearView()
+    ApplyGameLogo(gameId)
 
     local SM = ArcadiaNexus.ScoreManager
     if not SM then return end
@@ -434,6 +498,7 @@ function LB.ShowGame(gameId)
         lbl:SetTextColor(0.55, 0.50, 0.40)
         lbl:Show()
         sc:SetHeight(76)
+        UpdateScrollbar(76)
         return
     end
 
@@ -474,8 +539,10 @@ function LB.ShowGame(gameId)
         end
     end
 
-    sc:SetHeight(math.max(yOff, 1))
-    UpdateScrollbar(yOff)
+    local contentH = math.max(yOff, 1)
+    sc:SetHeight(contentH)
+    UpdateScrollbar(contentH)
+    if _bgLogo and _bgLogo.Center then _bgLogo:Center() end
 end
 
 -- ============================================================

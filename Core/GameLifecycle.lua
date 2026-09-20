@@ -29,14 +29,15 @@ end
 
 function LC:BeginGame(gameId)
     local sessionId = GS():Begin(gameId)
-    self._startCount = self._startCount + 1
+    if sessionId then
+        self._startCount = self._startCount + 1
+    end
     return sessionId
 end
 
 --- Eigene laufende Session sauber ersetzen, ohne spielabhängige StopGame-
 --- Nebenwirkungen (Save-Loeschung, Ergebnisverbuchung, UI-Reset) auszuloesen.
---- Eine fremde oder bereits ersetzte Session wird nicht beendet; BeginGame
---- behaelt fuer diesen Architekturfehler seine Warnung.
+--- Eine fremde aktive Session wird in Begin() über StopActiveGame beendet.
 function LC:RestartGame(gameId, previousSessionId)
     if previousSessionId and GS():IsCurrent(gameId, previousSessionId) then
         self:EndGame(gameId, previousSessionId)

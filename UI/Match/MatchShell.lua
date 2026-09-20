@@ -178,6 +178,7 @@ function S.ReleaseBoard()
     if not gameId then return end
     local GR = ArcadiaNexus.GameRegistry
     local container = GR and GR.GetContainer and GR.GetContainer(gameId)
+    S.SetBoardWatermark(container, nil)
     local home = HomeParent()
     if container and home then
         local was = S._reparenting
@@ -189,6 +190,35 @@ function S.ReleaseBoard()
         S._reparenting = was
     end
     S._boardGameId = nil
+end
+
+local function ViewportParent(container)
+    local vp = container and container._gameViewport
+    return (vp and vp.canvas) or container
+end
+
+--- Spiel-Logo als Wasserzeichen auf dem MATCH-Canvas (`RegisterGame.logo`).
+function S.SetBoardWatermark(container, logoPath)
+    if not container then return end
+    local UI = ArcadiaNexus.UI
+    if not UI or not UI.CreateWatermarkLogo then return end
+    if not logoPath or logoPath == "" then
+        if container._matchWm and container._matchWm.SetLogo then
+            container._matchWm:SetLogo(nil)
+        end
+        if container._matchWm then container._matchWm:Hide() end
+        return
+    end
+    local parent = ViewportParent(container)
+    if not parent then return end
+    if not container._matchWm or container._matchWm:GetParent() ~= parent then
+        container._matchWm = UI.CreateWatermarkLogo(parent, {
+            w = 320, h = 320, alpha = 0.22,
+            onHolder = true, levelAdd = 40,
+        })
+    end
+    container._matchWm:SetLogo(logoPath)
+    container._matchWm:Show()
 end
 
 --- Reparent game outer onto MATCH _stage (same inset rect as F.games).
@@ -210,6 +240,8 @@ function S.PresentBoard(gameId)
     container:Show()
     S._reparenting = false
     S._boardGameId = gameId
+    local info = GR.GetById and GR.GetById(gameId)
+    S.SetBoardWatermark(container, info and info.logo)
     local rnd = GR.GetRenderer(gameId)
     if rnd and rnd.Render then
         pcall(rnd.Render, rnd)
@@ -314,10 +346,17 @@ function S.Rematch(gameId)
     S.Join(gameId, last.hostKey, { pin = pin })
 end
 
-function S.OnJoinRejected(gameId, reason)
+function S.OnJoinRejected(gameId, reason, fields)
+    local MB = ArcadiaNexus.MatchBrowserUI
+    if MB and MB.SetJoinNotice then
+        MB.SetJoinNotice(reason, fields)
+    end
     if not S._pendingJoin or S._pendingJoin.gameId ~= gameId then return end
     -- PIN falsch: nicht pollen. INVITE darf retried werden, bis der Host einlädt.
     if reason == "pin" then
+        S._pendingJoin = nil
+    end
+    if reason == "proto-low" or reason == "proto-high" or reason == "proto-mismatch" then
         S._pendingJoin = nil
     end
 end

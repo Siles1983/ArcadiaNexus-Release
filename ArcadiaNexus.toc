@@ -2,9 +2,10 @@
 ## Title: Arcadia Nexus
 ## Notes: Arcadia Nexus - Mini-Game Framework
 ## Author: Siles
-## Version: 1.1.4
+## Version: 1.1.5
 ## IconTexture: Interface\Icons\INV_Misc_Dice_01
 ## SavedVariables: ArcadiaNexusDB
+## OptionalDeps: ConsolePort
 
 ## Category: Minigames
 ## Category-deDE: Minispiele
@@ -18,6 +19,7 @@ Core/HubSettingsTabRegistry.lua
 Core/DevAccess.lua
 Core/Debug.lua
 Core/Persistence.lua
+Core/Stores.lua
 Core/EventBus.lua
 Core/TimerGuard.lua
 Core/GameLoop.lua
@@ -25,11 +27,13 @@ UI/Core/FramePool.lua
 Core/Format.lua
 Core/ArrayUtils.lua
 Core/LevelPool.lua
+Core/CampaignProgress.lua
 Core/GameSession.lua
 Core/GameLifecycle.lua
 Core/ScoreManager.lua
 Core/LeaderboardRegistry.lua
 Core/XPManager.lua
+Core/StatsTransfer.lua
 Core/AchievementManager.lua
 Core/AchievementIcons.lua
 Core/StreakManager.lua
@@ -37,6 +41,8 @@ Core/TavernGold.lua
 Core/ChallengeManager.lua
 Core/GameResultProcessor.lua
 Core/Engine.lua
+Core/ConsolePort.lua
+Core/GameInput.lua
 
 Core/Match/Protocol.lua
 Core/Match/Transport_Loopback.lua
@@ -47,6 +53,7 @@ Core/Match/SelfTest.lua
 Core/Match/Live.lua
 Core/Match/Browser.lua
 Core/Match/API.lua
+Core/Match/GameAdapter.lua
 
 Games/TicTacToe/Language.lua
 Games/TicTacToe/Logic.lua
@@ -61,6 +68,7 @@ Games/TicTacToe/TicTacToe_Leaderboard.lua
 
 Games/ArcadiaRows/Language.lua
 Games/ArcadiaRows/Logic.lua
+Games/ArcadiaRows/Levels.lua
 Games/ArcadiaRows/AI.lua
 Games/ArcadiaRows/Game.lua
 Games/ArcadiaRows/Settings.lua
@@ -200,11 +208,21 @@ Games/Hangman/Hangman_Leaderboard.lua
 Games/SI7/Settings.lua
 Games/SI7/Language.lua
 Games/SI7/Words.lua
+Games/SI7/WordSets.lua
 Games/SI7/Logic.lua
 Games/SI7/Engine.lua
 Games/SI7/Renderer.lua
 Games/SI7/SI7_Achievements.lua
 Games/SI7/SI7_Leaderboard.lua
+
+Games/Backgammon/Language.lua
+Games/Backgammon/Logic.lua
+Games/Backgammon/AI.lua
+Games/Backgammon/Match.lua
+Games/Backgammon/Settings.lua
+Games/Backgammon/Engine.lua
+Games/Backgammon/Renderer.lua
+Games/Backgammon/Backgammon_Leaderboard.lua
 
 Games/Match3/Language.lua
 Games/Match3/Settings.lua
@@ -219,10 +237,24 @@ Games/BlockBreaker/Language.lua
 Games/BlockBreaker/Settings.lua
 Games/BlockBreaker/Levels.lua
 Games/BlockBreaker/Logic.lua
+Games/BlockBreaker/Fx.lua
 Games/BlockBreaker/Engine.lua
 Games/BlockBreaker/Renderer.lua
 Games/BlockBreaker/BlockBreaker_Achievements.lua
 Games/BlockBreaker/BlockBreaker_Leaderboard.lua
+
+Games/DarkmoonPinball/Language.lua
+Games/DarkmoonPinball/Settings.lua
+Games/DarkmoonPinball/TableRegistry.lua
+Games/DarkmoonPinball/Tables/Midway.lua
+Games/DarkmoonPinball/Tables/Carousel.lua
+Games/DarkmoonPinball/Logic.lua
+Games/DarkmoonPinball/Fx.lua
+Games/DarkmoonPinball/Assets.lua
+Games/DarkmoonPinball/Engine.lua
+Games/DarkmoonPinball/Renderer.lua
+Games/DarkmoonPinball/DarkmoonPinball_Achievements.lua
+Games/DarkmoonPinball/DarkmoonPinball_Leaderboard.lua
 
 Games/AlienDefense/Language.lua
 Games/AlienDefense/Settings.lua
@@ -291,7 +323,6 @@ Games/ShellGame/Renderer.lua
 Games/ShellGame/ShellGame_Achievements.lua
 Games/ShellGame/ShellGame_Leaderboard.lua
 
-# Tavern Cards - UNO (Karten)
 Games/TavernCards/Language.lua
 Games/TavernCards/Settings.lua
 Games/TavernCards/Deck.lua
@@ -314,6 +345,19 @@ Games/GoblinBlast/Renderer.lua
 Games/GoblinBlast/GoblinBlast_Achievements.lua
 Games/GoblinBlast/GoblinBlast_Leaderboard.lua
 
+Games/BubbleShooter/Language.lua
+Games/BubbleShooter/Themes.lua
+Games/BubbleShooter/Logic.lua
+Games/BubbleShooter/Generator.lua
+Games/BubbleShooter/Levels.lua
+Games/BubbleShooter/CampaignMap.lua
+Games/BubbleShooter/Sound.lua
+Games/BubbleShooter/Settings.lua
+Games/BubbleShooter/Engine.lua
+Games/BubbleShooter/Renderer.lua
+Games/BubbleShooter/BubbleShooter_Achievements.lua
+Games/BubbleShooter/BubbleShooter_Leaderboard.lua
+
 Games/BarrelBrawl/Language.lua
 Games/BarrelBrawl/Logic.lua
 Games/BarrelBrawl/Engine.lua
@@ -322,11 +366,14 @@ Games/BarrelBrawl/Renderer.lua
 Games/BarrelBrawl/BarrelBrawl_Achievements.lua
 Games/BarrelBrawl/BarrelBrawl_Leaderboard.lua
 
+
 Dev/LevelEditor/Language.lua
 Dev/LevelEditor/Catalog.lua
 Dev/LevelEditor/Serialize.lua
 Dev/LevelEditor/Sample_Showcase.lua
 Dev/LevelEditor/Editor.lua
+Dev/PinballTableEditor.lua
+Dev/PinballTableEditor_Objects.lua
 
 Games/AlchemistsSort/Language.lua
 Games/AlchemistsSort/Settings.lua
@@ -384,10 +431,6 @@ Games/AzerothJewels/Renderer.lua
 Games/AzerothJewels/AzerothJewels_Achievements.lua
 Games/AzerothJewels/AzerothJewels_Leaderboard.lua
 
-# -----------------------------------------------------------------------------
-# UI - Framework-Infrastruktur (Core)
-# UIHelpers MUSS als erstes UI-Modul geladen werden
-# -----------------------------------------------------------------------------
 UI/Core/UIHelpers.lua
 UI/Core/LayoutConfig.lua
 UI/Core/GameViewport.lua
@@ -406,8 +449,6 @@ UI/Match/MatchShell.lua
 UI/Match/MatchBrowser_UI.lua
 UI/Core/ContentPanel.lua
 
-# GamesPanel-Module
-# Ladereihenfolge: Deps -> Core (BuildSidebarPanel) -> Panel-Submodule
 UI/GamesPanel/FavoritesManager.lua
 UI/GamesPanel/CategoryBuilder.lua
 UI/GamesPanel/StarButton.lua
@@ -427,9 +468,6 @@ UI/Core/Language.lua
 UI/Panels/WelcomePanel_Logo.lua
 UI/Panels/WelcomePanel.lua
 
-# Achievement-Module
-# Spiel-eigene *_Achievements.lua und *_Leaderboard.lua werden oben in den Spiel-Bloecken geladen.
-# Hier: globale Achievements + Index (immer zuletzt)
 UI/Achievements/Achievement_Global.lua
 UI/Achievements/Achievement_Index.lua
 UI/Achievements/Achievement_Summary_Helpers.lua
@@ -443,8 +481,6 @@ UI/Achievements/Achievement_Summary.lua
 
 UI/Core/ToastManager.lua
 UI/Panels/Stats_UI.lua
-# Settings-Module
-# Ladereihenfolge: Core (HubSettings-Table) -> Tabs (General/Games/Stats/Developer)
 UI/Settings/HubSettings_Core.lua
 UI/Settings/HubSettings_TabGeneral.lua
 UI/Settings/HubSettings_TabGames.lua
@@ -455,7 +491,6 @@ UI/Core/HUD.lua
 UI/Core/MinimapButton.lua
 UI/Panels/Leaderboard_UI.lua
 
-# GameSettings - Spiel-spezifische Settings Panels
 UI/GameSettings/GameSettingsBuilder.lua
 UI/GameSettings/SymbolBackgroundSettingsBuilder.lua
 UI/GameSettings/TicTacToe_SettingsPanel.lua
@@ -474,8 +509,10 @@ UI/GameSettings/Blockdrop_SettingsPanel.lua
 UI/GameSettings/WhackAMole_SettingsPanel.lua
 UI/GameSettings/Hangman_SettingsPanel.lua
 UI/GameSettings/SI7_SettingsPanel.lua
+UI/GameSettings/Backgammon_SettingsPanel.lua
 UI/GameSettings/Match3_SettingsPanel.lua
 UI/GameSettings/BlockBreaker_SettingsPanel.lua
+UI/GameSettings/DarkmoonPinball_SettingsPanel.lua
 UI/GameSettings/AlienDefense_SettingsPanel.lua
 UI/GameSettings/ShadowsConquest_SettingsPanel.lua
 UI/GameSettings/ReactionStrike_SettingsPanel.lua
@@ -487,6 +524,7 @@ UI/GameSettings/HigherOrLower_SettingsPanel.lua
 UI/GameSettings/ShellGame_SettingsPanel.lua
 UI/GameSettings/TavernCards_SettingsPanel.lua
 UI/GameSettings/GoblinBlast_SettingsPanel.lua
+UI/GameSettings/BubbleShooter_SettingsPanel.lua
 UI/GameSettings/BarrelBrawl_SettingsPanel.lua
 UI/GameSettings/AlchemistsSort_SettingsPanel.lua
 UI/GameSettings/SlidingPuzzle_SettingsPanel.lua

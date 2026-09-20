@@ -2,249 +2,16 @@
     ArcadiaNexus – HubSettings Tab: Statistiken
     UI/Settings/HubSettings_TabStats.lua
 
-    Enthält:
-        - JSON Encoder / Decoder (modul-lokal)
-        - Base64 Encoder / Decoder (modul-lokal)
-        - Export/Import Payload-Helfer
-        - _BuildTabStats (Reset + Export/Import)
-        - _ShowExportPopup
-        - _ShowImportPopup
-        - _ResetStats
-
-    Abhängigkeiten:
-        UI/Settings/HubSettings_Core.lua → ArcadiaNexus.HubSettings, _ShowConfirm
+    UI für Reset + Export/Import. Codec und Payload: Core/StatsTransfer.lua.
 ]]
 
 local UI          = ArcadiaNexus.UI
 local HubSettings = ArcadiaNexus.HubSettings
+local ST          = ArcadiaNexus.StatsTransfer
 
 local function L(key)
     local tbl = ArcadiaNexus.GetLocaleTable and ArcadiaNexus.GetLocaleTable("UI")
     return tbl and tbl[key] or nil
-end
-
--- ============================================================
--- JSON ENCODER / DECODER (Stats-intern)
--- ============================================================
-
-local function _JsonEncode(val)
-    local t = type(val)
-    if val == nil then return "null"
-    elseif t == "boolean" then return val and "true" or "false"
-    elseif t == "number" then
-        if val ~= val then return "null" end
-        return tostring(val)
-    elseif t == "string" then
-        val = val:gsub("\\", "\\\\")
-        val = val:gsub('"', '\\"'  )
-        val = val:gsub("\n", "\\n" )
-        val = val:gsub("\r", "\\r" )
-        val = val:gsub("\t", "\\t" )
-        return '"' .. val .. '"'
-    elseif t == "table" then
-        local isArray = true
-        local maxN    = 0
-        for k in pairs(val) do
-            if type(k) ~= "number" or k ~= math.floor(k) or k < 1 then
-                isArray = false; break
-            end
-            if k > maxN then maxN = k end
-        end
-        if isArray and maxN ~= #val then isArray = false end
-        if isArray then
-            local parts = {}
-            for i = 1, #val do parts[i] = _JsonEncode(val[i]) end
-            return "[" .. table.concat(parts, ",") .. "]"
-        else
-            local parts = {}
-            for k, v in pairs(val) do
-                if type(k) == "string" or type(k) == "number" then
-                    table.insert(parts, _JsonEncode(tostring(k)) .. ":" .. _JsonEncode(v))
-                end
-            end
-            return "{" .. table.concat(parts, ",") .. "}"
-        end
-    end
-    return "null"
-end
-
-local function _JsonDecode(s)
-    local pos = 1
-    local function skip()
-        while pos <= #s and s:sub(pos,pos):match("%s") do pos = pos + 1 end
-    end
-    local function peek() skip(); return s:sub(pos,pos) end
-    local decode  -- forward declaration
-    local function decodeString()
-        pos = pos + 1
-        local result = {}
-        while pos <= #s do
-            local c = s:sub(pos,pos)
-            if c == "\\" then
-                pos = pos + 1
-                local esc = s:sub(pos,pos)
-                if     esc == "n"  then table.insert(result, "\n")
-                elseif esc == "r"  then table.insert(result, "\r")
-                elseif esc == "t"  then table.insert(result, "\t")
-                elseif esc == "\\" then table.insert(result, "\\")
-                elseif esc == "/"  then table.insert(result, "/")
-                elseif esc == '"'  then table.insert(result, '"')
-                else                    table.insert(result, esc) end
-            elseif c == '"' then
-                pos = pos + 1; break
-            else
-                table.insert(result, c)
-            end
-            pos = pos + 1
-        end
-        return table.concat(result)
-    end
-    local function decodeNumber()
-        local start = pos
-        while pos <= #s and s:sub(pos,pos):match("[%d%.%-%+eE]") do pos = pos + 1 end
-        return tonumber(s:sub(start, pos-1))
-    end
-    local function decodeArray()
-        local arr = {}
-        pos = pos + 1
-        skip()
-        if peek() == "]" then pos = pos + 1; return arr end
-        repeat
-            table.insert(arr, decode())
-            skip()
-            if peek() == "," then pos = pos + 1 end
-        until peek() == "]" or pos > #s
-        pos = pos + 1
-        return arr
-    end
-    local function decodeObject()
-        local obj = {}
-        pos = pos + 1
-        skip()
-        if peek() == "}" then pos = pos + 1; return obj end
-        repeat
-            skip()
-            local key = decodeString()
-            skip()
-            pos = pos + 1  -- skip :
-            obj[key] = decode()
-            skip()
-            if peek() == "," then pos = pos + 1 end
-        until peek() == "}" or pos > #s
-        pos = pos + 1
-        return obj
-    end
-    decode = function()
-        skip()
-        local c = peek()
-        if     c == '"' then return decodeString()
-        elseif c == "[" then return decodeArray()
-        elseif c == "{" then return decodeObject()
-        elseif c == "t" then pos = pos + 4; return true
-        elseif c == "f" then pos = pos + 5; return false
-        elseif c == "n" then pos = pos + 4; return nil
-        else                 return decodeNumber() end
-    end
-    local ok, result = pcall(decode)
-    if ok then return result else return nil, result end
-end
-
--- ============================================================
--- BASE64 ENCODER / DECODER (Stats-intern)
--- ============================================================
-
-local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-local function _B64Encode(data)
-    local res = {}
-    local len = #data
-    local i   = 1
-    while i <= len do
-        local b0 = data:byte(i) or 0
-        local b1 = data:byte(i+1) or 0
-        local b2 = data:byte(i+2) or 0
-        local n  = b0*65536 + b1*256 + b2
-        local s  = B64:sub(math.floor(n/262144)%64+1,math.floor(n/262144)%64+1)
-                .. B64:sub(math.floor(n/4096)%64+1,  math.floor(n/4096)%64+1)
-                .. B64:sub(math.floor(n/64)%64+1,    math.floor(n/64)%64+1)
-                .. B64:sub(n%64+1, n%64+1)
-        local rem = len - i + 1
-        if rem == 1 then s = s:sub(1,2).."=="
-        elseif rem == 2 then s = s:sub(1,3).."=" end
-        table.insert(res, s)
-        i = i + 3
-    end
-    return table.concat(res)
-end
-
-local B64_DEC = {}
-for i = 1, #B64 do B64_DEC[B64:sub(i,i)] = i-1 end
-B64_DEC["="] = 0
-
-local function _B64Decode(data)
-    data = data:gsub("[^%w%+%/%=]","")
-    local res = {}
-    local i   = 1
-    while i <= #data do
-        local c0 = B64_DEC[data:sub(i,i)]   or 0
-        local c1 = B64_DEC[data:sub(i+1,i+1)] or 0
-        local c2 = B64_DEC[data:sub(i+2,i+2)] or 0
-        local c3 = B64_DEC[data:sub(i+3,i+3)] or 0
-        local n  = c0*262144 + c1*4096 + c2*64 + c3
-        table.insert(res, string.char(math.floor(n/65536)%256))
-        if data:sub(i+2,i+2) ~= "=" then
-            table.insert(res, string.char(math.floor(n/256)%256))
-        end
-        if data:sub(i+3,i+3) ~= "=" then
-            table.insert(res, string.char(n%256))
-        end
-        i = i + 4
-    end
-    return table.concat(res)
-end
-
--- ============================================================
--- EXPORT / IMPORT PAYLOAD-HELFER
--- ============================================================
-
-local EXPORT_VERSION = "1.0"
-
-local function _BuildExportPayload()
-    if not ArcadiaNexusDB then return nil end
-    local db = ArcadiaNexusDB
-    return {
-        version    = EXPORT_VERSION,
-        exportedAt = GetServerTime(),
-        leaderboard = db.leaderboard or {},
-        profile     = db.profile     or {},
-        streak      = db.streak      or {},
-        challenges  = { history = (db.challenges and db.challenges.history) or {} },
-    }
-end
-
-local function _ValidateImport(data)
-    if type(data) ~= "table"  then return false, "Kein gültiges Datenformat." end
-    if data.version ~= EXPORT_VERSION then
-        return false, "Ungültige Version: " .. tostring(data.version)
-    end
-    if type(data.leaderboard) ~= "table" then return false, "leaderboard fehlt." end
-    if type(data.profile)     ~= "table" then return false, "profile fehlt."     end
-    if type(data.streak)      ~= "table" then return false, "streak fehlt."      end
-    return true
-end
-
-local function _ApplyImport(data)
-    ArcadiaNexusDB.leaderboard = data.leaderboard
-    ArcadiaNexusDB.profile     = data.profile
-    ArcadiaNexusDB.streak      = data.streak
-    if data.challenges and data.challenges.history then
-        if not ArcadiaNexusDB.challenges then ArcadiaNexusDB.challenges = {} end
-        ArcadiaNexusDB.challenges.history = data.challenges.history
-    end
-    if ArcadiaNexus.XPManager    and ArcadiaNexus.XPManager.Refresh    then
-        pcall(function() ArcadiaNexus.XPManager:Refresh() end) end
-    if ArcadiaNexus.StreakManager and ArcadiaNexus.StreakManager.Refresh then
-        pcall(function() ArcadiaNexus.StreakManager:Refresh() end) end
-    GH_LogInfo("HubSettings", "Import erfolgreich angewendet.")
 end
 
 -- ============================================================
@@ -307,9 +74,8 @@ function HubSettings:_BuildTabStats(parent)
     local exportBtn = UI.CreateButton(exportContent, L("hubsettings_export_btn") or "Exportieren", 150, 26)
     exportBtn:SetPoint("TOPLEFT", expDesc, "BOTTOMLEFT", 0, -10)
     exportBtn:SetScript("OnClick", function()
-        local payload = _BuildExportPayload()
-        if not payload then return end
-        local b64 = _B64Encode(_JsonEncode(payload))
+        local b64 = ST.Encode()
+        if not b64 then return end
         HubSettings:_ShowExportPopup(b64)
     end)
 
@@ -468,24 +234,9 @@ function HubSettings:_ShowImportPopup()
         local confirmBtn = UI.CreateButton(d, L("hubsettings_import_confirm_btn") or "Importieren", 160, 26)
         confirmBtn:SetPoint("BOTTOMLEFT", d, "BOTTOMLEFT", 14, 12)
         confirmBtn:SetScript("OnClick", function()
-            local raw = d._eb:GetText()
-            if not raw or raw == "" then
-                d._statusFS:SetText("|cffff4444Kein Text eingefügt.|r")
-                return
-            end
-            local ok, jsonStr = pcall(_B64Decode, raw)
-            if not ok or not jsonStr then
-                d._statusFS:SetText("|cffff4444Ungültiger Export-String.|r")
-                return
-            end
-            local data, err = _JsonDecode(jsonStr)
+            local data, err = ST.Decode(d._eb:GetText())
             if not data then
-                d._statusFS:SetText("|cffff4444JSON-Fehler: " .. tostring(err) .. "|r")
-                return
-            end
-            local valid, validErr = _ValidateImport(data)
-            if not valid then
-                d._statusFS:SetText("|cffff4444Fehler: " .. validErr .. "|r")
+                d._statusFS:SetText("|cffff4444" .. tostring(err) .. "|r")
                 return
             end
             d:Hide()
@@ -494,7 +245,7 @@ function HubSettings:_ShowImportPopup()
                 L("hubsettings_import_confirm_body")  or
                     "Aktuelle Statistiken werden überschrieben. Fortfahren?",
                 function()
-                    _ApplyImport(data)
+                    ST.ApplyImport(data)
                     d._eb:SetText("")
                     d._statusFS:SetText("")
                 end
@@ -525,21 +276,7 @@ end
 -- ============================================================
 
 function HubSettings:_ResetStats()
-    if not ArcadiaNexusDB then return end
-    ArcadiaNexusDB.leaderboard = {}
-    ArcadiaNexusDB.profile = {
-        level=1, xp=0, xpRequired=2000, totalXP=0,
-        totalGames=0, wins=0, losses=0, draws=0,
-    }
-    ArcadiaNexusDB.streak     = { current=0, best=0, lastLogin=0, claimedToday=false }
-    ArcadiaNexusDB.challenges = {
-        daily={}, weekly={},
-        history={ completedTotal=0, goldEarned=0 },
-    }
-    if ArcadiaNexus.XPManager     and ArcadiaNexus.XPManager.Refresh     then
-        pcall(function() ArcadiaNexus.XPManager:Refresh() end) end
-    if ArcadiaNexus.StreakManager  and ArcadiaNexus.StreakManager.Refresh  then
-        pcall(function() ArcadiaNexus.StreakManager:Refresh() end) end
+    ST.Reset()
 
     GH_LogInfo("HubSettings", "Statistiken wurden zurückgesetzt.")
 

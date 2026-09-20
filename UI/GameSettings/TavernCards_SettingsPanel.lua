@@ -112,7 +112,7 @@ local function BuildTavernCardsSettingsPanel(parent)
                 title = L.box_guide,
                 build = function(c)
                     UI.CreateGuideText(c, {
-                        L.guide_1, L.guide_2, L.guide_3, L.guide_4, L.guide_5,
+                        L.guide_1, L.guide_2, L.guide_3, L.guide_4, L.guide_5, L.guide_mp,
                     })
                 end,
             },

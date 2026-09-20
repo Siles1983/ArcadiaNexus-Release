@@ -203,16 +203,32 @@ function HubSettings:BuildPanel(parent)
     self._tabBar = tabBar
 
     -- ── Content-ScrollFrame (ein einziger, Inhalt wird pro Tab gewechselt) ──
-    local sf = CreateFrame("ScrollFrame", nil, p)
-    sf:SetPoint("TOPLEFT",     p, "TOPLEFT",     20, -88)
-    sf:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -20,  10)
+    -- Host = Anker für CreateNexusScrollbar (nicht das volle Panel inkl. Tab-Leiste).
+    local host = CreateFrame("Frame", nil, p)
+    host:SetPoint("TOPLEFT",     p, "TOPLEFT",     20, -88)
+    host:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -20,  10)
+    self._scrollHost = host
+
+    local sf = CreateFrame("ScrollFrame", nil, host)
+    sf:SetPoint("TOPLEFT",     host, "TOPLEFT",      0, 0)
+    sf:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -28, 0)
     self._sf = sf
 
     local sc = CreateFrame("Frame", nil, sf)
     sc:SetWidth(1)
-    sc:SetHeight(Layout.content.height)
+    sc:SetHeight(1)
     sf:SetScrollChild(sc)
     self._sc = sc
+
+    if CreateNexusScrollbar then
+        CreateNexusScrollbar(sf, host)
+        if sf.ScrollBar then
+            sf.ScrollBar:Hide()
+            if sf.ScrollBar.Thumb   then sf.ScrollBar.Thumb:Hide()   end
+            if sf.ScrollBar.Track   then sf.ScrollBar.Track:Hide()   end
+            if sf.ScrollBar.TrackBG then sf.ScrollBar.TrackBG:Hide() end
+        end
+    end
 
     sf:SetScript("OnSizeChanged", function()
         HubSettings:_RefreshSettingsLayout()
@@ -270,6 +286,13 @@ function HubSettings:SetActiveTab(tabID)
         if id == tabID then tf:Show() else tf:Hide() end
     end
 
+    if self._sf and self._sf.SetVerticalScroll then
+        self._sf:SetVerticalScroll(0)
+    end
+    if self._sf and self._sf.ScrollBar and self._sf.ScrollBar.SetScrollPercentage then
+        self._sf.ScrollBar:SetScrollPercentage(0)
+    end
+
     self:_RefreshSettingsLayout()
 
     if tab.onSelect then
@@ -295,6 +318,17 @@ function HubSettings:_RefreshSettingsLayout()
     if activeTab and activeTab.refreshLayout then
         pcall(activeTab.refreshLayout, self, pw)
     end
+
+    local tf = self._tabFrames and self._activeTab and self._tabFrames[self._activeTab]
+    local viewH = (self._sf and self._sf:GetHeight()) or 0
+    local contentH = (tf and tf._contentHeight) or viewH
+    if contentH < 1 then contentH = viewH end
+    if contentH < 1 then contentH = 1 end
+    if tf then tf:SetHeight(contentH) end
+    if self._sc then self._sc:SetHeight(contentH) end
+    if UI and UI.UpdateScrollbar and self._sf and self._sc then
+        UI.UpdateScrollbar(self._sf, self._sc)
+    end
 end
 
 -- ============================================================
@@ -307,25 +341,36 @@ function HubSettings:_RefreshAll()
     if self._refreshScaleBtns then self._refreshScaleBtns() end
     -- DevMode CB
     if self._devModeCB then
-        local val = ArcadiaNexusDB and ArcadiaNexusDB.dev and ArcadiaNexusDB.dev.devMode == true
+        local val = ArcadiaNexus.DevStore and ArcadiaNexus.DevStore.Get().devMode == true
         self._devModeCB:SetChecked(val)
     end
     -- GOTD-ShowCB
     if self._gotdShowCB then
-        local showGotd = ArcadiaNexusDB and ArcadiaNexusDB.settings and ArcadiaNexusDB.settings.showGotd
-        if showGotd == nil then showGotd = true end
+        local CS = ArcadiaNexus.ClientSettingsStore
+        local showGotd = CS and CS.GetFlag("showGotd", true)
         self._gotdShowCB:SetChecked(showGotd)
+    end
+    -- Toast-ShowCB
+    if self._toastShowCB then
+        local CS = ArcadiaNexus.ClientSettingsStore
+        local showToast = CS and CS.GetFlag("showToast", true)
+        self._toastShowCB:SetChecked(showToast)
     end
     -- Drag-Lock CB
     if self._lockCB then
-        local locked = ArcadiaNexusDB and ArcadiaNexusDB.settings and ArcadiaNexusDB.settings.lockUI == true
+        local CS = ArcadiaNexus.ClientSettingsStore
+        local locked = CS and CS.GetFlag("lockUI", false)
         self._lockCB:SetChecked(locked)
+    end
+    if self._RefreshConsolePortRow then
+        self:_RefreshConsolePortRow()
     end
 end
 
 function HubSettings:_UpdateCoordDisplay()
     if not self._coordFS then return end
-    local db = ArcadiaNexusDB and ArcadiaNexusDB.toastAnchor
+    local CS = ArcadiaNexus.ClientSettingsStore
+    local db = CS and CS.GetAnchor("toastAnchor")
     local x  = db and db.x or 0
     local y  = db and db.y or -200
     self._coordFS:SetText(

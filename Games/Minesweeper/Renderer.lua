@@ -706,4 +706,6 @@ ArcadiaNexus.RegisterGame({
     engine    = "MS_Engine",
     container = "_msContainer",
     category  = "DENKSPIELE",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\Minesweeper\\assets\\logo\\logo_minesweeper",
+    xp        = 10,
 })

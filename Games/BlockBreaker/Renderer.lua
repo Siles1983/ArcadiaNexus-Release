@@ -70,19 +70,29 @@ local CFG = {
     hud_pu_bar_h   =    4,
     hud_pu_bar_x   =    0,    -- relativ zur PU-Box CENTER
     hud_pu_bar_y   =  -14,
-
-    -- Power-Up-Liste aller aktiven Timer (relativ zu Canvas CENTER)
-    hud_pu_list_x     =    0,
-    hud_pu_list_y     =  230,
-    hud_pu_list_w     =  420,
-    hud_pu_list_h     =   28,
-    hud_pu_list_alpha = 0.75,
+    hud_pu_stack   =  32,   -- Abstand zwischen gestapelten PU-Timer-Boxen
+    hud_pu_slots   =   3,
 
     -- Fallende Power-Up-Drops (Offset relativ zur Logic-Position)
     pu_drop_w      = 96,
     pu_drop_h      = 26,
     pu_drop_ofs_x  =  0,
     pu_drop_ofs_y  =  0,
+
+    -- Wand-Hit / Endgame-Glow (px relativ zum Feldrand)
+    -- x/y verschieben die Leiste, pad kürzt sie an den Enden, thick = Breite.
+    -- left_x + nach innen, right_x − nach innen, top_y − nach unten.
+    edge_thick        = 6,
+    edge_cap_overlap  = 0.45,
+    edge_left_x       = 3,
+    edge_left_y       = 0,
+    edge_left_pad     = 3,
+    edge_right_x      = -3,
+    edge_right_y      = 0,
+    edge_right_pad    = 3,
+    edge_top_x        = 0,
+    edge_top_y        = -3,
+    edge_top_pad      = 3,
 
     -- Spielfeld-Objekte (Layout-Quelle: BB_Logic, Werte hier als Fallback)
     block_w      = 28,
@@ -231,7 +241,6 @@ local function CreateExtraBallPool()
     })
 end
 
-
 -- ── State ─────────────────────────────────────────────────────
 R.frame          = nil
 R._canvas        = nil
@@ -255,11 +264,22 @@ R._extraBalls   = {}
 R._blockFrames  = {}
 R._blockPool    = nil
 R._extraBallPool = nil
+R._fxLayer      = nil
+R._trailDots    = {}
+R._mainTrail    = {}
+R._extraTrails  = {}
+R._shards       = {}
+R._pops         = {}
+R._popFS        = {}
+R._paddleSquashT = 0
+R._comboFlashT  = 0
+R._comboFlashFS = nil
 R._puDropFrame  = nil
 R._flashFrame   = nil
 R._puBar        = nil
 R._puBox        = nil
 R._puListBox    = nil
+R._puSlots      = nil
 
 R._scoreFS      = nil
 R._levelFS      = nil
@@ -283,6 +303,8 @@ ArcadiaNexus.RegisterGame({
     renderer  = "BB_Renderer",
     engine    = "BB_Engine",
     container = "_bbContainer",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\logo\\logo_blockbreaker",
+    xp        = 10,
 })
 
 -- ══════════════════════════════════════════════════════════════
@@ -301,11 +323,13 @@ function R:Init()
     self:_CreateLogo()
     self:_CreateBallAndPaddle()
     self:_CreateFlash()
+    self:_CreateFx()
     self:_CreatePUBar()
     self:_CreateKeyFrame()
     self:_CreateControls()
     self:_CreateSlotMenu()
     self:_CreatePauseOverlay()
+    self:_CreateDevOverlay()
     self:EnterIdleState()
 end
 
@@ -374,30 +398,6 @@ function R:_CreateHUD()
     endlessFS:SetTextColor(1, 0.85, 0)
     endlessFS:SetText("")
     self._endlessFS = endlessFS
-
-    self._puBox, self._puTimerFS = UI.CreateHudStatBox(canvas, {
-        w = CFG.hud_pu_w, h = CFG.hud_pu_h,
-        point = "CENTER", relativePoint = "CENTER",
-        x = CFG.hud_pu_x, y = CFG.hud_pu_y,
-        alpha = CFG.hud_pu_alpha,
-        font = "GameFontNormalSmall",
-        shown = false,
-    })
-    if self._puBox then
-        local puBg = self._puBox:CreateTexture(nil, "ARTWORK")
-        puBg:SetSize(CFG.hud_pu_bar_w, CFG.hud_pu_bar_h)
-        puBg:SetPoint("CENTER", self._puBox, "CENTER", CFG.hud_pu_bar_x, CFG.hud_pu_bar_y)
-        puBg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
-        puBg:Hide()
-        self._puTimerBg = puBg
-
-        local puFill = self._puBox:CreateTexture(nil, "ARTWORK", nil, 1)
-        puFill:SetHeight(CFG.hud_pu_bar_h)
-        puFill:SetPoint("LEFT", puBg, "LEFT", 0, 0)
-        puFill:SetColorTexture(1, 0.85, 0, 1)
-        puFill:Hide()
-        self._puTimerFill = puFill
-    end
 end
 
 function R:_RaiseHudOverField()
@@ -406,8 +406,10 @@ function R:_RaiseHudOverField()
     local hudLvl = field:GetFrameLevel() + 25
     local boxes = {
         self._timeBox, self._scoreBox, self._livesBox,
-        self._puBox, self._puListBox,
     }
+    for i = 1, #(self._puSlots or {}) do
+        boxes[#boxes + 1] = self._puSlots[i].box
+    end
     for i = 1, #boxes do
         local b = boxes[i]
         if b then b:SetFrameLevel(hudLvl) end
@@ -418,35 +420,73 @@ function R:_IsDevMode()
     return ArcadiaNexus.IsDevMode and ArcadiaNexus.IsDevMode() == true
 end
 
+function R:_DevOverlayOn()
+    if not self:_IsDevMode() then return false end
+    local S = ArcadiaNexus.BB_Settings
+    if S then return S:Get("debugOverlay") ~= false end
+    return true
+end
+
+function R:RefreshDevOverlay()
+    local on = self:_DevOverlayOn()
+    if self._devOverlay then
+        if on then self._devOverlay:Show() else self._devOverlay:Hide() end
+    end
+    if self.state == "IDLE" then
+        if on then
+            self:_ApplyDevHudPreview()
+        else
+            self:_SetHudShown(false)
+            if self._puBar       then self._puBar:SetText("") end
+            self:_HidePuSlots()
+        end
+    end
+    if self._keyFrame then
+        local play = self.state == "PLAYING" or self.state == "PAUSED"
+        self._keyFrame:EnableKeyboard(play)
+    end
+end
+
 -- Dummy-Inhalt für PU-Boxen (Stack + Countdown), damit Layout ohne aktives PU sichtbar ist.
+function R:_HidePuSlots()
+    for i = 1, #(self._puSlots or {}) do
+        local s = self._puSlots[i]
+        s.box:Hide()
+        if s.fs   then s.fs:SetText("") end
+        if s.bg   then s.bg:Hide() end
+        if s.fill then s.fill:Hide() end
+    end
+end
+
 function R:_FillDevPuPreview()
     local L = ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
-    local stack = {
-        (L["pu_big"] or "big") .. " 8s",
-        (L["pu_fast"] or "fast") .. " 5s",
-        (L["pu_strength"] or "strength") .. " 3s",
+    local demo = {
+        { key = "big",      t = 8 },
+        { key = "fast",     t = 5 },
+        { key = "strength", t = 3 },
     }
-    if self._puBar then
-        self._puBar:SetText("[DEV]  " .. table.concat(stack, "  "))
-    end
-    if self._puListBox then self._puListBox:Show() end
-
-    local def = PU_TIMER_DEF.strength
-    if self._puTimerFS then
-        self._puTimerFS:SetText((L["pu_strength"] or "strength") .. " 3s")
-        if def then self._puTimerFS:SetTextColor(def.r, def.g, def.b) end
-    end
-    if self._puBox then self._puBox:Show() end
-    if self._puTimerBg then self._puTimerBg:Show() end
-    if self._puTimerFill and def then
-        self._puTimerFill:SetWidth(math.max(1, CFG.hud_pu_bar_w * (3 / def.max)))
-        self._puTimerFill:SetColorTexture(def.r, def.g, def.b, 1)
-        self._puTimerFill:Show()
+    for i = 1, #(self._puSlots or {}) do
+        local s = self._puSlots[i]
+        local d = demo[i]
+        if d then
+            local def = PU_TIMER_DEF[d.key]
+            s.fs:SetText((L["pu_" .. d.key] or d.key) .. " " .. d.t .. "s")
+            if def then s.fs:SetTextColor(def.r, def.g, def.b) end
+            s.box:Show()
+            if s.bg then s.bg:Show() end
+            if s.fill and def then
+                s.fill:SetWidth(math.max(1, CFG.hud_pu_bar_w * (d.t / def.max)))
+                s.fill:SetColorTexture(def.r, def.g, def.b, 1)
+                s.fill:Show()
+            end
+        else
+            s.box:Hide()
+        end
     end
 end
 
 function R:_ApplyDevHudPreview()
-    if not self:_IsDevMode() then return false end
+    if not self:_DevOverlayOn() or self.state ~= "IDLE" then return false end
     local L = ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
     if self._timeBox  then self._timeBox:Show()  end
     if self._scoreBox then self._scoreBox:Show() end
@@ -473,7 +513,7 @@ function R:_ApplyDevHudPreview()
 end
 
 function R:_SetHudShown(shown)
-    local vis = shown or self:_IsDevMode()
+    local vis = shown or (self.state == "IDLE" and self:_DevOverlayOn())
     local boxes = { self._timeBox, self._scoreBox, self._livesBox, self._goldGrid }
     for i = 1, #boxes do
         local b = boxes[i]
@@ -482,8 +522,7 @@ function R:_SetHudShown(shown)
         end
     end
     if not vis then
-        if self._puBox     then self._puBox:Hide()     end
-        if self._puListBox then self._puListBox:Hide() end
+        self:_HidePuSlots()
     end
 end
 
@@ -608,52 +647,371 @@ function R:_CreateFlash()
     self._flashTex   = ft
 end
 
+function R:_CreateFx()
+    local field = self._fieldFrame
+    if not field then return end
+    local layer = CreateFrame("Frame", nil, field)
+    layer:SetAllPoints(field)
+    layer:SetFrameLevel(field:GetFrameLevel() + 6)
+    self._fxLayer = layer
+
+    local comboFS = field:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    comboFS:SetPoint("CENTER", field, "TOP", 0, -36)
+    comboFS:SetTextColor(1, 0.82, 0.2)
+    comboFS:SetText("")
+    comboFS:Hide()
+    self._comboFlashFS = comboFS
+
+    self._trailDots = {}
+    self._mainTrail = {}
+    self._extraTrails = {}
+    self._shards = {}
+    self._pops = {}
+    self._popFS = {}
+    self._paddleSquashT = 0
+    self._comboFlashT = 0
+    self._serveHintArmed = false
+    self._edgeFlashT = { left = 0, right = 0, top = 0 }
+
+    local edgeParent = self._borderFrame or field
+    local edgeFrame = CreateFrame("Frame", nil, edgeParent)
+    edgeFrame:SetAllPoints(field)
+    local edgeLvl = (self._borderFrame and self._borderFrame:GetFrameLevel() or field:GetFrameLevel()) + 3
+    edgeFrame:SetFrameLevel(edgeLvl)
+    self._edgeFrame = edgeFrame
+
+    local thick = CFG.edge_thick or 12
+    local capOver = CFG.edge_cap_overlap or 0.45
+    local MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+    local function makePart(w, h, rounded)
+        local tex = edgeFrame:CreateTexture(nil, "OVERLAY")
+        tex:SetTexture(CFG.white8x8)
+        tex:SetBlendMode("ADD")
+        tex:SetSize(w, h)
+        tex:SetVertexColor(1, 1, 1)
+        tex:SetAlpha(0)
+        tex:Hide()
+        if rounded and edgeFrame.CreateMaskTexture and tex.AddMaskTexture then
+            local mask = edgeFrame:CreateMaskTexture()
+            mask:SetTexture(MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+            mask:SetAllPoints(tex)
+            tex:AddMaskTexture(mask)
+        end
+        return tex
+    end
+    local function packBar(thickW, thickH, barPoint, barRel, ox, oy, pad, vertical)
+        local cap = thick
+        local bar
+        if vertical then
+            bar = makePart(thick, math.max(8, CFG.field_h - pad * 2 - cap), false)
+        else
+            bar = makePart(math.max(8, CFG.field_w - pad * 2 - cap), thick, false)
+        end
+        bar:SetPoint(barPoint, field, barRel or barPoint, ox, oy)
+        local capA = makePart(cap, cap, true)
+        local capB = makePart(cap, cap, true)
+        if vertical then
+            capA:SetPoint("BOTTOM", bar, "TOP", 0, -cap * capOver)
+            capB:SetPoint("TOP", bar, "BOTTOM", 0, cap * capOver)
+        else
+            capA:SetPoint("RIGHT", bar, "LEFT", cap * capOver, 0)
+            capB:SetPoint("LEFT", bar, "RIGHT", -cap * capOver, 0)
+        end
+        return { bar = bar, capA = capA, capB = capB }
+    end
+    self._edgeTex = {
+        left  = packBar(thick, nil, "LEFT",  "LEFT",
+            CFG.edge_left_x or 14, CFG.edge_left_y or 0, CFG.edge_left_pad or 14, true),
+        right = packBar(thick, nil, "RIGHT", "RIGHT",
+            CFG.edge_right_x or -14, CFG.edge_right_y or 0, CFG.edge_right_pad or 14, true),
+        top   = packBar(nil, thick, "TOP",   "TOP",
+            CFG.edge_top_x or 0, CFG.edge_top_y or -14, CFG.edge_top_pad or 14, false),
+    }
+
+    local hint = layer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    hint:SetTextColor(1, 0.85, 0.35)
+    hint:Hide()
+    self._serveHintFS = hint
+end
+
+function R:_ReducedMotion()
+    local S = ArcadiaNexus.BB_Settings
+    return S and S:Get("reducedMotion") == true
+end
+
+function R:_ClearFx()
+    self._mainTrail = {}
+    self._extraTrails = {}
+    self._shards = {}
+    self._pops = {}
+    self._paddleSquashT = 0
+    self._comboFlashT = 0
+    self._edgeFlashT = { left = 0, right = 0, top = 0 }
+    if self._comboFlashFS then
+        self._comboFlashFS:SetText("")
+        self._comboFlashFS:Hide()
+    end
+    if self._serveHintFS then self._serveHintFS:Hide() end
+    if self._edgeTex then
+        for _, pack in pairs(self._edgeTex) do
+            for _, tex in pairs(pack) do
+                if tex and tex.SetAlpha then
+                    tex:SetAlpha(0)
+                    tex:Hide()
+                end
+            end
+        end
+    end
+    for i = 1, #(self._trailDots or {}) do
+        self._trailDots[i]:Hide()
+    end
+    for i = 1, #(self._shardDots or {}) do
+        self._shardDots[i]:Hide()
+    end
+    for i = 1, #(self._popFS or {}) do
+        self._popFS[i]:Hide()
+    end
+end
+
+function R:_AcquireTrailDot(i)
+    local f = self._trailDots[i]
+    if f then return f end
+    local parent = self._fxLayer or self._fieldFrame
+    f = CreateFrame("Frame", nil, parent)
+    local tex = f:CreateTexture(nil, "ARTWORK")
+    tex:SetAllPoints(f)
+    f._tex = tex
+    self._trailDots[i] = f
+    return f
+end
+
+function R:_SpawnPop(x, y, text, r, g, b)
+    local Fx = ArcadiaNexus.BB_Fx
+    if not Fx then return end
+    self._pops[#self._pops + 1] = Fx.Popup(x, y, text, r, g, b)
+end
+
+function R:_SpawnShards(x, y, r, g, b, n)
+    if self:_ReducedMotion() then return end
+    local Fx = ArcadiaNexus.BB_Fx
+    if not Fx then return end
+    n = n or 5
+    for i = 1, n do
+        self._shards[#self._shards + 1] = Fx.Shard(x, y, r, g, b)
+    end
+end
+
+function R:_BlockCenter(row, col)
+    local cx = CFG.block_ox + (col - 0.5) * CFG.block_w
+    local cy = CFG.block_top_pad + (row - 0.5) * CFG.block_h
+    return cx, cy
+end
+
+function R:_TickFx(gs, dt)
+    local Fx = ArcadiaNexus.BB_Fx
+    local field = self._fieldFrame
+    if not Fx or not field then return end
+    dt = dt or 0
+    local reduced = self:_ReducedMotion()
+
+    if gs.ballDocked or not gs.ballActive then
+        self._mainTrail = {}
+    elseif not reduced then
+        self._mainTrail = Fx.PushTrail(self._mainTrail, gs.ballX, gs.ballY, Fx.TrailMax(gs, false))
+    else
+        self._mainTrail = {}
+    end
+
+    self._extraTrails = self._extraTrails or {}
+    if reduced then
+        self._extraTrails = {}
+    else
+        local extraMax = Fx.TrailMax(gs, true)
+        for i = 1, #(gs.balls or {}) do
+            local b = gs.balls[i]
+            self._extraTrails[i] = Fx.PushTrail(self._extraTrails[i] or {}, b.x, b.y, extraMax)
+        end
+        for i = #(gs.balls or {}) + 1, #self._extraTrails do
+            self._extraTrails[i] = nil
+        end
+    end
+
+    Fx.TickList(self._shards, dt)
+    Fx.TickList(self._pops, dt)
+
+    if self._comboFlashT and self._comboFlashT > 0 then
+        self._comboFlashT = self._comboFlashT - dt
+        if self._comboFlashT <= 0 and self._comboFlashFS then
+            self._comboFlashFS:Hide()
+        end
+    end
+
+    local tr, tg, tb = Fx.ThemeRGB(GetThemeColor())
+    self._edgeFlashT = self._edgeFlashT or { left = 0, right = 0, top = 0 }
+    local flashTtl = Fx.EDGE_FLASH_TTL or 0.14
+    for side, t in pairs(self._edgeFlashT) do
+        if t > 0 then
+            self._edgeFlashT[side] = math.max(0, t - dt)
+        end
+    end
+    local endgame = (gs.blocksLeft or 99) <= (Fx.ENDGAME_BLOCKS or 5) and (gs.blocksLeft or 0) > 0
+    local pulse = 0
+    if endgame and not reduced then
+        pulse = 0.35 + 0.30 * (0.5 + 0.5 * math.sin((gs.elapsedSecs or 0) * 6))
+    elseif endgame then
+        pulse = 0.28
+    end
+    if self._edgeTex then
+        for side, pack in pairs(self._edgeTex) do
+            local hit = 0
+            local remain = self._edgeFlashT[side] or 0
+            if remain > 0 then hit = remain / flashTtl end
+            local a = math.max(hit, pulse)
+            for _, tex in pairs(pack) do
+                if tex and tex.SetVertexColor then
+                    if a > 0.02 then
+                        tex:SetVertexColor(tr, tg, tb)
+                        tex:SetAlpha(a)
+                        tex:Show()
+                    else
+                        tex:SetAlpha(0)
+                        tex:Hide()
+                    end
+                end
+            end
+        end
+    end
+    local used = 0
+    local function drawTrail(trail, alphaMul, sizeMul)
+        if not trail then return end
+        local n = #trail
+        for i = 1, n do
+            used = used + 1
+            local p = trail[i]
+            local u = i / n
+            local f = self:_AcquireTrailDot(used)
+            local sz = CFG.ball_size * (0.35 + u * 0.45) * (sizeMul or 1)
+            f:SetParent(self._fxLayer or field)
+            f:SetFrameLevel((self._fxLayer and self._fxLayer:GetFrameLevel() or field:GetFrameLevel()) + 1)
+            f:SetSize(sz, sz)
+            f:ClearAllPoints()
+            f:SetPoint("CENTER", field, "TOPLEFT", p.x, -p.y)
+            if f._tex then
+                f._tex:SetTexture(THEME_PATH .. "bullet\\bullet_" .. GetThemeColor())
+                f._tex:SetVertexColor(tr, tg, tb)
+                f._tex:SetAlpha(u * 0.45 * (alphaMul or 1))
+            end
+            f:Show()
+        end
+    end
+    drawTrail(self._mainTrail, 1.0, 1.0)
+    for i = 1, #(self._extraTrails or {}) do
+        drawTrail(self._extraTrails[i], 0.55, 0.85)
+    end
+    for i = used + 1, #(self._trailDots or {}) do
+        self._trailDots[i]:Hide()
+    end
+
+    self:_EnsureBlockPools()
+    self._shardDots = self._shardDots or {}
+    local su = 0
+    if not reduced then
+        for i = 1, #self._shards do
+            local s = self._shards[i]
+            su = su + 1
+            local f = self._shardDots[su]
+            if not f then
+                f = CreateFrame("Frame", nil, self._fxLayer or field)
+                local tex = f:CreateTexture(nil, "ARTWORK")
+                tex:SetAllPoints(f)
+                tex:SetColorTexture(1, 1, 1, 1)
+                f._tex = tex
+                self._shardDots[su] = f
+            end
+            f:SetParent(self._fxLayer or field)
+            f:SetFrameLevel((self._fxLayer and self._fxLayer:GetFrameLevel() or field:GetFrameLevel()) + 2)
+            f:SetSize(s.w or 5, s.h or 4)
+            f:ClearAllPoints()
+            f:SetPoint("CENTER", field, "TOPLEFT", s.x, -s.y)
+            local a = math.max(0, (s.t or 0) / Fx.SHARD_TTL)
+            if f._tex then f._tex:SetVertexColor(s.r, s.g, s.b, a) end
+            f:Show()
+        end
+    end
+    for i = su + 1, #self._shardDots do
+        self._shardDots[i]:Hide()
+    end
+
+    for i = 1, #self._pops do
+        local p = self._pops[i]
+        local fs = self._popFS[i]
+        if not fs then
+            fs = (self._fxLayer or field):CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            self._popFS[i] = fs
+        end
+        local u = (p.t or 0) / Fx.POP_TTL
+        fs:ClearAllPoints()
+        fs:SetPoint("CENTER", field, "TOPLEFT", p.x, -p.y)
+        fs:SetText(p.text or "")
+        fs:SetTextColor(p.r, p.g, p.b, u)
+        fs:Show()
+    end
+    for i = #self._pops + 1, #(self._popFS or {}) do
+        self._popFS[i]:Hide()
+    end
+end
+
 -- ── Power-Up-Status-Bar ───────────────────────────────────────
 function R:_CreatePUBar()
     local canvas = self._canvas
     local UI = ArcadiaNexus.UI
     if not canvas or not UI or not UI.CreateHudStatBox then return end
-    self._puListBox, self._puBar = UI.CreateHudStatBox(canvas, {
-        w = CFG.hud_pu_list_w, h = CFG.hud_pu_list_h,
-        point = "CENTER", relativePoint = "CENTER",
-        x = CFG.hud_pu_list_x, y = CFG.hud_pu_list_y,
-        alpha = CFG.hud_pu_list_alpha,
-        font = "GameFontNormalSmall",
-        shown = false,
-    })
+    self._puSlots = {}
+    local n = CFG.hud_pu_slots or 3
+    for i = 1, n do
+        local box, fs = UI.CreateHudStatBox(canvas, {
+            w = CFG.hud_pu_w, h = CFG.hud_pu_h,
+            point = "CENTER", relativePoint = "CENTER",
+            x = CFG.hud_pu_x,
+            y = CFG.hud_pu_y - (i - 1) * CFG.hud_pu_stack,
+            alpha = CFG.hud_pu_alpha,
+            font = "GameFontNormalSmall",
+            shown = false,
+        })
+        local bg, fill
+        if box then
+            fs:ClearAllPoints()
+            fs:SetPoint("CENTER", box, "CENTER", 0, 3)
+            bg = box:CreateTexture(nil, "ARTWORK")
+            bg:SetSize(CFG.hud_pu_bar_w, CFG.hud_pu_bar_h)
+            bg:SetPoint("CENTER", box, "CENTER", CFG.hud_pu_bar_x, CFG.hud_pu_bar_y)
+            bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
+            bg:Hide()
+            fill = box:CreateTexture(nil, "ARTWORK", nil, 1)
+            fill:SetHeight(CFG.hud_pu_bar_h)
+            fill:SetPoint("LEFT", bg, "LEFT", 0, 0)
+            fill:SetColorTexture(1, 0.85, 0, 1)
+            fill:Hide()
+        end
+        self._puSlots[i] = { box = box, fs = fs, bg = bg, fill = fill }
+    end
+    if self._puSlots[1] then
+        self._puBox = self._puSlots[1].box
+        self._puTimerFS = self._puSlots[1].fs
+        self._puTimerBg = self._puSlots[1].bg
+        self._puTimerFill = self._puSlots[1].fill
+    end
     self:_RaiseHudOverField()
 end
 
 function R:_UpdatePUBar(gs)
     if not gs then return end
-    local L = ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
-
-    -- Bestehende Text-Bar (über Spielfeld)
-    local parts = {}
-    local function addTimer(field, key)
-        if gs[field] and gs[field] > 0 then
-            parts[#parts+1] = (L["pu_"..key] or key) .. string.format(" %.0fs", gs[field])
-        end
-    end
-    addTimer("bigTimer",      "big")
-    addTimer("fastTimer",     "fast")
-    addTimer("slowTimer",     "slow")
-    addTimer("smallTimer",    "small")
-    addTimer("strengthTimer", "strength")
-    local usedDevPu = false
-    if #parts > 0 then
-        if self._puBar then self._puBar:SetText(table.concat(parts, "  ")) end
-        if self._puListBox then self._puListBox:Show() end
-    elseif self:_IsDevMode() then
+    if self.state == "IDLE" and self:_DevOverlayOn() then
         self:_FillDevPuPreview()
-        usedDevPu = true
-    else
-        if self._puBar then self._puBar:SetText("") end
-        if self._puListBox then self._puListBox:Hide() end
+        return
     end
-
-    -- PU-Timer-Anzeige: aktives PU mit der kürzesten Restzeit (dringendster)
-    local activePU, activeTime, activeDef = nil, math.huge, nil
+    local L = ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
+    local active = {}
     local timerFields = {
         { field="bigTimer",      key="big"      },
         { field="fastTimer",     key="fast"     },
@@ -661,56 +1019,75 @@ function R:_UpdatePUBar(gs)
         { field="smallTimer",    key="small"    },
         { field="strengthTimer", key="strength" },
     }
-    for _, entry in ipairs(timerFields) do
+    for i = 1, #timerFields do
+        local entry = timerFields[i]
         local t = gs[entry.field]
-        if t and t > 0 and t < activeTime then
-            activeTime  = t
-            activePU    = entry.key
-            activeDef   = PU_TIMER_DEF[entry.key]
+        if t and t > 0 then
+            active[#active + 1] = { key = entry.key, t = t, def = PU_TIMER_DEF[entry.key] }
         end
     end
-
-    if activePU and activeDef and self._puTimerFS then
-        local label = (L["pu_"..activePU] or activePU)
-        local secs  = math.ceil(activeTime)
-        self._puTimerFS:SetText(label .. " " .. secs .. "s")
-        self._puTimerFS:SetTextColor(activeDef.r, activeDef.g, activeDef.b)
-        if self._puBox then self._puBox:Show() end
-
-        local frac = math.max(0, math.min(1, activeTime / activeDef.max))
-        if self._puTimerBg  then self._puTimerBg:Show()  end
-        if self._puTimerFill then
-            self._puTimerFill:SetWidth(math.max(1, CFG.hud_pu_bar_w * frac))
-            self._puTimerFill:SetColorTexture(activeDef.r, activeDef.g, activeDef.b, 1)
-            self._puTimerFill:Show()
+    table.sort(active, function(a, b) return a.t < b.t end)
+    local slots = self._puSlots or {}
+    for i = 1, #slots do
+        local s = slots[i]
+        local pu = active[i]
+        if pu and pu.def then
+            local secs = math.ceil(pu.t)
+            s.fs:SetText((L["pu_" .. pu.key] or pu.key) .. " " .. secs .. "s")
+            s.fs:SetTextColor(pu.def.r, pu.def.g, pu.def.b)
+            s.box:Show()
+            if s.bg then s.bg:Show() end
+            if s.fill then
+                local frac = math.max(0, math.min(1, pu.t / pu.def.max))
+                s.fill:SetWidth(math.max(1, CFG.hud_pu_bar_w * frac))
+                s.fill:SetColorTexture(pu.def.r, pu.def.g, pu.def.b, 1)
+                s.fill:Show()
+            end
+        else
+            s.box:Hide()
+            if s.fs then s.fs:SetText("") end
+            if s.bg then s.bg:Hide() end
+            if s.fill then s.fill:Hide() end
         end
-    elseif not usedDevPu then
-        if self._puTimerFS   then self._puTimerFS:SetText("") end
-        if self._puTimerBg   then self._puTimerBg:Hide()      end
-        if self._puTimerFill then self._puTimerFill:Hide()     end
-        if self._puBox       then self._puBox:Hide()          end
     end
 end
 
 -- ── _CreateKeyFrame ───────────────────────────────────────────
 function R:_CreateKeyFrame()
     local field = self._fieldFrame
-    local kf = CreateFrame("Frame", "ArcadiaNexus_BB_KeyFrame", field)
+    -- Unbenannt: benannte Frames + SetPropagateKeyboardInput im Handler tainten.
+    local kf = CreateFrame("Frame", nil, field)
     kf:SetAllPoints(field)
-    kf:SetPropagateKeyboardInput(false)
     kf:EnableKeyboard(false)
+    kf:SetPropagateKeyboardInput(false)
     kf:SetScript("OnKeyDown", function(_, key)
         local E = ArcadiaNexus.BB_Engine
         if not E then return end
-        if key == "A" or key == "LEFT"  then E:HandleKey("LEFT_DOWN")  end
-        if key == "D" or key == "RIGHT" then E:HandleKey("RIGHT_DOWN") end
-        if key == "SPACE"               then E:HandleKey("PAUSE")      end
+        if key == "F8" then
+            E:HandleKey("DEBUG")
+        elseif key == "A" or key == "LEFT" then
+            E:HandleKey("LEFT_DOWN")
+        elseif key == "D" or key == "RIGHT" then
+            E:HandleKey("RIGHT_DOWN")
+        elseif key == "SPACE" then
+            local gs = E.gameState
+            if E.state == "PLAYING" and gs and gs.ballDocked then
+                E:HandleKey("LAUNCH")
+            else
+                E:HandleKey("PAUSE")
+            end
+        elseif key == "P" then
+            E:HandleKey("PAUSE")
+        end
     end)
     kf:SetScript("OnKeyUp", function(_, key)
         local E = ArcadiaNexus.BB_Engine
         if not E then return end
-        if key == "A" or key == "LEFT"  then E:HandleKey("LEFT_UP")  end
-        if key == "D" or key == "RIGHT" then E:HandleKey("RIGHT_UP") end
+        if key == "A" or key == "LEFT" then
+            E:HandleKey("LEFT_UP")
+        elseif key == "D" or key == "RIGHT" then
+            E:HandleKey("RIGHT_UP")
+        end
     end)
     self._keyFrame = kf
 end
@@ -869,6 +1246,62 @@ function R:_CreatePauseOverlay()
     self._pauseOverlay = ovl
 end
 
+function R:_CreateDevOverlay()
+    local field = self._fieldFrame
+    if not field then return end
+    local L = ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
+    local Logic = ArcadiaNexus.BB_Logic
+    local types = (Logic and Logic.PU_TYPES) or {
+        "lives", "score250", "score500", "big", "bullet", "fast", "slow", "small", "strength",
+    }
+
+    local panel = CreateFrame("Frame", nil, field, "BackdropTemplate")
+    panel:SetSize(96, 22 + (#types * 18) + 8)
+    panel:SetPoint("TOPRIGHT", field, "TOPRIGHT", -6, -8)
+    panel:SetFrameStrata("DIALOG")
+    local pauseLvl = self._pauseOverlay and self._pauseOverlay:GetFrameLevel() or field:GetFrameLevel()
+    panel:SetFrameLevel(pauseLvl + 5)
+    panel:SetBackdrop({
+        bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileEdge = true, tileSize = 16, edgeSize = 8,
+        insets = { left = 2, right = 2, top = 2, bottom = 2 },
+    })
+    panel:SetBackdropColor(0.02, 0.02, 0.04, 0.82)
+    panel:SetBackdropBorderColor(0.85, 0.7, 0.2, 0.9)
+    panel:EnableMouse(true)
+    panel:Hide()
+
+    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    title:SetPoint("TOP", panel, "TOP", 0, -5)
+    title:SetTextColor(1, 0.82, 0)
+    title:SetText(L["dev_pu_title"] or "F8  PUs")
+
+    local function makeBtn(puType, index)
+        local btn = CreateFrame("Button", nil, panel)
+        btn:SetSize(88, 16)
+        btn:SetPoint("TOP", panel, "TOP", 0, -20 - (index - 1) * 18)
+        local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        fs:SetAllPoints(btn)
+        fs:SetJustifyH("CENTER")
+        fs:SetTextColor(0.9, 0.9, 0.85)
+        fs:SetText(L["dev_pu_" .. puType] or puType)
+        btn:SetHighlightTexture("Interface\\Buttons\\UI-Listbox-Highlight", "ADD")
+        btn:SetScript("OnClick", function()
+            local E = ArcadiaNexus.BB_Engine
+            if E and E.DevDropPowerUp then E:DevDropPowerUp(puType) end
+        end)
+        btn:SetScript("OnEnter", function() fs:SetTextColor(1, 0.95, 0.4) end)
+        btn:SetScript("OnLeave", function() fs:SetTextColor(0.9, 0.9, 0.85) end)
+        return btn
+    end
+
+    for i = 1, #types do
+        makeBtn(types[i], i)
+    end
+    self._devOverlay = panel
+end
+
 -- ══════════════════════════════════════════════════════════════
 --  ZUSTANDSÜBERGÄNGE
 -- ══════════════════════════════════════════════════════════════
@@ -881,14 +1314,14 @@ function R:EnterIdleState()
     if self._ballFrame   then self._ballFrame:Hide()   end
     if self._paddleFrame then self._paddleFrame:Hide() end
     for _, pf in ipairs(self._puDropPool or {}) do pf:Hide() end
+    self:_ClearFx()
 
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     if self._pauseOverlay then self._pauseOverlay:Hide() end
     if self._logoTex      then self._logoTex:Show()      end
     if self._diffContainer then self._diffContainer:Show() end
     if self._puBar        then self._puBar:SetText("")   end
-    if self._puListBox    then self._puListBox:Hide()    end
-    if self._puBox        then self._puBox:Hide()        end
+    self:_HidePuSlots()
     if self._slotMenu     then self._slotMenu:Hide()     end
 
     if self._startBtn then
@@ -910,10 +1343,7 @@ function R:EnterIdleState()
     if self._livesFS   then self._livesFS:SetText("")   end
     if self._timeFS    then self._timeFS:SetText("")    end
     if self._endlessFS then self._endlessFS:SetText("") end
-    if self._puTimerFS   then self._puTimerFS:SetText("") end
-    if self._puTimerBg   then self._puTimerBg:Hide()      end
-    if self._puTimerFill then self._puTimerFill:Hide()     end
-    self:_ApplyDevHudPreview()
+    self:RefreshDevOverlay()
 end
 
 function R:OnGameStarted(gs)
@@ -942,8 +1372,10 @@ function R:OnGameStarted(gs)
     self:ApplyTheme()
 
     self:_BuildBlocks(gs)
+    self._serveHintArmed = true
     self:UpdateHUD(gs)
     self:UpdatePhysics(gs)
+    self:RefreshDevOverlay()
 end
 
 function R:OnLevelAdvanced(gs)
@@ -1056,7 +1488,7 @@ end
 --  PHYSICS UPDATE
 -- ══════════════════════════════════════════════════════════════
 
-function R:UpdatePhysics(gs)
+function R:UpdatePhysics(gs, dt)
     if not gs or not self._fieldFrame then return end
     local field = self._fieldFrame
     local L     = ArcadiaNexus.BB_Logic
@@ -1074,21 +1506,43 @@ function R:UpdatePhysics(gs)
 
     -- Paddle
     if self._paddleFrame then
-        self._paddleFrame:SetSize(gs.paddleW or CFG.paddle_w, CFG.paddle_h)
+        local squash = 0
+        if self._paddleSquashT and self._paddleSquashT > 0 then
+            local Fx = ArcadiaNexus.BB_Fx
+            local maxT = (Fx and Fx.PADDLE_SQUASH) or 0.12
+            squash = 0.22 * (self._paddleSquashT / maxT)
+            self._paddleSquashT = math.max(0, self._paddleSquashT - (dt or 0))
+        end
+        local ph = CFG.paddle_h * (1 - squash)
+        self._paddleFrame:SetSize(gs.paddleW or CFG.paddle_w, ph)
         local py = L and L.PADDLE_Y or 345
         self._paddleFrame:ClearAllPoints()
         self._paddleFrame:SetPoint("TOPLEFT", field, "TOPLEFT", gs.paddleX, -py)
-        -- Farbton je nach aktivem Power-Up (via SetVertexColor auf Textur)
         local pt = self._paddleFrame._tex
         if pt then
-            if gs.ironTimer and gs.ironTimer > 0 then
-                pt:SetVertexColor(0.50, 0.80, 1.00)
-            elseif gs.enlargeTimer and gs.enlargeTimer > 0 then
-                pt:SetVertexColor(0.40, 1.00, 0.40)
+            if gs.strengthTimer and gs.strengthTimer > 0 then
+                pt:SetVertexColor(1.00, 0.85, 0.20)
+            elseif gs.fastTimer and gs.fastTimer > 0 then
+                pt:SetVertexColor(1.00, 0.55, 0.18)
+            elseif gs.bigTimer and gs.bigTimer > 0 then
+                pt:SetVertexColor(0.45, 0.85, 1.00)
             else
                 pt:SetVertexColor(1, 1, 1)
             end
         end
+        if self._serveHintFS then
+            if gs.ballDocked and self._serveHintArmed then
+                local L = ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
+                self._serveHintFS:SetText(L["hint_serve"] or "Leertaste")
+                self._serveHintFS:ClearAllPoints()
+                self._serveHintFS:SetPoint("BOTTOM", self._paddleFrame, "TOP", 0, 15)
+                self._serveHintFS:Show()
+            else
+                self._serveHintFS:Hide()
+            end
+        end
+    elseif self._serveHintFS then
+        self._serveHintFS:Hide()
     end
 
     -- Extra-Bälle (Multiball)
@@ -1150,6 +1604,7 @@ function R:UpdatePhysics(gs)
     end
 
     self:_UpdatePUBar(gs)
+    self:_TickFx(gs, dt)
 end
 
 -- ══════════════════════════════════════════════════════════════
@@ -1161,10 +1616,15 @@ function R:UpdateHUD(gs)
     local L = ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
 
     if self._scoreFS then
+        local comboTxt = ""
+        if (gs.comboCount or 0) >= 2 then
+            comboTxt = "  |cffffd200x" .. tostring(gs.comboCount) .. "|r"
+        end
         self._scoreFS:SetText(
             (L["lbl_level"] or "Level") .. ": " .. tostring(gs.level) ..
             "   " ..
-            (L["lbl_score"] or "Punkte") .. ": " .. tostring(gs.score))
+            (L["lbl_score"] or "Punkte") .. ": " .. tostring(gs.score) ..
+            comboTxt)
     end
 
     if self._endlessFS then
@@ -1195,11 +1655,32 @@ end
 --  BLOCK-EVENTS
 -- ══════════════════════════════════════════════════════════════
 
-function R:OnBlockBroken(row, col, blockType, gs)
+function R:OnBlockBroken(row, col, blockType, gs, points)
     local bf = self._blockFrames[row] and self._blockFrames[row][col]
+    local tile = BLOCK_TILES[(bf and bf._colorIdx) or 1] or "blue"
     if bf then
         if self._blockPool then self._blockPool:Release(bf) end
         self._blockFrames[row][col] = nil
+    end
+    local cx, cy = self:_BlockCenter(row, col)
+    local Fx = ArcadiaNexus.BB_Fx
+    local r, g, b = 1, 0.85, 0.3
+    if Fx then r, g, b = Fx.TileRGB(tile) end
+    self:_SpawnShards(cx, cy, r, g, b, 6)
+    if points and points > 0 then
+        self:_SpawnPop(cx, cy, "+" .. tostring(points), 1, 0.92, 0.45)
+    end
+    local combo = gs and gs.comboCount or 0
+    if combo >= 3 then
+        self:_SpawnPop(cx, cy - 14, "x" .. tostring(combo), 1, 0.75, 0.2)
+    end
+    if combo == 5 or combo == 10 or combo == 15 or combo == 20 then
+        local L = ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
+        if self._comboFlashFS then
+            self._comboFlashFS:SetText((L["lbl_combo"] or "Combo") .. " x" .. tostring(combo))
+            self._comboFlashFS:Show()
+            self._comboFlashT = (Fx and Fx.COMBO_FLASH_TTL) or 0.85
+        end
     end
 end
 
@@ -1207,6 +1688,50 @@ function R:OnBlockDamaged(row, col, newTyp, gs)
     local bf = self._blockFrames[row] and self._blockFrames[row][col]
     if not bf then return end
     self:_ApplyBlockStyle(bf, newTyp)
+    local cx, cy = self:_BlockCenter(row, col)
+    local tile = BLOCK_TILES[bf._colorIdx or 1] or "grey"
+    local Fx = ArcadiaNexus.BB_Fx
+    local r, g, b = 0.8, 0.8, 0.8
+    if Fx then r, g, b = Fx.TileRGB(tile) end
+    self:_SpawnShards(cx, cy, r, g, b, 2)
+end
+
+function R:OnPaddleHit(gs)
+    local Fx = ArcadiaNexus.BB_Fx
+    self._paddleSquashT = (Fx and Fx.PADDLE_SQUASH) or 0.12
+end
+
+function R:OnBallLaunched(gs)
+    if not gs then return end
+    self._serveHintArmed = false
+    if self._serveHintFS then self._serveHintFS:Hide() end
+    local Fx = ArcadiaNexus.BB_Fx
+    local r, g, b = 0.4, 0.7, 1
+    if Fx then r, g, b = Fx.ThemeRGB(GetThemeColor()) end
+    self:_SpawnShards(gs.ballX, gs.ballY, r, g, b, 7)
+    self._mainTrail = {}
+end
+
+function R:OnWallHit(side, gs)
+    if not side then return end
+    self._edgeFlashT = self._edgeFlashT or { left = 0, right = 0, top = 0 }
+    local Fx = ArcadiaNexus.BB_Fx
+    self._edgeFlashT[side] = (Fx and Fx.EDGE_FLASH_TTL) or 0.14
+end
+
+function R:OnLevelClear(gs)
+    local Fx = ArcadiaNexus.BB_Fx
+    local r, g, b = 1, 0.85, 0.3
+    if Fx then r, g, b = Fx.ThemeRGB(GetThemeColor()) end
+    local cx = CFG.field_w / 2
+    local cy = CFG.field_h / 2
+    local n = (Fx and Fx.CLEAR_BURST) or 16
+    self:_SpawnShards(cx, cy, r, g, b, n)
+    self._edgeFlashT = { left = 0.35, right = 0.35, top = 0.35 }
+    local S = ArcadiaNexus.BB_Settings
+    if S and S:Get("screenFlash") then
+        self:FlashScreen(r, g, b, 0.35)
+    end
 end
 
 -- ══════════════════════════════════════════════════════════════
@@ -1214,7 +1739,19 @@ end
 -- ══════════════════════════════════════════════════════════════
 
 function R:OnPowerUpDropped(puType, x, y, gs)   end
-function R:OnPowerUpCollected(puType, gs)         end
+function R:OnPowerUpCollected(puType, gs)
+    if not gs or not puType then return end
+    local Fx = ArcadiaNexus.BB_Fx
+    local r, g, b = 1, 0.85, 0.3
+    if Fx and Fx.PURGB then r, g, b = Fx.PURGB(puType) end
+    local L = ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
+    local label = (L and L["pu_" .. puType]) or puType
+    local px = (gs.paddleX or 0) + (gs.paddleW or 80) / 2
+    local Logic = ArcadiaNexus.BB_Logic
+    local py = (Logic and Logic.PADDLE_Y or 425) - 18
+    self:_SpawnShards(px, py, r, g, b, 8)
+    self:_SpawnPop(px, py, label, r, g, b)
+end
 function R:OnPowerUpExpired(puType, gs)           end
 
 -- ══════════════════════════════════════════════════════════════

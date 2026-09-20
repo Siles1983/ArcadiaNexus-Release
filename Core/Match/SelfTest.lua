@@ -18,6 +18,7 @@ local function MakeNodes(transport, extra)
             playerKey = key,
             transport = transport,
             proto = extra.proto or nil,
+            maxSeats = extra.maxSeats,
         }
         if extra.protoFor and extra.protoFor[key] then
             opts.proto = extra.protoFor[key]
@@ -47,6 +48,18 @@ function ST.Run()
     local D = ArcadiaNexus.MatchDummy
     local fails = {}
     local n = 0
+    -- Do not advertise dummy lobbies over the real transport or overwrite a
+    -- live browser / reload ticket. Always dispose the temporary nodes.
+    local realBrowser = ArcadiaNexus.MatchBrowser
+    ArcadiaNexus.MatchBrowser = realBrowser.New(ArcadiaNexus.MatchTransport.CreateLoopback())
+    local ticket = ArcadiaNexus.MatchStore.GetTicket()
+    local created, runtime = {}, ArcadiaNexus.MatchRuntime
+    local create = runtime.Create
+    runtime.Create = function(opts)
+        local node = create(opts)
+        created[#created + 1] = node
+        return node
+    end
 
     local function Case(name, fn)
         n = n + 1
@@ -167,8 +180,8 @@ function ST.Run()
     Case("cross-realm-not-seat", function()
         local T = ArcadiaNexus.MatchTransport.CreateLoopback({ sync = true })
         local rt = ArcadiaNexus.MatchRuntime
-        local A = rt.Create({ playerKey = "Kathalina-Blackmoore", transport = T })
-        local B = rt.Create({ playerKey = "Lyria-Blackmoore", transport = T })
+        local A = rt.Create({ playerKey = "Kathalina-Blackmoore", transport = T, maxSeats = 2 })
+        local B = rt.Create({ playerKey = "Lyria-Blackmoore", transport = T, maxSeats = 2 })
         A:HostMatch()
         B:Join(A.playerKey)
         A:SetReady(true)
@@ -206,7 +219,7 @@ function ST.Run()
 
     Case("proto-mismatch", function()
         local T = ArcadiaNexus.MatchTransport.CreateLoopback({ sync = true })
-        local nodes = MakeNodes(T, { protoFor = { ["B-Loop"] = 2 } })
+        local nodes = MakeNodes(T, { protoFor = { ["B-Loop"] = P.MATCH_PROTO + 1 } })
         local A, B = nodes[1], nodes[2]
         A:HostMatch()
         B:Join(A.playerKey)
@@ -356,10 +369,10 @@ function ST.Run()
         Brows.AdvertiseFromNode(A)
         Brows._invitedMatchId = nil
         local payload = P.Encode(P.TYPE.INVITED, { matchId = A.matchId, gameId = A.gameId })
-        Brows.OnPayload(C.playerKey, payload)
+        Brows.OnPayload(C.playerKey, payload, P.CHANNEL.UNICAST)
         Check(fails, Brows._invitedMatchId == nil, "spoof ignored")
         A:Invite(C.playerKey)
-        Brows.OnPayload(A.playerKey, payload)
+        Brows.OnPayload(A.playerKey, payload, P.CHANNEL.UNICAST)
         Check(fails, Brows._invitedMatchId == A.matchId, "guest saw allow")
         Brows.StopAdvertise()
         Brows.Remove(A.matchId)
@@ -377,7 +390,7 @@ function ST.Run()
 
     Case("guest-rejoin-playing", function()
         local T = ArcadiaNexus.MatchTransport.CreateLoopback({ sync = true })
-        local nodes = MakeNodes(T)
+        local nodes = MakeNodes(T, { maxSeats = 2 })
         local A, B = nodes[1], nodes[2]
         A:HostMatch()
         B:Join(A.playerKey)
@@ -432,14 +445,15 @@ function ST.Run()
     Case("sync-broadcast-recovers", function()
         local T = ArcadiaNexus.MatchTransport.CreateLoopback({ sync = true })
         local rt = ArcadiaNexus.MatchRuntime
-        local A = rt.Create({ playerKey = "Kathalina-Blackmoore", transport = T })
-        local B = rt.Create({ playerKey = "Lyria-Blackmoore", transport = T })
+        local A = rt.Create({ playerKey = "Kathalina-Blackmoore", transport = T, maxSeats = 2 })
+        local B = rt.Create({ playerKey = "Lyria-Blackmoore", transport = T, maxSeats = 2 })
         Check(fails, A:HostMatch(), "host")
         B:Join(A.playerKey)
         A:SetReady(true)
         B:SetReady(true)
         Check(fails, A:TryStart(), "start")
         local B2 = rt.Create({ playerKey = "Lyria-Blackmoore", transport = T })
+        B2.hostKey, B2.matchId = A.playerKey, A.matchId
         local payload = P.Encode(P.TYPE.SYNC, { matchId = A.matchId })
         T:Inject("Lyria", payload, "BROADCAST")
         Check(fails, B2:GetState() == P.STATE.PLAYING, "broadcast sync recovered")
@@ -449,7 +463,7 @@ function ST.Run()
 
     Case("leave-playing-keeps-seat", function()
         local T = ArcadiaNexus.MatchTransport.CreateLoopback({ sync = true })
-        local nodes = MakeNodes(T)
+        local nodes = MakeNodes(T, { maxSeats = 2 })
         local A, B = nodes[1], nodes[2]
         A:HostMatch()
         B:Join(A.playerKey)
@@ -467,6 +481,11 @@ function ST.Run()
         Check(fails, B2:GetState() == P.STATE.PLAYING, "rejoin after leave")
     end)
 
+    runtime.Create = create
+    ArcadiaNexus.MatchBrowser.StopAdvertise()
+    ArcadiaNexus.MatchBrowser = realBrowser
+    for _, node in ipairs(created) do node:Dispose() end
+    ArcadiaNexus.MatchStore.SetTicket(ticket)
     local passed = n - #fails
     return {
         cases = n,

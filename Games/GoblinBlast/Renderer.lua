@@ -805,4 +805,6 @@ ArcadiaNexus.RegisterGame({
     engine    = "GB_Engine",
     container = "_gbContainer",
     category  = "ARCADE",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\GoblinBlast\\assets\\logo\\logo_gb",
+    xp        = 12,
 })

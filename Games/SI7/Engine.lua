@@ -35,63 +35,18 @@ end
 
 local function Notify()
     local R = ArcadiaNexus.SI7_Renderer
+    local M = ArcadiaNexus.Match
+    if M and M.NotifyGameView then
+        M.NotifyGameView(E, "SI7", function()
+            if R and R.Render then R:Render() end
+        end)
+        return
+    end
     if R and R.Render then R:Render() end
-    local Shell = ArcadiaNexus.MatchShell
-    if Shell and Shell.OnGameView and E.mode ~= "hotseat" then
-        Shell.OnGameView("SI7", E:GetView())
-    end
 end
 
-local function HasMp()
-    return ArcadiaNexus.HasMultiplayer and ArcadiaNexus.HasMultiplayer()
-end
-
-local function GroupKeys()
-    local MT = ArcadiaNexus.Match and ArcadiaNexus.Match.Transport
-    if not MT or not MT.LocalPlayerKey then return {} end
-    local me = MT.LocalPlayerKey()
-    local keys, seen = {}, {}
-    local function add(unit)
-        if not unit or not UnitExists or not UnitExists(unit) then return end
-        if UnitIsUnit and UnitIsUnit(unit, "player") then return end
-        local name, realm = UnitFullName(unit)
-        if not name then return end
-        realm = realm or (GetNormalizedRealmName and GetNormalizedRealmName()) or ""
-        realm = tostring(realm):gsub("%s+", "")
-        local key = (realm ~= "") and (name .. "-" .. realm) or name
-        if key ~= me and not seen[key] then
-            seen[key] = true
-            keys[#keys + 1] = key
-        end
-    end
-    if IsInRaid and IsInRaid() then
-        local n = GetNumGroupMembers and GetNumGroupMembers() or 0
-        for i = 1, n do add("raid" .. i) end
-    elseif IsInGroup and IsInGroup() then
-        local n = GetNumSubgroupMembers and GetNumSubgroupMembers() or 4
-        for i = 1, n do add("party" .. i) end
-    end
-    return keys
-end
-
-local function EnsureMatch()
-    if not HasMp() then return nil end
-    if E.match then
-        local st = E.match:GetState()
-        if st ~= "ABORTED" and st ~= "FINISHED" and st ~= "IDLE" then
-            return E.match
-        end
-    end
-    local Match = ArcadiaNexus.Match
-    local MT = Match.Transport
-    local transport = MT.StartWow and MT.StartWow() or Match.Transport
-    local key = MT.LocalPlayerKey and MT.LocalPlayerKey()
-    if not key then return nil end
-    local opts = Logic().MatchOpts(E)
-    opts.playerKey = key
-    opts.transport = transport
-    E.match = Match.Runtime.Create(opts)
-    return E.match
+local function MatchOpts(engine)
+    return Logic().MatchOpts(engine)
 end
 
 local function LocalTeam(seat)
@@ -101,57 +56,39 @@ local function LocalTeam(seat)
 end
 
 function E:OnMatchPublic()
-    if self.state == "LOBBY" then
-        self:SyncLobbyGroups()
-        if self.match and self.match.isHost and ArcadiaNexus.MatchBrowser then
-            ArcadiaNexus.MatchBrowser.AdvertiseFromNode(self.match)
-        end
+    local M = ArcadiaNexus.Match
+    if M and M.HandleGamePublic then
+        M.HandleGamePublic(self, function()
+            if self.state == "LOBBY" then self:SyncLobbyGroups() end
+        end)
     end
     Notify()
 end
 
 function E:OnMatchState(st)
-    if st == "PLAYING" then
-        self.state = "PLAYING"
-        self._notice = nil
-        if self.match and self.match.seat then
-            self.viewSeat = self.match.seat
-        end
-        if ArcadiaNexus.MatchBrowser then
-            ArcadiaNexus.MatchBrowser.StopAdvertise()
-            if self.match then ArcadiaNexus.MatchBrowser.Remove(self.match.matchId) end
-        end
-    elseif st == "FINISHED" then
-        self.state = "FINISHED"
-        if ArcadiaNexus.MatchBrowser then
-            ArcadiaNexus.MatchBrowser.StopAdvertise()
-            if self.match then ArcadiaNexus.MatchBrowser.Remove(self.match.matchId) end
-        end
-    elseif st == "ABORTED" then
-        self.state = "IDLE"
-        if ArcadiaNexus.MatchBrowser then
-            ArcadiaNexus.MatchBrowser.StopAdvertise()
-            if self.match then ArcadiaNexus.MatchBrowser.Remove(self.match.matchId) end
-        end
-    elseif st == "LOBBY" then
-        self.state = "LOBBY"
-        if self.match and self.match.isHost and ArcadiaNexus.MatchBrowser then
-            ArcadiaNexus.MatchBrowser.AdvertiseFromNode(self.match)
-        end
+    local M = ArcadiaNexus.Match
+    if M and M.HandleGameState then
+        M.HandleGameState(self, "SI7", st, {
+            onPlaying = function()
+                if self.match and self.match.seat then
+                    self.viewSeat = self.match.seat
+                end
+            end,
+        })
     end
     Notify()
 end
 
 function E:OnMatchReject(f)
-    self._notice = (f and f.reason) or "reject"
-    local Shell = ArcadiaNexus.MatchShell
-    if Shell and Shell.OnJoinRejected then
-        Shell.OnJoinRejected("SI7", f and f.reason)
+    local M = ArcadiaNexus.Match
+    if M and M.HandleGameReject then
+        M.HandleGameReject(self, "SI7", f)
     end
     Notify()
 end
 
 function E:OnMatchResult(node, resultId)
+    if self.match ~= node or not self._sessionId or node:GetState() ~= "FINISHED" then return end
     if self._resultEmitted then return end
     self._resultEmitted = true
     local pub = node and node:GetPublicState()
@@ -173,6 +110,8 @@ function E:OnMatchResult(node, resultId)
     end
     ArcadiaNexus.Engine:Emit("GAME_RESULT", {
         gameId = "SI7",
+        resultId = resultId,
+        matchHost = node.hostKey,
         difficulty = "normal",
         score = score,
         result = won and "WIN" or "LOSS",
@@ -199,85 +138,39 @@ end
 function E:StartGame(config)
     config = config or {}
     local mode = config.mode or "hotseat"
+    if mode == "host" or mode == "join" or mode == "rejoin" then
+        local M = ArcadiaNexus.Match
+        if not M or not M.BeginNetworkedGame then
+            self._notice = "nomp"
+            Notify()
+            return
+        end
+        M.BeginNetworkedGame(self, "SI7", config, Notify, MatchOpts, {
+            onBefore = function()
+                local S = Settings()
+                if S then S:Set("lastMode", mode) end
+                self._selectedWordSet = config.wordSet or (S and S:Get("wordSet")) or "AZEROTH"
+            end,
+            onHosted = function()
+                if self.match and self.match.publicState then
+                    self.match.publicState.wordSet = self._selectedWordSet or "AZEROTH"
+                end
+                self.lobbyGroup = {}
+                self:SyncLobbyGroups()
+                if self.match and self.match.LobbyChanged then self.match:LobbyChanged() end
+            end,
+        })
+        return
+    end
     self.mode = mode
     self._resultEmitted = false
     self._notice = nil
     local S = Settings()
     if S then S:Set("lastMode", mode) end
 
-    if mode == "host" or mode == "join" or mode == "rejoin" then
-        if not HasMp() then
-            self._notice = "nomp"
-            Notify()
-            return
-        end
-        self:StopMatchQuiet()
-        local node = EnsureMatch()
-        if not node then
-            self._notice = "nomp"
-            Notify()
-            return
-        end
-        if mode == "join" or mode == "rejoin" then
-            local target = config.joinTarget
-            local targets = {}
-            if target and target ~= "" then
-                local MT = ArcadiaNexus.Match.Transport
-                targets[1] = MT.NormalizeSender and MT.NormalizeSender(target) or target
-            else
-                targets = GroupKeys()
-            end
-            if #targets == 0 then
-                self._notice = "joinhint"
-                Notify()
-                return
-            end
-            E._sessionId = ArcadiaNexus.Lifecycle:RestartGame("SI7", E._sessionId)
-            if mode == "rejoin" then
-                if not config.matchId or not node.Rejoin then
-                    self._notice = "joinhint"
-                    Notify()
-                    return
-                end
-                node:Rejoin(targets[1], config.matchId)
-                self.state = "LOBBY"
-                self._notice = "rejoin"
-                Notify()
-                return
-            end
-            for i = 1, #targets do
-                node:Join(targets[i], config.pin)
-            end
-            if node.GetState and node:GetState() == "LOBBY" then
-                self.state = "LOBBY"
-            else
-                self.state = "IDLE"
-            end
-            Notify()
-            return
-        end
-        E._sessionId = ArcadiaNexus.Lifecycle:RestartGame("SI7", E._sessionId)
-        if config.policy and node.SetPolicy then
-            if not node:SetPolicy(config.policy, config.pin) then
-                self._notice = "host-fail"
-                Notify()
-                return
-            end
-        end
-        if not node:HostMatch() then
-            self._notice = "host-fail"
-            Notify()
-            return
-        end
-        self.state = "LOBBY"
-        self.lobbyGroup = {}
-        self:SyncLobbyGroups()
-        Notify()
-        return
-    end
-
     self:StopMatchQuiet()
-    local pub, key = Logic().Deal()
+    self._selectedWordSet = config.wordSet or (S and S:Get("wordSet")) or "AZEROTH"
+    local pub, key = Logic().Deal(self._selectedWordSet)
     self.public = pub
     self.key = key
     self.viewSeat = 1
@@ -288,21 +181,14 @@ function E:StartGame(config)
 end
 
 function E:SetReady(ready)
-    if self.match then
-        self.match:SetReady(ready ~= false)
-        Notify()
-    end
+    local M = ArcadiaNexus.Match
+    if M and M.SetEngineReady then M.SetEngineReady(self, ready) end
+    Notify()
 end
 
 function E:TryStartMatch()
-    if not self.match then return end
-    if not self.match:TryStart() then
-        if not self._notice then
-            self._notice = "start-fail"
-        end
-    else
-        self._notice = nil
-    end
+    local M = ArcadiaNexus.Match
+    if M and M.TryEngineStart then M.TryEngineStart(self) end
     Notify()
 end
 
@@ -407,6 +293,14 @@ end
 
 function E:SubmitClue(word, n)
     if self.state ~= "PLAYING" then return end
+    local pub = self.mode == "hotseat" and self.public or (self.match and self.match:GetPublicState())
+    local _, reason = Logic().ValidateClue(pub, word)
+    if reason then
+        self._notice = reason
+        Notify()
+        return
+    end
+    self._notice = nil
     if self.mode == "hotseat" then
         if Logic().Apply(self.public, self.key, { kind = "CLUE", c = word, n = n }, self.viewSeat) then
             Play(857)
@@ -531,38 +425,13 @@ function E:GetView()
 end
 
 function E:HideView()
-    if self.match and self.match.HideView then
-        self.match:HideView()
-    end
+    local M = ArcadiaNexus.Match
+    if M and M.HideEngineView then M.HideEngineView(self) end
 end
 
 function E:StopMatchQuiet()
-    if ArcadiaNexus.MatchBrowser then
-        ArcadiaNexus.MatchBrowser.StopAdvertise()
-        if self.match then ArcadiaNexus.MatchBrowser.Remove(self.match.matchId) end
-    end
-    if self.match then
-        local M = ArcadiaNexus.Match
-        if M and M.IsUnloading and M.IsUnloading() and not self.match.isHost then
-            if M.SaveTicket then M.SaveTicket(self.match) end
-            if self.match._startGuard then self.match._startGuard:Cancel() end
-            if self.match._rejoinGuard then self.match._rejoinGuard:Cancel() end
-            if self.match.transport and self.match.transport.Unregister then
-                self.match.transport:Unregister(self.match.playerKey)
-            end
-            self.match = nil
-            return
-        end
-        local st = self.match:GetState()
-        if st == "PLAYING" or st == "LOBBY" or st == "FINISHED" then
-            if self.match.isHost then
-                self.match:Abort("ui-stop")
-            else
-                self.match:Leave()
-            end
-        end
-        self.match = nil
-    end
+    local M = ArcadiaNexus.Match
+    if M and M.StopEngineMatch then M.StopEngineMatch(self) end
 end
 
 function E:StopGame()

@@ -154,8 +154,9 @@ end
 
 function R.Make(group, parentFrame, W, yOff, onHeightChanged)
     local H        = ArcadiaNexus.AchUI_H
-    local unlocked = (ArcadiaNexusDB.achievements and ArcadiaNexusDB.achievements.unlocked) or {}
-    local progress = (ArcadiaNexusDB.achievements and ArcadiaNexusDB.achievements.progress) or {}
+    local AS       = ArcadiaNexus.AchievementStore
+    local unlocked = (AS and AS.GetUnlocked()) or {}
+    local progress = (AS and AS.GetProgress()) or {}
     local tiers    = group.tiers or {}
 
     local highestIdx = 0

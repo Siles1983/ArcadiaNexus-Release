@@ -721,4 +721,6 @@ ArcadiaNexus.RegisterGame({
     engine    = "TDG_Engine",
     container = "_2048Container",
     category  = "DENKSPIELE",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\2048\\assets\\logo\\logo_2048",
+    xp        = 12,
 })

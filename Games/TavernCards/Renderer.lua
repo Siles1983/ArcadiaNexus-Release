@@ -13,6 +13,9 @@ ArcadiaNexus.RegisterGame({
     renderer  = "TC_Renderer",
     engine    = "TC_Engine",
     container = "_tcContainer",
+    matchSeats = 4,
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\TavernCards\\assets\\logo\\tc_logo",
+    xp        = 10,
 })
 
 local ADDON = "Interface\\AddOns\\ArcadiaNexus\\Games\\TavernCards\\assets\\"
@@ -232,14 +235,20 @@ function R:_CreateMainFrame()
         R:_UpdateControlsBar()
     end)
     f:SetScript("OnHide", function()
+        if ArcadiaNexus.MatchShell and ArcadiaNexus.MatchShell._reparenting then
+            return
+        end
+        R:CancelModelRefresh()
         ArcadiaNexus.GameSession:HandleRendererHide("TAVERNCARDS", ArcadiaNexus.TC_Engine, function(E)
-            if E.state == "PLAYING" or E.state == "DEALING" then
+            if E.mode ~= "hotseat" and (E.state == "PLAYING" or E.state == "LOBBY"
+                or E.state == "FINISHED" or E.state == "DEALING") then
+                E:HideView()
+            elseif E.state == "PLAYING" or E.state == "DEALING" then
                 E:SaveAndPause()
             elseif E.state ~= "IDLE" then
                 E:StopGame()
             end
         end)
-        R:EnterIdleState()
     end)
 end
 
@@ -398,10 +407,16 @@ function R:_CreateControls()
         { key = "1", label = L("ai_1") }, { key = "2", label = L("ai_2") }, { key = "3", label = L("ai_3") },
     }, function() return tostring(R._lastAI or 1) end, function(k) R._lastAI = tonumber(k) or 1 end)
 
+    self._ddPair = pair
+
     self._startBtn = UI.CreateArcadiaButton(cf, L("btn_start"), CFG.btn_w, CFG.btn_h)
     self._startBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
     self._startBtn:SetScript("OnClick", function()
         local E = ArcadiaNexus.TC_Engine
+        if E.mode and E.mode ~= "hotseat" then
+            E:StopGame()
+            return
+        end
         if E.state ~= "IDLE" then
             E:StopGame()
         elseif R:_HasPausedGame() then
@@ -445,8 +460,12 @@ function R:_CreateActionButtons()
     self._drawBtn = UI.CreateArcadiaButton(pf, L("btn_draw"), CFG.draw_btn_w, CFG.draw_btn_h)
     self._drawBtn:SetPoint("BOTTOMRIGHT", pf, "BOTTOMRIGHT", CFG.draw_btn_x, CFG.draw_btn_y)
     self._drawBtn:SetScript("OnClick", function() ArcadiaNexus.TC_Engine:PlayerDraw(false) end)
+    self._passBtn = UI.CreateArcadiaButton(pf, L("btn_pass"), 80, 28)
+    self._passBtn:SetPoint("RIGHT", self._drawBtn, "LEFT", -8, 0)
+    self._passBtn:Hide()
+    self._passBtn:SetScript("OnClick", function() ArcadiaNexus.TC_Engine:PlayerPassAfterDraw() end)
     self._unoBtn = UI.CreateArcadiaButton(pf, L("btn_uno"), 80, 28)
-    self._unoBtn:SetPoint("RIGHT", self._drawBtn, "LEFT", -8, 0)
+    self._unoBtn:SetPoint("RIGHT", self._passBtn, "LEFT", -8, 0)
     self._unoBtn:SetScript("OnClick", function() ArcadiaNexus.TC_Engine:PlayerCallUno() end)
     self._catchBtn = UI.CreateArcadiaButton(pf, L("btn_catch"), 90, 28)
     self._catchBtn:SetPoint("RIGHT", self._unoBtn, "LEFT", -8, 0)
@@ -513,10 +532,19 @@ end
 
 function R:_UpdateControlsBar()
     local E = ArcadiaNexus.TC_Engine
+    local mp = E and E.mode and E.mode ~= "hotseat"
     local playing = E and E.state ~= "IDLE"
     local paused = self:_HasPausedGame()
+    if self._ddPair then self._ddPair:SetShown(not mp) end
+    if self._ddModeAnchor then
+        self._ddModeAnchor:SetShown(not mp and (not paused or playing))
+    end
     if self._startBtn then
-        if playing then
+        if mp then
+            local loc = ArcadiaNexus.GetLocaleTable("TAVERNCARDS") or {}
+            self._startBtn:SetLabel(loc.btn_exit or L("btn_stop"))
+            self._startBtn:SetShown(true)
+        elseif playing then
             self._startBtn:SetLabel(L("btn_stop"))
             self._startBtn:SetShown(true)
         elseif paused then
@@ -528,10 +556,7 @@ function R:_UpdateControlsBar()
         end
     end
     if self._newGameBtn then
-        self._newGameBtn:SetShown(paused and not playing)
-    end
-    if self._ddModeAnchor then
-        self._ddModeAnchor:SetShown(not paused or playing)
+        self._newGameBtn:SetShown((not mp) and paused and not playing)
     end
     if self._resumeBtn then
         self._resumeBtn:Hide()
@@ -575,6 +600,10 @@ function R:ShowStartPopup()
 end
 
 function R:EnterIdleState()
+    self:CancelModelRefresh()
+    if self._playfield and ArcadiaNexus.UI then
+        ArcadiaNexus.UI.HideResultDialog(self._playfield)
+    end
     self.state = "IDLE"
     self._startActive = false
     if self._playfield then self._playfield:Hide() end
@@ -601,6 +630,91 @@ function R:OnGameStarted(gs)
     self:_RefreshModels(gs)
 end
 
+function R:Render()
+    local E = ArcadiaNexus.TC_Engine
+    if not E or E.mode == "hotseat" then return end
+    local v = E:GetView()
+    if not v then return end
+    if v.state == "IDLE" or v.state == "ABORTED" then
+        self:EnterIdleState()
+        return
+    end
+    self:_UpdateControlsBar()
+    if v.state == "LOBBY" then
+        self.state = "LOBBY"
+        if self._playfield then self._playfield:Hide() end
+        if self._logo then self._logo:Show() end
+        if self._borderFrame then self._borderFrame:Show() end
+        return
+    end
+    if v.state == "PLAYING" or v.state == "FINISHED" then
+        local board = E:GetBoardState()
+        if not board then return end
+        if self._logo then self._logo:Hide() end
+        if self._borderFrame then self._borderFrame:Show() end
+        if self._playfield then self._playfield:Show() end
+        self:UpdateBoard(board)
+        self:_ApplyCharModels(board, false)
+        if v.state == "FINISHED" then
+            self.state = "FINISHED"
+        else
+            self.state = "PLAYING"
+        end
+    end
+end
+
+function R:ShowMatchResult(result, state)
+    self.state = "FINISHED"
+    state = state or {}
+    local E = ArcadiaNexus.TC_Engine
+    self:UpdateBoard(state)
+    if not self._playfield then return end
+    local UI = ArcadiaNexus.UI
+    local loc = ArcadiaNexus.GetLocaleTable("TAVERNCARDS") or {}
+    local uiLoc = ArcadiaNexus.GetLocaleTable("UI") or {}
+    local title, titleColor
+    if result == "WIN" then
+        title = loc.result_mp_win or loc.result_win or "|cffffd700Sieg!|r"
+        titleColor = { 1, 0.84, 0 }
+    else
+        title = loc.result_mp_loss or loc.result_lose or "|cffff4444Niederlage!|r"
+        titleColor = { 1, 0.3, 0.3 }
+        result = "LOSS"
+    end
+    UI.ShowArcadeResult(self._playfield, {
+        title = title,
+        titleColor = titleColor,
+        subtitle = loc.result_round or "",
+        gameId = "TAVERNCARDS",
+        difficulty = "normal",
+        result = result,
+        hideHighscore = true,
+        L = loc,
+        onRetry = function()
+            local Shell = ArcadiaNexus.MatchShell
+            if Shell and Shell.Rematch then Shell.Rematch("TAVERNCARDS") end
+        end,
+        onExit = function()
+            if E then E:StopGame() end
+        end,
+        buttons = {
+            {
+                label = uiLoc.btn_new_game or loc.btn_new_game,
+                onClick = function()
+                    local Shell = ArcadiaNexus.MatchShell
+                    if Shell and Shell.Rematch then Shell.Rematch("TAVERNCARDS") end
+                end,
+            },
+            {
+                label = uiLoc.btn_exit or loc.btn_exit or loc.btn_stop,
+                onClick = function()
+                    if E then E:StopGame() end
+                end,
+            },
+        },
+    })
+end
+
 function R:_ApplyCharModels(gs, forceReload)
     if not gs then return false end
     local Npc = ArcadiaNexus.TC_NpcData
@@ -613,41 +727,67 @@ function R:_ApplyCharModels(gs, forceReload)
         if ok then Npc:PlayAnim(slot.model, "idle") end
         return ok
     end
-    local human = gs.players and gs.players[1]
+    local human = gs.players and gs.players[gs.localSeat or 1]
     if human and human.charDef then
         if not applySlot(self._charSlots.player, human.charDef) then allOk = false end
     end
-    for i = 1, 3 do
-        local aiIdx = i + 1
+    local slotI = 1
+    for i = 1, (gs.playerCount or 0) do
+        if i ~= (gs.localSeat or 1) then
+            local slot = self._charSlots.ai[slotI]
+            local p = gs.players[i]
+            if slot and p and p.charDef and not applySlot(slot, p.charDef) then allOk = false end
+            slotI = slotI + 1
+        end
+    end
+    for i = slotI, 3 do
         local slot = self._charSlots.ai[i]
-        if aiIdx <= gs.playerCount and slot then
-            local p = gs.players[aiIdx]
-            if p and p.charDef and not applySlot(slot, p.charDef) then allOk = false end
+        if slot then
+            slot.frame:Hide()
+            slot.model:Hide()
         end
     end
     return allOk
 end
 
+function R:CancelModelRefresh()
+    if self._modelGuard then self._modelGuard:Cancel() end
+    local function cancel(slot)
+        local model = slot and slot.model
+        if model and model._tcRefreshGuard then model._tcRefreshGuard:Cancel() end
+        if model then model._tcAnimLock = nil end
+    end
+    cancel(self._charSlots.player)
+    for _, slot in pairs(self._charSlots.ai) do cancel(slot) end
+end
+
 function R:_RefreshModels(gs)
     if not gs then return end
+    self:CancelModelRefresh()
+    self._modelGuard = self._modelGuard or ArcadiaNexus.TimerGuard.New()
+    local guard = self._modelGuard
+    local engine = ArcadiaNexus.TC_Engine
+    local sid, node = engine._sessionId, engine.match
     local attempt = 0
     local maxAttempts = 6
     local function step()
+        if not ArcadiaNexus.GameSession:IsSession(engine, sid) or engine.match ~= node then return end
+        if not node and engine.gameState ~= gs then return end
         if not R._playfield then return end
         if not R._playfield:IsShown() then
             if attempt < maxAttempts then
                 attempt = attempt + 1
-                C_Timer.After(0.1, step)
+                guard:After(0.1, step)
             end
             return
         end
         attempt = attempt + 1
-        R:_ApplyCharModels(gs, attempt > 1)
+        R:_ApplyCharModels(node and engine:GetBoardState() or gs, attempt > 1)
         if attempt < maxAttempts then
-            C_Timer.After(0.12, step)
+            guard:After(0.12, step)
         end
     end
-    C_Timer.After(0, step)
+    guard:After(0, step)
 end
 
 function R:_ClearCardFrames()
@@ -838,12 +978,22 @@ function R:ShowPlayFeedback(gs, playerIndex, card, onDone)
     self:UpdateBoard(gs)
     local Npc = ArcadiaNexus.TC_NpcData
     local from
-    if playerIndex == 1 then
+    local localSeat = (gs and gs.localSeat) or 1
+    if playerIndex == localSeat then
         local slot = self._charSlots.player
         if slot then Npc:PlayAnim(slot.model, "play"); from = slot.model end
     else
-        local slot = self._charSlots.ai[playerIndex - 1]
-        if slot then Npc:PlayAnim(slot.model, "play"); from = slot.model end
+        local n = 0
+        for i = 1, (gs.playerCount or 0) do
+            if i ~= localSeat then
+                n = n + 1
+                if i == playerIndex then
+                    local slot = self._charSlots.ai[n]
+                    if slot then Npc:PlayAnim(slot.model, "play"); from = slot.model end
+                    break
+                end
+            end
+        end
     end
     self:ShowCardFly(card, gs.theme, onDone, from)
 end
@@ -869,11 +1019,14 @@ function R:UpdateBoard(gs)
         self._colorRing:SetPoint("CENTER", self._discardFrames[#self._discardFrames], "CENTER")
         self._colorRing:Show()
     else self._colorRing:Hide() end
-    local human = gs.players[1]
-    local isHumanTurn = gs.currentPlayer == 1 and not human.isAI
-    local status = gs.turnNotice or (isHumanTurn and L("lbl_your_turn") or L("lbl_ai_turn"))
-    if gs.currentPlayer ~= 1 and not gs.turnNotice then
-        status = (gs.players[gs.currentPlayer].name or "") .. " - " .. L("lbl_ai_turn")
+    local localSeat = gs.localSeat or 1
+    local human = gs.players[localSeat]
+    if not human then return end
+    local isHumanTurn = gs.currentPlayer == localSeat and not human.isAI
+    local status = gs.turnNotice or (isHumanTurn and L("lbl_your_turn") or L("lbl_wait_turn"))
+    if gs.currentPlayer ~= localSeat and not gs.turnNotice then
+        local other = gs.players[gs.currentPlayer]
+        status = string.format(L("lbl_wait_turn"), (other and other.name) or "")
     end
     self._statusFS:SetText(status)
     local pSlot = self._charSlots.player
@@ -881,17 +1034,24 @@ function R:UpdateBoard(gs)
         pSlot.nameFS:SetText(human.name)
         pSlot.frame:Show()
     end
-    for i = 1, 3 do
-        local aiIdx = i + 1
-        local slot = self._charSlots.ai[i]
-        if aiIdx <= gs.playerCount and slot then
-            local p = gs.players[aiIdx]
-            slot.frame:Show()
-            slot.nameFS:SetText(p.name)
-            if slot.countFS then
-                slot.countFS:SetText(L("lbl_cards") .. ": " .. tostring(#p.hand))
+    local slotI = 1
+    for i = 1, gs.playerCount do
+        if i ~= localSeat then
+            local slot = self._charSlots.ai[slotI]
+            local p = gs.players[i]
+            if slot and p then
+                slot.frame:Show()
+                slot.nameFS:SetText(p.name)
+                if slot.countFS then
+                    slot.countFS:SetText(L("lbl_cards") .. ": " .. tostring(p.handCount or #p.hand))
+                end
             end
-        elseif slot then
+            slotI = slotI + 1
+        end
+    end
+    for i = slotI, 3 do
+        local slot = self._charSlots.ai[i]
+        if slot then
             slot.frame:Hide()
             slot.model:Hide()
         end
@@ -902,8 +1062,8 @@ function R:UpdateBoard(gs)
     self:_ClearCardFrames()
     self:_LayoutPlayerHand(human.hand, gs, theme, isHumanTurn)
     local uw = gs.unoWindow
-    local showUno = uw and uw.playerIndex == 1 and not uw.resolved
-    local showCatch = uw and uw.playerIndex ~= 1 and not gs.players[uw.playerIndex].unoCalled and not uw.resolved
+    local showUno = uw and uw.playerIndex == localSeat and not uw.resolved
+    local showCatch = uw and uw.playerIndex ~= localSeat and not uw.resolved
     if self._unoBtn then self._unoBtn:SetShown(showUno) end
     if self._catchBtn then self._catchBtn:SetShown(showCatch) end
     if self._drawBtn then
@@ -911,11 +1071,14 @@ function R:UpdateBoard(gs)
             and not gs.hasDrawnThisTurn and not gs.drawnThisTurn
         self._drawBtn:SetShown(canDraw)
     end
+    if self._passBtn then
+        self._passBtn:SetShown(isHumanTurn and gs.hasDrawnThisTurn and not gs.pendingColorPick and not gs.unoWindow)
+    end
     if self._colorPicker then
-        if gs.pendingColorPick and gs.pendingColorPick.playerIndex == 1 then self._colorPicker:Show()
+        if gs.pendingColorPick and gs.pendingColorPick.playerIndex == localSeat then self._colorPicker:Show()
         else self._colorPicker:Hide() end
     end
-    local showCh = gs.wild4Challengable and gs.currentPlayer == 1
+    local showCh = gs.wild4Challengable and gs.currentPlayer == localSeat
     if self._challengeBtn then self._challengeBtn:SetShown(showCh) end
     if self._acceptBtn then self._acceptBtn:SetShown(showCh) end
 end

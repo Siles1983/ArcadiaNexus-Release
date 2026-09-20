@@ -996,4 +996,6 @@ ArcadiaNexus.RegisterGame({
     renderer  = "M3_Renderer",
     engine    = "M3_Engine",
     container = "_m3Container",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\Match3\\assets\\logo\\logo_match3",
+    xp        = 12,
 })

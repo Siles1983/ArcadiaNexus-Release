@@ -8,6 +8,8 @@
       ArcadiaNexus.UI.StyleHudStatFrame(frame, alpha)
       ArcadiaNexus.UI.CreateHudStatBox(parent, config)
       ArcadiaNexus.UI.CreateGoldGridFrame(parent, anchor, config)
+      ArcadiaNexus.UI.FitTextureInBox(tex, maxW, maxH)
+      ArcadiaNexus.UI.CreateWatermarkLogo(parent, config)
       ArcadiaNexus.UI.CreateCheckbox(parent, label, x, y)
       ArcadiaNexus.UI.SetCheckboxValue(checkbox, value)
       ArcadiaNexus.UI.GetCheckboxValue(checkbox)
@@ -213,7 +215,7 @@ end
 -- BindCheckboxToDBRaw
 -- ============================================================
 -- Alternative für direkte DB-Tabellen (ohne Settings-Objekt).
--- dbTable: z.B. ArcadiaNexusDB.settings
+-- dbTable: z.B. ClientSettingsStore.Get()
 -- key:     z.B. "soundEnabled"
 -- default: Fallback-Wert falls nil
 
@@ -738,6 +740,7 @@ end
 --                   alpha  (0.0–1.0,   default 1.0)
 --
 -- Rückgabe: logoTex (Texture-Objekt)
+--   logoTex._anLogoPath – gesetzter Asset-Pfad (für GameRegistry.GetLogo)
 --   logoTex:Show()  → in EnterIdleState aufrufen
 --   logoTex:Hide()  → in OnGameStarted aufrufen
 --
@@ -870,8 +873,133 @@ function UI.CreateGameLogo(fieldFrame, assetPath, config)
     logo:SetSize(w, h)
     logo:SetPoint("CENTER", fieldFrame, "CENTER", x, y)
     logo:SetAlpha(alpha)
+    logo._anLogoPath = assetPath
     logo:Hide()
     return logo
+end
+
+-- Skaliert eine Textur in eine feste Box (Contain): Mitte bleibt Mitte,
+-- Seitenverhältnis bleibt erhalten, visuelles Maximum ist immer maxW×maxH.
+-- Rückgabe: true wenn Dateigröße bekannt war (sonst Fallback-Quadrat).
+function UI.FitTextureInBox(tex, maxW, maxH)
+    if not tex or not maxW or not maxH or maxW <= 0 or maxH <= 0 then
+        return false
+    end
+    local tw, th
+    if tex.GetTextureFileWidth then
+        tw = tex:GetTextureFileWidth()
+        th = tex:GetTextureFileHeight()
+    end
+    if not tw or tw <= 0 or not th or th <= 0 then
+        tex:SetSize(maxW, maxH)
+        return false
+    end
+    local scale = math.min(maxW / tw, maxH / th)
+    tex:SetSize(tw * scale, th * scale)
+    return true
+end
+
+-- Ein wiederverwendbares Wasserzeichen: eine Textur im Parent.
+-- Liegt über BackdropTemplate (NineSlice), Maus durchlässig.
+-- SetLogo(path) wechselt das Asset; ohne Pfad wird ausgeblendet.
+-- config: w/h Box (Default 260), alpha (Default 0.28), x/y Offset (Default 0)
+--         point / relativePoint (Default CENTER)
+--         drawLayer / subLevel (Default ARTWORK / 0; onHolder → OVERLAY)
+--         fit=false: feste w×h, kein Contain-Scale
+--         onHolder=true + levelAdd für MATCH-Brett (über dem Spielfeld, klick-durchlässig)
+function UI.CreateWatermarkLogo(parent, config)
+    if not parent then return nil end
+    local cfg = config or {}
+    -- Default: Textur am Parent (Listen-Wasserzeichen unter den Zeilen).
+    -- onHolder=true: Textur am Holder, hoher FrameLevel, Maus durchlässig
+    -- (MATCH-Brett: Logo liegt über dem Spielfeld, Klicks gehen ans Spiel).
+    local onHolder = cfg.onHolder == true
+    local holder = CreateFrame("Frame", nil, parent)
+    holder:SetAllPoints(parent)
+    holder:EnableMouse(false)
+    if parent.GetFrameStrata then holder:SetFrameStrata(parent:GetFrameStrata()) end
+    local base = (parent.GetFrameLevel and parent:GetFrameLevel()) or 1
+    holder.onHolder = onHolder
+    holder.levelAdd = cfg.levelAdd or (onHolder and 25 or 1)
+    holder:SetFrameLevel(base + holder.levelAdd)
+    if onHolder and holder.SetMouseClickEnabled then
+        holder:SetMouseClickEnabled(false)
+    end
+
+    local point    = cfg.point or "CENTER"
+    local relPoint = cfg.relativePoint or point
+    local layer    = cfg.drawLayer or (onHolder and "OVERLAY" or "ARTWORK")
+    local subLevel = cfg.subLevel or 0
+
+    -- Sitzungsliste: Textur am Panel (über Backdrop, unter den Zeilen).
+    -- MATCH-Brett (onHolder): Textur am Holder, sonst liegt sie hinter dem Spielfeld.
+    local tex
+    if onHolder then
+        tex = holder:CreateTexture(nil, layer, nil, subLevel)
+        tex:SetPoint(point, holder, relPoint, cfg.x or 0, cfg.y or 0)
+    else
+        tex = parent:CreateTexture(nil, layer, nil, subLevel)
+        tex:SetPoint(point, parent, relPoint, cfg.x or 0, cfg.y or 0)
+    end
+    tex:SetAlpha(cfg.alpha or 0.28)
+    if tex.SetBlendMode then
+        tex:SetBlendMode("BLEND")
+    end
+    tex:Hide()
+
+    holder.tex  = tex
+    holder.boxW = cfg.w or 260
+    holder.boxH = cfg.h or 260
+    holder.fit  = cfg.fit ~= false
+
+    local function ApplySize()
+        if holder.fit then
+            UI.FitTextureInBox(tex, holder.boxW, holder.boxH)
+        else
+            tex:SetSize(holder.boxW, holder.boxH)
+        end
+    end
+
+    function holder:SetLogo(assetPath)
+        if self._path == assetPath and tex:IsShown() then return end
+        self._path = assetPath
+        self:SetScript("OnUpdate", nil)
+        if self.onHolder then
+            local p = self:GetParent()
+            if p and p.GetFrameLevel then
+                self:SetFrameLevel((p:GetFrameLevel() or 1) + (self.levelAdd or 1))
+            end
+        end
+        if not assetPath or assetPath == "" then
+            tex:Hide()
+            return
+        end
+        if tex.SetTexCoord then
+            tex:SetTexCoord(0, 1, 0, 1)
+        end
+        tex:SetTexture(assetPath)
+        tex:Show()
+        holder:Show()
+        if not self.fit then
+            tex:SetSize(self.boxW, self.boxH)
+            return
+        end
+        if not UI.FitTextureInBox(tex, self.boxW, self.boxH) then
+            self._fitTries = 0
+            self:SetScript("OnUpdate", function(frame)
+                frame._fitTries = (frame._fitTries or 0) + 1
+                if UI.FitTextureInBox(tex, frame.boxW, frame.boxH) or frame._fitTries > 12 then
+                    frame:SetScript("OnUpdate", nil)
+                end
+            end)
+        end
+    end
+
+    holder:SetScript("OnSizeChanged", function()
+        if tex:IsShown() then ApplySize() end
+    end)
+
+    return holder
 end
 
 -- ============================================================
@@ -942,7 +1070,11 @@ local function EnsureChoicePopup(parent)
     local popup = UI._choicePopups[parent]
     if popup and popup._ver ~= CHOICE_POPUP_VER then
         popup:Hide()
-        popup:SetParent(nil)
+        local poolRoot = ArcadiaNexus.UI.FramePool and ArcadiaNexus.UI.FramePool.GetRoot
+            and ArcadiaNexus.UI.FramePool.GetRoot()
+        if poolRoot then
+            popup:SetParent(poolRoot)
+        end
         UI._choicePopups[parent] = nil
         popup = nil
     end
@@ -1035,10 +1167,29 @@ function UI.ShowChoicePopup(config)
 
     popup:Show()
     popup:Raise()
+
+    local GI = ArcadiaNexus.GameInput
+    if GI and GI.OnUiOverlay then
+        local list = {}
+        if popup.btn1 and (not popup.btn1.IsShown or popup.btn1:IsShown()) then
+            list[#list + 1] = popup.btn1
+        end
+        if popup.btn2 and (not popup.btn2.IsShown or popup.btn2:IsShown()) then
+            list[#list + 1] = popup.btn2
+        end
+        pcall(GI.OnUiOverlay, list)
+    end
 end
 
 function UI.HideChoicePopup(parent)
     if not parent then return end
     local popup = UI._choicePopups and UI._choicePopups[parent]
+    local wasShown = popup and popup.IsShown and popup:IsShown()
     if popup then popup:Hide() end
+    if wasShown then
+        local GI = ArcadiaNexus.GameInput
+        if GI and GI.OnUiOverlayClosed then
+            pcall(GI.OnUiOverlayClosed)
+        end
+    end
 end

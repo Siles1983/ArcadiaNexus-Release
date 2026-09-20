@@ -16,6 +16,7 @@ local lobbyGameId
 UI._hostPolicy = nil
 UI._policyTouched = false
 UI._joinNotice = nil
+UI._joinNoticeExtra = nil
 
 local function Loc(key)
     local tbl = ArcadiaNexus.GetLocaleTable("UI")
@@ -82,11 +83,57 @@ function UI.GetHostOpts()
     return { policy = HostPolicy(), pin = PinText(UI._panel) }
 end
 
-function UI.SetJoinNotice(reason)
+function UI.SetJoinNotice(reason, extra)
+    if extra then
+        UI._joinNoticeExtra = extra
+    elseif reason ~= UI._joinNotice then
+        UI._joinNoticeExtra = nil
+    end
     UI._joinNotice = reason
     if UI._panel and UI._panel._browse and UI._panel._browse:IsShown() then
         UI.Refresh()
     end
+end
+
+local function ClearJoinNotice()
+    UI._joinNotice = nil
+    UI._joinNoticeExtra = nil
+end
+
+local function LocalMatchProto()
+    local P = ArcadiaNexus.MatchProtocol
+    return P and P.MATCH_PROTO
+end
+
+local function SessionProtoMismatch(sel)
+    local mine = LocalMatchProto()
+    if not sel or not mine or not sel.proto then return false end
+    return tonumber(sel.proto) ~= tonumber(mine)
+end
+
+local function ProtoNoticeText(reason, sel)
+    local extra = UI._joinNoticeExtra or {}
+    local mine = LocalMatchProto()
+    local hostProto = extra.proto or (sel and sel.proto)
+    local youProto = extra.youProto or mine
+    local addon = extra.addon
+    if (not addon or addon == "") and ArcadiaNexus.MatchProtocol and ArcadiaNexus.MatchProtocol.AddonVersion then
+        addon = ArcadiaNexus.MatchProtocol.AddonVersion()
+    end
+    addon = addon or "?"
+    if reason == "proto-low" then
+        return string.format(Loc("match_reject_proto_low"), tostring(youProto or "?"), tostring(hostProto or "?"), tostring(addon))
+    end
+    if reason == "proto-high" then
+        return string.format(Loc("match_reject_proto_high"), tostring(youProto or "?"), tostring(hostProto or "?"), tostring(addon))
+    end
+    if reason == "proto-mismatch" then
+        return Loc("match_reject_proto")
+    end
+    if SessionProtoMismatch(sel) then
+        return string.format(Loc("match_warn_proto"), tostring(sel.proto), tostring(mine))
+    end
+    return nil
 end
 
 local function RefreshHeader()
@@ -428,6 +475,9 @@ function UI.BuildPanel(parent)
     StyleGoldPanel(list)
     panel._list = list
     panel._rows = {}
+    if ArcadiaNexus.UI and ArcadiaNexus.UI.CreateWatermarkLogo then
+        panel._listWm = ArcadiaNexus.UI.CreateWatermarkLogo(list, { w = 260, h = 260, alpha = 0.28 })
+    end
 
     local detail = CreateFrame("Frame", nil, browse, "BackdropTemplate")
     detail:SetPoint("TOPLEFT", list, "TOPRIGHT", PANEL_GAP, 0)
@@ -461,7 +511,7 @@ function UI.BuildPanel(parent)
         function(key)
             UI._hostPolicy = key
             UI._policyTouched = true
-            UI._joinNotice = nil
+            ClearJoinNotice()
             if panel._policyDD and panel._policyDD.RefreshDisplay then
                 panel._policyDD:RefreshDisplay()
             end
@@ -510,12 +560,13 @@ function UI.BuildPanel(parent)
         end
         if not s or s.localHost then return end
         if (s.taken or 0) >= (s.maxSeats or 4) then return end
+        if SessionProtoMismatch(s) then return end
         local pin
         if s.policy == "PIN" then
             pin = PinText(panel)
             if pin == "" then return end
         end
-        UI._joinNotice = nil
+        ClearJoinNotice()
         local Shell = ArcadiaNexus.MatchShell
         if Shell then Shell.Join(s.gameId or SelectedGame(), s.host, { pin = pin }) end
     end)
@@ -528,7 +579,7 @@ function UI.BuildPanel(parent)
         local gid = SelectedGame()
         local opts = UI.GetHostOpts()
         if opts.policy == "PIN" and (not opts.pin or opts.pin == "") then return end
-        UI._joinNotice = nil
+        ClearJoinNotice()
         if Shell and gid then Shell.Host(gid, opts) end
     end)
     panel._hostBtn = hostBtn
@@ -745,6 +796,11 @@ function UI.RefreshLobby()
         panel._lHint:SetText((panel._lHint:GetText() or "") .. " · " .. Loc("match_policy_INVITE"))
     end
 
+    if lobbyGameId == "SI7" then
+        local setId = v.pub and v.pub.wordSet or "AZEROTH"
+        local setName = Si7Loc("wordset_" .. string.lower(setId)) or setId
+        panel._lHint:SetText((panel._lHint:GetText() or "") .. "\n" .. string.format(Si7Loc("hud_lobby_set"), setName))
+    end
     local players = v.lobbyPlayers or {}
     local showPairs = lobbyGameId == "SI7" and v.state == "LOBBY"
     for i = 1, 4 do
@@ -893,6 +949,11 @@ function UI.Refresh()
     end
     local gid = SelectedGame()
     panel._bTitle:SetText(GameLabel(gid))
+    if panel._listWm and panel._listWm.SetLogo then
+        local info = ArcadiaNexus.GameRegistry and ArcadiaNexus.GameRegistry.GetById and gid
+            and ArcadiaNexus.GameRegistry.GetById(gid)
+        panel._listWm:SetLogo(info and info.logo)
+    end
     local inGroup = (IsInGroup and IsInGroup()) or (IsInRaid and IsInRaid())
     if inGroup then
         panel._hint:SetText(Loc("match_hint_group"))
@@ -926,6 +987,8 @@ function UI.Refresh()
             row:SetPoint("TOPLEFT",  panel._list, "TOPLEFT",  10, y)
             row:SetPoint("TOPRIGHT", panel._list, "TOPRIGHT", -10, y)
             row:SetHeight(22)
+            local listLvl = panel._list.GetFrameLevel and panel._list:GetFrameLevel() or 1
+            row:SetFrameLevel(listLvl + 3)
             StyleCatButton(row)
             local fs = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
             fs:SetPoint("LEFT",  row, "LEFT",  10, 0)
@@ -960,6 +1023,11 @@ function UI.Refresh()
         panel._dTitle:SetText(GameLabel(sel.gameId))
         local body = string.format(Loc("match_detail"),
             ShortName(sel.host), sel.taken or 0, sel.maxSeats or 4, PolicyLabel(sel.policy))
+            if sel.gameId == "SI7" and sel.wordSet then
+                local setId = ({ A = "AZEROTH", E = "EVERYDAY", N = "NATURE", T = "TRAVEL" })[sel.wordSet]
+                local setName = setId and Si7Loc("wordset_" .. string.lower(setId)) or sel.wordSet
+                body = body .. "\n" .. string.format(Si7Loc("hud_lobby_set"), setName)
+            end
             local notice = UI._joinNotice
             local allowed = ArcadiaNexus.MatchBrowser and ArcadiaNexus.MatchBrowser._invitedMatchId == sel.matchId
             if notice == "pin" then
@@ -968,8 +1036,16 @@ function UI.Refresh()
                 body = body .. "\n" .. Loc("match_reject_invite")
             elseif notice == "full" then
                 body = body .. "\n" .. Loc("match_reject_full")
+            elseif notice == "join-timeout" or notice == "host-timeout" then
+                body = body .. "\n" .. Loc("match_reject_timeout")
+            elseif notice == "start-too-long" or notice == "snapshot-too-long" or notice == "private-too-long" then
+                body = body .. "\n" .. Loc("match_reject_payload")
             elseif notice == "rejoin-timeout" or notice == "no-match" or notice == "no-seat" then
                 body = body .. "\n" .. Loc("match_reject_rejoin")
+            elseif notice == "proto-low" or notice == "proto-high" or notice == "proto-mismatch" then
+                body = body .. "\n" .. (ProtoNoticeText(notice, sel) or Loc("match_reject_proto"))
+            elseif SessionProtoMismatch(sel) then
+                body = body .. "\n" .. (ProtoNoticeText(nil, sel) or Loc("match_reject_proto"))
             elseif allowed then
                 body = body .. "\n" .. Loc("match_you_invited")
             elseif sel.policy == "PIN" then
@@ -979,7 +1055,7 @@ function UI.Refresh()
             end
         panel._dBody:SetText(body)
         local pinOk = sel.policy ~= "PIN" or PinText(panel) ~= ""
-        if sel.localHost or (sel.taken or 0) >= (sel.maxSeats or 4) or not pinOk then
+        if sel.localHost or (sel.taken or 0) >= (sel.maxSeats or 4) or not pinOk or SessionProtoMismatch(sel) then
             panel._joinBtn:Disable()
         else
             panel._joinBtn:Enable()
@@ -993,8 +1069,14 @@ function UI.Refresh()
             body = Loc("match_reject_invite")
         elseif UI._joinNotice == "full" then
             body = Loc("match_reject_full")
+        elseif UI._joinNotice == "join-timeout" or UI._joinNotice == "host-timeout" then
+            body = Loc("match_reject_timeout")
+        elseif UI._joinNotice == "start-too-long" or UI._joinNotice == "snapshot-too-long" or UI._joinNotice == "private-too-long" then
+            body = Loc("match_reject_payload")
         elseif UI._joinNotice == "rejoin-timeout" or UI._joinNotice == "no-match" or UI._joinNotice == "no-seat" then
             body = Loc("match_reject_rejoin")
+        elseif UI._joinNotice == "proto-low" or UI._joinNotice == "proto-high" or UI._joinNotice == "proto-mismatch" then
+            body = ProtoNoticeText(UI._joinNotice, nil) or Loc("match_reject_proto")
         end
         panel._dBody:SetText(body)
         panel._joinBtn:Disable()

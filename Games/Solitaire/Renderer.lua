@@ -27,6 +27,8 @@ ArcadiaNexus.RegisterGame({
     renderer  = "SOL_Renderer",
     engine    = "SOL_Engine",
     container = "_solContainer",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\Solitaire\\Assets\\logo\\logo_solitaire",
+    xp        = 10,
 })
 
 -- ── Asset-Pfade ───────────────────────────────────────────────

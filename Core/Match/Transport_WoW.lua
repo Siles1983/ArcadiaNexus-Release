@@ -10,6 +10,8 @@ local MT = ArcadiaNexus.MatchTransport
 local PREFIX
 local MAX_LEN = 255
 local TOKENS_MAX = 10
+local QUEUE_MAX = 128
+local QUEUE_TTL = 30
 
 local function Proto()
     return ArcadiaNexus.MatchProtocol
@@ -37,6 +39,14 @@ local function IsNotInGroup(r)
         return r == E.NotInGroup
     end
     return r == 5
+end
+
+local function IsRetryable(r)
+    local E = Enum and Enum.SendAddonMessageResult
+    if not E then return r == 3 or r == 8 or r == 11 end
+    return (E.AddonMessageThrottle ~= nil and r == E.AddonMessageThrottle)
+        or (E.ChannelThrottle ~= nil and r == E.ChannelThrottle)
+        or (E.AddOnMessageLockdown ~= nil and r == E.AddOnMessageLockdown)
 end
 
 function MT.LocalPlayerKey()
@@ -123,6 +133,7 @@ function MT.CreateWow()
 
     local handler
     local handlerKey
+    local handlerOwner
     local subs = {}
     local peers = {}
     local queue = {}
@@ -158,8 +169,12 @@ function MT.CreateWow()
         Regen()
         while #queue > 0 and tokens > 0 do
             local item = queue[1]
-            local r = RawSend(item.chatType, item.payload, item.target)
-            if IsSuccess(r) then
+            local expired = ((GetTime and GetTime()) or 0) - item.at > QUEUE_TTL
+            local r = not expired and RawSend(item.chatType, item.payload, item.target)
+            if expired then
+                table.remove(queue, 1)
+                T._dropped = T._dropped + 1
+            elseif IsSuccess(r) then
                 table.remove(queue, 1)
                 tokens = tokens - 1
                 T._sent = T._sent + 1
@@ -169,9 +184,13 @@ function MT.CreateWow()
                 if GH_LogWarn then
                     GH_LogWarn("MatchWow", "Broadcast ohne Gruppe")
                 end
-            else
+            elseif IsRetryable(r) then
                 -- Throttle / Lockdown: später erneut
                 break
+            else
+                table.remove(queue, 1)
+                T._dropped = T._dropped + 1
+                if GH_LogWarn then GH_LogWarn("MatchWow", "send failed: " .. tostring(r)) end
             end
         end
         if #queue > 0 and C_Timer and C_Timer.After and not pumping then
@@ -193,13 +212,43 @@ function MT.CreateWow()
             end
             return
         end
-        queue[#queue + 1] = { chatType = chatType, payload = payload, target = target }
+        local msg = P.Decode(payload)
+        if not msg then return end
+        local kind, fields = msg.type, msg.fields
+        local revision = tonumber(fields.rev or fields.stateRevision) or 0
+        local replaceable = kind == "SNAPSHOT" or kind == "PRIVATE" or kind == "PRIVATEPART" or kind == "ANNOUNCE"
+        for i = #queue, 1, -1 do
+            local prior = queue[i]
+            if prior.matchId == fields.matchId and prior.chatType == chatType and prior.target == target then
+                local private = (kind == "PRIVATE" or kind == "PRIVATEPART")
+                    and (prior.kind == "PRIVATE" or prior.kind == "PRIVATEPART")
+                if replaceable and (prior.kind == kind or private) and prior.revision > revision then
+                    return -- an older producer must not reinsert stale state
+                end
+                local replace = replaceable and ((prior.kind == kind and prior.part == fields.part)
+                    or (private and revision > prior.revision))
+                if kind == "ABORT" or (replace and revision >= prior.revision) then
+                    table.remove(queue, i)
+                end
+            end
+        end
+        if #queue >= QUEUE_MAX then
+            table.remove(queue, 1)
+            T._dropped = T._dropped + 1
+            if GH_LogWarn then GH_LogWarn("MatchWow", "queue limit reached") end
+        end
+        local item = { chatType = chatType, payload = payload, target = target,
+            kind = kind, matchId = fields.matchId, revision = revision, part = fields.part,
+            at = (GetTime and GetTime()) or 0 }
+        if kind == "ABORT" or kind == "LEAVE" then table.insert(queue, 1, item)
+        else queue[#queue + 1] = item end
         Flush()
     end
 
-    function T:Register(playerKey, fn)
+    function T:Register(playerKey, fn, owner)
         handlerKey = playerKey
         handler = fn
+        handlerOwner = owner
         if playerKey then
             peers[playerKey] = nil
         end
@@ -207,14 +256,31 @@ function MT.CreateWow()
 
     function T:Subscribe(fn)
         if type(fn) == "function" then
+            for i = 1, #subs do if subs[i] == fn then return end end
             subs[#subs + 1] = fn
         end
     end
 
-    function T:Unregister()
+    function T:Unregister(playerKey, owner)
+        if playerKey and handlerKey ~= playerKey then return false end
+        if owner and handlerOwner ~= owner then return false end
         handler = nil
         handlerKey = nil
+        handlerOwner = nil
+        return true
     end
+
+    function T:DiscardMatch(matchId)
+        for i = #queue, 1, -1 do
+            local item = queue[i]
+            if item.matchId == matchId and item.kind ~= "ABORT" and item.kind ~= "LEAVE"
+                and not (item.kind == "ANNOUNCE" and item.payload:find("st=GONE", 1, true)) then
+                table.remove(queue, i)
+            end
+        end
+    end
+
+    function T:GetQueueSize() return #queue end
 
     function T:NotePeer(key)
         if key and key ~= handlerKey then
@@ -248,9 +314,10 @@ function MT.CreateWow()
     frame:SetScript("OnEvent", function(_, event, prefix, message, channel, sender)
         if event ~= "CHAT_MSG_ADDON" then return end
         if prefix ~= PREFIX then return end
+        if channel ~= "WHISPER" and channel ~= "PARTY" and channel ~= "RAID"
+            and channel ~= "INSTANCE_CHAT" then return end
         local fromKey = MT.NormalizeSender(sender)
         if not fromKey then return end
-        T:NotePeer(fromKey)
         local ch = (channel == "WHISPER") and "UNICAST" or "BROADCAST"
         T._delivered = T._delivered + 1
         if GH_LogInfo then

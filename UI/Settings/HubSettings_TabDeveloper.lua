@@ -51,8 +51,7 @@ function HubSettings:_BuildTabDeveloper(parent)
                    or  (L("devmode_confirm_disable_body")  or
                 "Developer-Modus deaktivieren? Das Addon wird neu geladen."),
             function()
-                if not ArcadiaNexusDB.dev then ArcadiaNexusDB.dev = {} end
-                ArcadiaNexusDB.dev.devMode = newVal
+                ArcadiaNexus.DevStore.SetDevMode(newVal)
                 ReloadUI()
             end
         )
@@ -93,6 +92,17 @@ function HubSettings:_BuildTabDeveloper(parent)
     local editorHint = devContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     editorHint:SetPoint("LEFT", editorBtn, "RIGHT", 10, 0)
     editorHint:SetTextColor(0.70, 0.65, 0.50)
+    local pinballBtn = UI.CreateArcadiaButton(devContent, "Pinball Editor", 160, 28)
+    pinballBtn:SetPoint("TOPLEFT", editorBtn, "BOTTOMLEFT", 0, -8)
+    pinballBtn:SetScript("OnClick", function()
+        if ArcadiaNexus.PinballTableEditor and ArcadiaNexus.PinballTableEditor.Toggle then
+            ArcadiaNexus.PinballTableEditor.Toggle()
+        end
+    end)
+    local pinballHint = devContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    pinballHint:SetPoint("LEFT", pinballBtn, "RIGHT", 10, 0)
+    pinballHint:SetTextColor(0.70, 0.65, 0.50)
+    pinballHint:SetText("/anpedit - align pinball colliders to the table")
     editorHint:SetText(L("hubsettings_dev_leveleditor_hint") or "/anledit  –  Phase 15: Erde / Treppen / Emitter (AA)")
 end
 

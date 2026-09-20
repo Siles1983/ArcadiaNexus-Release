@@ -29,6 +29,8 @@ ArcadiaNexus.RegisterGame({
     renderer  = "ALS_Renderer",
     engine    = "ALS_Engine",
     container = "_alsContainer",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\AlchemistsSort\\assets\\logo\\logo_as",
+    xp        = 10,
 })
 
 -- ============================================================
@@ -89,15 +91,6 @@ local CFG = {
     -- Controls-Widgets
     btn_w        = 96,
     btn_h        = 32,
-
-    -- Slot-Menü
-    slot_row_w   = 320,
-    slot_row_h   = 52,
-    slot_row_gap = 60,
-    slot_row_x   = 0,
-    slot_title_y = -120,
-    slot_first_y = -150,
-    slot_btn_y   = 18,
 
     -- Win-Overlay (Nonogram-Muster)
     ov_w         = 320,
@@ -897,17 +890,6 @@ function R:_CreateSlotMenu()
             local E = ArcadiaNexus.ALS_Engine
             if E then E:StartGame({ slot = slot, mode = "continue" }) end
         end,
-        layout = {
-            rowW    = CFG.slot_row_w,
-            rowH    = CFG.slot_row_h,
-            rowGap  = CFG.slot_row_gap,
-            rowOfsX = CFG.slot_row_x,
-            titleY  = CFG.slot_title_y,
-            firstY  = CFG.slot_first_y,
-            btnY    = CFG.slot_btn_y,
-            btnW    = 144,
-            btnH    = CFG.btn_h,
-        },
     })
 end
 

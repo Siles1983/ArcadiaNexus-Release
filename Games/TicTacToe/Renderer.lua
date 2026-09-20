@@ -49,11 +49,17 @@ local function CreateCellPool()
             btn:ClearAllPoints()
             btn:Enable()
             btn:SetScript("OnClick", nil)
+            btn:SetScript("OnEnter", nil)
+            btn:SetScript("OnLeave", nil)
             btn:SetBackdropColor(0.15, 0.15, 0.15, 1)
             btn:SetAlpha(1)
             btn:SetScale(1)
+            if btn._popAnim then
+                btn._popAnim:Stop()
+            end
             btn._gridX = nil
             btn._gridY = nil
+            btn._hovering = nil
             if btn.text then btn.text:SetText("") end
             if btn.atlTex then
                 btn.atlTex:Hide()
@@ -86,13 +92,24 @@ local CFG = {
     logo_h       = 333,
     logo_ofs_x   = 0,
     logo_ofs_y   = 15,
-    hud_y        = 0,
-    dd_w         = 120,
+    hud_turn_w     = 200,
+    hud_turn_h     = 26,
+    hud_turn_x     = -150,
+    hud_turn_y     = 228,
+    hud_turn_alpha = 0.75,
+    hud_series_w     = 124,
+    hud_series_h     = 26,
+    hud_series_x     = 196,
+    hud_series_y     = 228,
+    hud_series_alpha = 0.75,
+    dd_w         = 110,
     btn_w        = 144,
     btn_h        = 32,
     sound_win    = 888,
     sound_draw   = 8959,
     sound_loss   = 847,
+    sound_place  = 856,
+    text_symbol_fill = 0.70,
 }
 
 -- ============================================================
@@ -110,8 +127,6 @@ local TTT_ASSETS = {
 
 
 
--- HUD (Zug-Anzeige) – relativ zum Canvas-CENTER
-
 -- ============================================================
 -- SOUNDS
 -- ============================================================
@@ -119,6 +134,7 @@ local TTT_ASSETS = {
 local function PlayGameSound(result)
     local S = ArcadiaNexus.TicTacToeSettings
     if not S or not S:Get("soundEnabled") then return end
+    if result == "PLACE" and S:Get("soundOnPlace") then PlaySound(CFG.sound_place, "SFX") end
     if result == "WIN"  and S:Get("soundOnWin")  then PlaySound(CFG.sound_win,  "SFX") end
     if result == "DRAW" and S:Get("soundOnDraw") then PlaySound(CFG.sound_draw, "SFX") end
     if result == "LOSS" and S:Get("soundOnLoss") then PlaySound(CFG.sound_loss, "SFX") end
@@ -153,12 +169,15 @@ R._hudFS          = nil
 
 -- Dropdown-State (persistiert zwischen Runden)
 R._lastGridSize   = 3
+R._lastWinLength  = 3
 R._lastDifficulty = "easy"
+R._lastStarter    = "you"
 
 -- ============================================================
 -- SYMBOL-HELPER (unverändert)
 -- ============================================================
-local function ApplySymbol(btn, symbolDef)
+local function ApplySymbol(btn, symbolDef, alpha)
+    alpha = alpha or 1
     if not symbolDef then
         btn.text:SetText("")
         btn.atlTex:Hide()
@@ -166,17 +185,70 @@ local function ApplySymbol(btn, symbolDef)
     end
     if symbolDef.mode == "TEXT" then
         btn.atlTex:Hide()
+        local h = btn:GetHeight() or 40
+        local size = math.floor(h * (CFG.text_symbol_fill or 0.70))
+        if size < 22 then size = 22 end
+        local path = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
+        btn.text:SetFont(path, size, "OUTLINE")
         btn.text:SetText(symbolDef.text or "")
-        btn.text:SetTextColor(symbolDef.r or 1, symbolDef.g or 1, symbolDef.b or 1, 1)
+        btn.text:SetTextColor(symbolDef.r or 1, symbolDef.g or 1, symbolDef.b or 1, alpha)
     elseif symbolDef.mode == "SPRITE" then
         btn.text:SetText("")
         btn.atlTex:SetTexture(symbolDef.path)
         btn.atlTex:SetTexCoord(symbolDef.left, symbolDef.right, symbolDef.top, symbolDef.bottom)
+        btn.atlTex:SetVertexColor(1, 1, 1, alpha)
         btn.atlTex:Show()
     else
         btn.text:SetText("")
         btn.atlTex:Hide()
     end
+end
+
+local function ResolveSymbols()
+    if ArcadiaNexus.TicTacToeSymbolResolver then
+        return ArcadiaNexus.TicTacToeSymbolResolver:Resolve()
+    end
+    return {
+        player1 = { mode = "TEXT", text = "X", r = 0.20, g = 0.60, b = 1.00 },
+        player2 = { mode = "TEXT", text = "O", r = 1.00, g = 0.25, b = 0.25 },
+    }
+end
+
+local function CellCanPlay(board, x, y)
+    local E = ArcadiaNexus.TTT_Engine
+    if not board or board.gameOver then return false end
+    if not E then return false end
+    if board.cells[y] and board.cells[y][x] ~= 0 then return false end
+    local mp = E.mode and E.mode ~= "hotseat"
+    local myTurn = (board.turn or 1) == (board.localSeat or 1)
+    local thinking = (not mp) and E._busy
+    return myTurn and not thinking
+end
+
+local function HoverSymbol(board)
+    local symbols = ResolveSymbols()
+    local seat = board and board.localSeat or 1
+    if seat == 2 then
+        return symbols.player2
+    end
+    return symbols.player1
+end
+
+local function PlayCellPop(btn)
+    if not btn then return end
+    if btn._popAnim then
+        btn._popAnim:Stop()
+    else
+        local ag = btn:CreateAnimationGroup()
+        local fade = ag:CreateAnimation("Alpha")
+        fade:SetFromAlpha(0.45)
+        fade:SetToAlpha(1)
+        fade:SetDuration(0.18)
+        fade:SetSmoothing("OUT")
+        btn._popAnim = ag
+    end
+    btn:SetAlpha(1)
+    btn._popAnim:Play()
 end
 
 -- ============================================================
@@ -237,8 +309,13 @@ function R:_CreateMainFrame()
     ArcadiaNexus._tttContainer = f
 
     f:SetScript("OnHide", function()
+        if ArcadiaNexus.MatchShell and ArcadiaNexus.MatchShell._reparenting then
+            return
+        end
         ArcadiaNexus.GameSession:HandleRendererHide("TICTACTOE", ArcadiaNexus.TTT_Engine, function(E)
-            if E.activeGame then
+            if E.mode ~= "hotseat" and (E.state == "PLAYING" or E.state == "LOBBY" or E.state == "FINISHED") then
+                E:HideView()
+            elseif E.state ~= "IDLE" or E.activeGame then
                 E:StopGame()
             end
         end)
@@ -300,14 +377,10 @@ end
 -- HUD (Zug-Anzeige)
 -- ============================================================
 function R:_CreateHUD()
+    if self._turnBox then return end
+    local UI = ArcadiaNexus.UI
     local canvas = self._canvas
-
-    local hudFS = canvas:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    hudFS:SetPoint("CENTER", canvas, "CENTER", 0, CFG.hud_y)
-    hudFS:SetJustifyH("CENTER")
-    hudFS:SetText("")
-    hudFS:Hide()
-    self._hudFS = hudFS
+    local L = ArcadiaNexus.GetLocaleTable("TICTACTOE")
 
     local hintFS = canvas:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     hintFS:SetPoint("CENTER", canvas, "CENTER", CFG.field_ofs_x, CFG.field_ofs_y)
@@ -315,102 +388,266 @@ function R:_CreateHUD()
     hintFS:SetJustifyH("CENTER")
     hintFS:SetText("")
     self._hintFS = hintFS
+
+    if not UI or not UI.CreateHudStatBox then return end
+    self._turnBox, self._hudFS = UI.CreateHudStatBox(canvas, {
+        w = CFG.hud_turn_w, h = CFG.hud_turn_h,
+        point = "CENTER", relativePoint = "CENTER",
+        x = CFG.hud_turn_x, y = CFG.hud_turn_y,
+        alpha = CFG.hud_turn_alpha,
+        text = L["lbl_your_turn"] or "Du bist dran",
+        shown = false,
+    })
+    self._seriesBox, self._seriesFS = UI.CreateHudStatBox(canvas, {
+        w = CFG.hud_series_w, h = CFG.hud_series_h,
+        point = "CENTER", relativePoint = "CENTER",
+        x = CFG.hud_series_x, y = CFG.hud_series_y,
+        alpha = CFG.hud_series_alpha,
+        text = "0 : 0",
+        shown = false,
+    })
 end
 
-function R:_UpdateHUD(text, color)
+function R:_SetHudVisible(visible)
+    if self._turnBox then
+        if visible then self._turnBox:Show() else self._turnBox:Hide() end
+    end
+    local E = ArcadiaNexus.TTT_Engine
+    local mp = E and E.mode and E.mode ~= "hotseat"
+    if self._seriesBox then
+        if visible and not mp then self._seriesBox:Show() else self._seriesBox:Hide() end
+    end
+end
+
+function R:_RefreshSeriesHud()
+    local E = ArcadiaNexus.TTT_Engine
+    local mp = E and E.mode and E.mode ~= "hotseat"
+    if not self._seriesBox then return end
+    if mp or not E or not E.GetSeries then
+        self._seriesBox:Hide()
+        return
+    end
+    local s = E:GetSeries()
+    if self._seriesFS and s then
+        self._seriesFS:SetText(string.format("%d : %d", s.you or 0, s.opp or 0))
+    end
+    self._seriesBox:Show()
+end
+
+function R:_RefreshTurnHud(board)
+    local L = ArcadiaNexus.GetLocaleTable("TICTACTOE")
+    local E = ArcadiaNexus.TTT_Engine
+    self:_RefreshSeriesHud()
     if not self._hudFS then return end
-    if text then
-        self._hudFS:SetText(text)
-        if color then
-            self._hudFS:SetTextColor(color[1], color[2], color[3])
-        else
-            self._hudFS:SetTextColor(1, 1, 1)
-        end
-        self._hudFS:Show()
+    if not board or board.gameOver then
+        if self._turnBox then self._turnBox:Hide() end
+        return
+    end
+    local mp = E and E.mode and E.mode ~= "hotseat"
+    if self._turnBox then self._turnBox:Show() end
+    local myTurn = board.turn == (board.localSeat or 1)
+    if myTurn and not (not mp and E and E._busy) then
+        self._hudFS:SetText(L["lbl_your_turn"] or "Du bist dran")
+    elseif mp then
+        self._hudFS:SetText(L["lbl_opp_turn"] or "Gegner ist dran")
     else
-        self._hudFS:Hide()
+        self._hudFS:SetText(L["lbl_ai_turn"] or "KI denkt nach...")
     end
 end
 
 -- ============================================================
--- CONTROLS (zwei Dropdowns + Start/Beenden + Neues Spiel)
+-- CONTROLS (Größe, Gewinnlänge, Start, Schwierigkeit, Starter)
 -- ============================================================
+local function ClearOpts(opts)
+    for i = #opts, 1, -1 do
+        opts[i] = nil
+    end
+end
+
+-- Name folgt der Match-Konvention (lokales KI-Spiel). Kein 2P-Hotseat.
+function R:_HotseatConfig(extra)
+    local Logic = ArcadiaNexus.TicTacToeLogic
+    local gs = self._lastGridSize or 3
+    local wl = gs
+    if Logic and Logic.ClampWinLength then
+        wl = Logic.ClampWinLength(gs, self._lastWinLength or gs)
+    end
+    local cfg = {
+        boardSize    = gs,
+        winLength    = wl,
+        aiDifficulty = self._lastDifficulty or "easy",
+        firstPlayer  = self._lastStarter or "you",
+        mode         = "hotseat",
+    }
+    if extra then
+        for k, v in pairs(extra) do
+            cfg[k] = v
+        end
+    end
+    return cfg
+end
+
+function R:_SyncWinLengthOptions()
+    local L = ArcadiaNexus.GetLocaleTable("TICTACTOE")
+    local Logic = ArcadiaNexus.TicTacToeLogic
+    local size = self._lastGridSize or 3
+    local opts = self._winOpts
+    if not opts then
+        opts = {}
+        self._winOpts = opts
+    end
+    ClearOpts(opts)
+    for n = 3, size do
+        opts[#opts + 1] = {
+            key = tostring(n),
+            label = L["win_" .. n] or tostring(n),
+            tooltip = L["tip_win_" .. n] or "",
+        }
+    end
+    if Logic and Logic.ClampWinLength then
+        self._lastWinLength = Logic.ClampWinLength(size, self._lastWinLength or size)
+    elseif (self._lastWinLength or 3) > size then
+        self._lastWinLength = size
+    end
+    if self._ddWin and self._ddWin.RefreshDisplay then
+        self._ddWin:RefreshDisplay()
+    end
+    if self._ddWin and self._ddWin.SetEnabled then
+        self._ddWin:SetEnabled(size > 3)
+    end
+end
+
+function R:_SetSetupVisible(visible)
+    local frames = self._setupFrames
+    if not frames then return end
+    for i = 1, #frames do
+        local f = frames[i]
+        if f then
+            if visible then f:Show() else f:Hide() end
+        end
+    end
+end
+
 function R:_CreateControls()
     local L  = ArcadiaNexus.GetLocaleTable("TICTACTOE")
     local UI = ArcadiaNexus.UI
 
-    local bar = UI.CreateGameControlsBar(self.frame, "narrow")
+    local bar = UI.CreateGameControlsBar(self.frame, "wide5")
     local cf = bar.frame
     self._controlsFrame = cf
 
-    -- ── Segment 1: Grid-Größe + Schwierigkeit nebeneinander ──
-    local ddGap = 10
-    local pair = CreateFrame("Frame", nil, cf)
-    pair:SetSize(CFG.dd_w * 2 + ddGap, CFG.btn_h)
-    pair:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
+    local function DdAnchor(seg)
+        local anchor = CreateFrame("Frame", nil, cf)
+        anchor:SetSize(CFG.dd_w, CFG.btn_h)
+        anchor:SetPoint("CENTER", cf, "CENTER", bar.segX[seg], bar.y.dropdownOfs)
+        return anchor
+    end
 
-    local ddGridAnchor = CreateFrame("Frame", nil, pair)
-    ddGridAnchor:SetSize(CFG.dd_w, CFG.btn_h)
-    ddGridAnchor:SetPoint("LEFT", pair, "LEFT", 0, 0)
-
+    local ddGridAnchor = DdAnchor(1)
     UI.CreateSimpleDropdown(
         ddGridAnchor,
         0, 0,
         CFG.dd_w,
         "",
         {
-            { key = "3", label = L["size_3x3"] or "3 x 3" },
-            { key = "4", label = L["size_4x4"] or "4 x 4" },
-            { key = "5", label = L["size_5x5"] or "5 x 5" },
+            { key = "3", label = L["size_3x3"] or "3 x 3", tooltip = L["tip_size_3"] },
+            { key = "4", label = L["size_4x4"] or "4 x 4", tooltip = L["tip_size_4"] },
+            { key = "5", label = L["size_5x5"] or "5 x 5", tooltip = L["tip_size_5"] },
         },
         function()
             return tostring(R._lastGridSize or 3)
         end,
         function(key)
             R._lastGridSize = tonumber(key) or 3
-        end
+            R:_SyncWinLengthOptions()
+        end,
+        { title = L["tip_size_title"] or L["lbl_board_size"], text = L["tip_size"] }
     )
 
-    local ddDiffAnchor = CreateFrame("Frame", nil, pair)
-    ddDiffAnchor:SetSize(CFG.dd_w, CFG.btn_h)
-    ddDiffAnchor:SetPoint("RIGHT", pair, "RIGHT", 0, 0)
+    local ddWinAnchor = DdAnchor(2)
+    self._winOpts = {
+        { key = "3", label = L["win_3"] or "3", tooltip = L["tip_win_3"] },
+    }
+    self._ddWin = UI.CreateSimpleDropdown(
+        ddWinAnchor,
+        0, 0,
+        CFG.dd_w,
+        "",
+        self._winOpts,
+        function()
+            return tostring(R._lastWinLength or 3)
+        end,
+        function(key)
+            R._lastWinLength = tonumber(key) or 3
+        end,
+        { title = L["tip_win_title"] or L["lbl_win_length"], text = L["tip_win"] }
+    )
+    self:_SyncWinLengthOptions()
 
+    local startBtn = UI.CreateArcadiaButton(cf, L["btn_start"], CFG.btn_w, CFG.btn_h)
+    startBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[3], bar.y.button)
+    startBtn:SetScript("OnClick", function()
+        local E = ArcadiaNexus.TTT_Engine
+        if not E then return end
+        if R.state == "PLAYING" and E.mode and E.mode ~= "hotseat" then
+            local Shell = ArcadiaNexus.MatchShell
+            if Shell and Shell.ShowEndRoundConfirm then
+                Shell.ShowEndRoundConfirm(function()
+                    ArcadiaNexus.UI.HideResultDialog(R._fieldFrame)
+                    E:StopGame()
+                end, R._fieldFrame)
+                return
+            end
+        end
+        if R.state == "PLAYING" or R.state == "LOBBY" or R.state == "FINISHED" or R.state == "GAMEOVER" then
+            E:StopGame()
+        else
+            E:StartGame(R:_HotseatConfig())
+        end
+    end)
+    self._startBtn = startBtn
+
+    local ddDiffAnchor = DdAnchor(4)
     UI.CreateSimpleDropdown(
         ddDiffAnchor,
         0, 0,
         CFG.dd_w,
         "",
         {
-            { key = "easy",   label = L["diff_easy"]  or "Einfach" },
-            { key = "normal", label = L["diff_normal"] or "Normal"  },
-            { key = "hard",   label = L["diff_hard"]   or "Schwer"  },
+            { key = "easy",   label = L["diff_easy"]   or "Einfach", tooltip = L["tip_diff_easy"] },
+            { key = "normal", label = L["diff_normal"] or "Normal",  tooltip = L["tip_diff_normal"] },
+            { key = "hard",   label = L["diff_hard"]   or "Schwer",  tooltip = L["tip_diff_hard"] },
         },
         function()
             return R._lastDifficulty or "easy"
         end,
         function(key)
             R._lastDifficulty = key
-        end
+        end,
+        { title = L["tip_diff_title"] or L["lbl_difficulty"], text = L["tip_diff"] }
     )
 
-    -- ── Segment 2: Toggle-Button Start / Beenden (x = 0) ──
-    local startBtn = UI.CreateArcadiaButton(cf, L["btn_start"], CFG.btn_w, CFG.btn_h)
-    startBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
-    startBtn:SetScript("OnClick", function()
-        local E = ArcadiaNexus.TTT_Engine
-        if not E then return end
-        if R.state == "PLAYING" then
-            E:StopGame()
-        else
-            local gs = R._lastGridSize or 3
-            E:StartGame({
-                boardSize    = gs,
-                winLength    = gs,
-                aiDifficulty = R._lastDifficulty or "easy",
-            })
-        end
-    end)
-    self._startBtn = startBtn
+    local ddStarterAnchor = DdAnchor(5)
+    UI.CreateSimpleDropdown(
+        ddStarterAnchor,
+        0, 0,
+        CFG.dd_w,
+        "",
+        {
+            { key = "you",    label = L["start_you"]    or "Du zuerst", tooltip = L["tip_start_you"] },
+            { key = "ai",     label = L["start_ai"]     or "KI zuerst", tooltip = L["tip_start_ai"] },
+            { key = "random", label = L["start_random"] or "Zufall",    tooltip = L["tip_start_random"] },
+        },
+        function()
+            return R._lastStarter or "you"
+        end,
+        function(key)
+            R._lastStarter = key
+        end,
+        { title = L["tip_start_title"], text = L["tip_start"] }
+    )
+
+    self._setupFrames = { ddGridAnchor, ddWinAnchor, ddDiffAnchor, ddStarterAnchor }
 end
 
 function R:_EnsureCellPool()
@@ -436,11 +673,13 @@ function R:EnterIdleState()
     self:ClearWinningLine()
 
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
-    if self._hudFS       then self._hudFS:Hide()       end
+    self:_SetHudVisible(false)
+    self._seenMoveKey = nil
     if self._logoTex     then self._logoTex:Show()     end
     if self._borderFrame then self._borderFrame:Show() end
     if self._goldGrid    then self._goldGrid:Hide()    end
 
+    self:_SetSetupVisible(true)
     if self._startBtn then
         self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("TICTACTOE")["btn_start"])
         self._startBtn:Show()
@@ -449,6 +688,51 @@ function R:EnterIdleState()
     if self._hintFS then
         self._hintFS:SetText("")
         self._hintFS:Hide()
+    end
+end
+
+function R:Render()
+    local E = ArcadiaNexus.TTT_Engine
+    if not E or E.mode == "hotseat" then return end
+    local v = E:GetView()
+    if not v then return end
+    if v.state == "IDLE" or v.state == "ABORTED" then
+        self:EnterIdleState()
+        return
+    end
+    local loc = ArcadiaNexus.GetLocaleTable("TICTACTOE")
+    self:_SetSetupVisible(false)
+    if self._startBtn then
+        self._startBtn:SetLabel(loc["btn_exit"] or "Beenden")
+        self._startBtn:Show()
+    end
+    if v.state == "LOBBY" then
+        self.state = "LOBBY"
+        self:_ClearBoardCells()
+        self:ClearWinningLine()
+        ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
+        self:_SetHudVisible(false)
+        if self._logoTex then self._logoTex:Show() end
+        if self._goldGrid then self._goldGrid:Hide() end
+        return
+    end
+    if v.state == "PLAYING" or v.state == "FINISHED" then
+        local board = E:GetBoardState()
+        if not board then return end
+        if self.state ~= "PLAYING" and self.state ~= "GAMEOVER" and self.state ~= "FINISHED" then
+            self.state = "PLAYING"
+            self:OnGameStarted(board)
+        else
+            self:UpdateBoard()
+        end
+        self:_RefreshTurnHud(board)
+        if board.gameOver and board.winningLine then
+            self.lastResult = board.result
+            self:HighlightWinningLine(board.winningLine)
+        end
+        if v.state == "FINISHED" then
+            self.state = "FINISHED"
+        end
     end
 end
 
@@ -465,8 +749,9 @@ function R:OnGameStarted(board)
         self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("TICTACTOE")["btn_exit"])
     end
 
+    self._seenMoveKey = nil
     self:RenderBoard(board)
-    self:_UpdateHUD(ArcadiaNexus.GetLocaleTable("TICTACTOE")["lbl_your_turn"])
+    self:_RefreshTurnHud(board)
 end
 
 -- ============================================================
@@ -505,6 +790,21 @@ function R:RenderBoard(board)
             btn:SetScript("OnClick", function()
                 ArcadiaNexus.TTT_Engine:HandlePlayerMove(btn._gridX, btn._gridY)
             end)
+            btn:SetScript("OnEnter", function(self)
+                local E = ArcadiaNexus.TTT_Engine
+                local board = E and E.GetBoardState and E:GetBoardState()
+                if not CellCanPlay(board, self._gridX, self._gridY) then return end
+                self._hovering = true
+                ApplySymbol(self, HoverSymbol(board), 0.38)
+            end)
+            btn:SetScript("OnLeave", function(self)
+                self._hovering = nil
+                local E = ArcadiaNexus.TTT_Engine
+                local board = E and E.GetBoardState and E:GetBoardState()
+                if board and board.cells[self._gridY] and board.cells[self._gridY][self._gridX] == 0 then
+                    ApplySymbol(self, nil)
+                end
+            end)
 
             local atlasPad = math.floor(cellSize * 0.12)
             btn.atlTex:ClearAllPoints()
@@ -526,16 +826,39 @@ end
 -- BOARD AKTUALISIEREN (unverändert)
 -- ============================================================
 function R:UpdateBoard()
-    local board = ArcadiaNexus.TTT_Engine.activeGame
-        and ArcadiaNexus.TTT_Engine.activeGame:GetBoardState()
+    local E = ArcadiaNexus.TTT_Engine
+    local board = E and E.GetBoardState and E:GetBoardState()
     if not board then return end
 
-    local symbols = { player1 = nil, player2 = nil }
-    if ArcadiaNexus.TicTacToeSymbolResolver then
-        symbols = ArcadiaNexus.TicTacToeSymbolResolver:Resolve()
-    else
-        symbols.player1 = { mode = "TEXT", text = "X", r = 0.20, g = 0.60, b = 1.00 }
-        symbols.player2 = { mode = "TEXT", text = "O", r = 1.00, g = 0.25, b = 0.25 }
+    local symbols = ResolveSymbols()
+
+    local mp = E.mode and E.mode ~= "hotseat"
+    local myTurn = (board.turn or 1) == (board.localSeat or 1)
+    local thinking = (not mp) and E._busy
+    local lm = board.lastMove
+    local lastKey = nil
+    if lm and lm.x and lm.y then
+        lastKey = tostring(lm.x) .. ":" .. tostring(lm.y) .. ":" .. tostring(board.moveCount or 0)
+    end
+    local popCell = nil
+    if lastKey and lastKey ~= self._seenMoveKey then
+        self._seenMoveKey = lastKey
+        popCell = lastKey
+        PlayGameSound("PLACE")
+    end
+
+    local winSet = {}
+    if board.gameOver and board.winningLine then
+        for i = 1, #board.winningLine do
+            local p = board.winningLine[i]
+            if p and p.x and p.y then
+                winSet[p.x .. ":" .. p.y] = true
+            end
+        end
+    end
+    local winColor = { 0.12, 0.42, 0.18, 1 }
+    if board.result == "LOSS" then
+        winColor = { 0.48, 0.12, 0.12, 1 }
     end
 
     local index = 1
@@ -548,14 +871,52 @@ function R:UpdateBoard()
                     ApplySymbol(btn, symbols.player1)
                 elseif value == 2 then
                     ApplySymbol(btn, symbols.player2)
+                elseif btn._hovering and CellCanPlay(board, x, y) then
+                    ApplySymbol(btn, HoverSymbol(board), 0.38)
                 else
-                    btn.text:SetText("")
-                    btn.atlTex:Hide()
+                    ApplySymbol(btn, nil)
                 end
+                local key = x .. ":" .. y
+                local isWin = winSet[key]
+                local isLast = lm and lm.x == x and lm.y == y
+                if isWin then
+                    btn:SetBackdropColor(winColor[1], winColor[2], winColor[3], winColor[4])
+                    btn:SetAlpha(1)
+                    if popCell and isLast then
+                        PlayCellPop(btn)
+                    end
+                elseif isLast then
+                    btn:SetBackdropColor(0.42, 0.34, 0.12, 1)
+                    btn:SetAlpha(1)
+                    if popCell then
+                        PlayCellPop(btn)
+                    end
+                else
+                    btn:SetBackdropColor(0.15, 0.15, 0.15, 1)
+                    if board.gameOver and value ~= 0 then
+                        btn:SetAlpha(0.55)
+                    else
+                        btn:SetAlpha(1)
+                    end
+                end
+                local occupied = value ~= 0
+                local canPlay = not board.gameOver
+                    and not occupied
+                    and myTurn
+                    and not thinking
+                if canPlay then btn:Enable() else btn:Disable() end
             end
             index = index + 1
         end
     end
+
+    if board.gameOver then
+        self.lastResult = board.result
+        if board.winningLine then
+            self:HighlightWinningLine(board.winningLine)
+        end
+    end
+    self:_RefreshTurnHud(board)
 end
 
 -- ============================================================
@@ -564,6 +925,8 @@ end
 function R:ShowGameOver(result)
     local L  = ArcadiaNexus.GetLocaleTable("TICTACTOE")
     local UI = ArcadiaNexus.UI
+    local E  = ArcadiaNexus.TTT_Engine
+    local mp = E and E.mode and E.mode ~= "hotseat"
     self.state      = "GAMEOVER"
     self.lastResult = result
 
@@ -572,17 +935,76 @@ function R:ShowGameOver(result)
     if self._startBtn then
         self._startBtn:SetLabel(L["btn_start"])
     end
-    if self._hudFS then self._hudFS:Hide() end
+    if self._turnBox then self._turnBox:Hide() end
+    self:_RefreshSeriesHud()
+
+    local dialogResult = result
+    local titleKeys = {
+        WIN  = { "lbl_win" },
+        LOSS = { "lbl_loss" },
+        DRAW = { "lbl_draw" },
+    }
+    local lines
+    local buttons = mp and {
+        {
+            label = (ArcadiaNexus.GetLocaleTable("UI") or {}).btn_new_game or L["btn_new_game"],
+            onClick = function()
+                local Shell = ArcadiaNexus.MatchShell
+                if Shell and Shell.Rematch then Shell.Rematch("TICTACTOE") end
+            end,
+        },
+        {
+            label = (ArcadiaNexus.GetLocaleTable("UI") or {}).btn_exit or L["btn_exit"],
+            onClick = function()
+                if E then E:StopGame() end
+            end,
+        },
+    } or nil
+
+    local seriesOver = false
+    if not mp and E and E.GetSeries then
+        local s = E:GetSeries()
+        seriesOver = E:IsSeriesOver()
+        if seriesOver then
+            local seriesWin = (s.you or 0) > (s.opp or 0)
+            dialogResult = seriesWin and "WIN" or "LOSS"
+            titleKeys = {
+                WIN  = { "result_series_win", "lbl_win" },
+                LOSS = { "result_series_loss", "lbl_loss" },
+                DRAW = { "result_series_loss", "lbl_draw" },
+            }
+            lines = {
+                L["result_series_bestof"] or "Best of 3",
+                string.format("%d : %d", s.you or 0, s.opp or 0),
+            }
+        else
+            lines = {
+                string.format(L["hud_series"] or "Serie %d : %d", s.you or 0, s.opp or 0),
+            }
+            local UILoc = ArcadiaNexus.GetLocaleTable("UI") or {}
+            buttons = {
+                {
+                    label = L["btn_next_round"] or UILoc.btn_next_round or "Nächste Runde",
+                    onClick = function()
+                        E:StartGame(R:_HotseatConfig({ seriesContinue = true }))
+                    end,
+                },
+                {
+                    label = L["btn_exit"] or UILoc.btn_exit or "Beenden",
+                    onClick = function()
+                        E:StopGame()
+                    end,
+                },
+            }
+        end
+    end
 
     UI.ShowArcadeResult(self._fieldFrame, {
         gameId     = "TICTACTOE",
-        difficulty = self._lastDifficulty or "easy",
-        result     = result,
-        titleKeys  = {
-            WIN  = { "lbl_win" },
-            LOSS = { "lbl_loss" },
-            DRAW = { "lbl_draw" },
-        },
+        difficulty = mp and "normal" or (self._lastDifficulty or "easy"),
+        result     = dialogResult,
+        lines      = lines,
+        titleKeys  = titleKeys,
         titleFallbacks = {
             WIN  = "Sieg!",
             LOSS = "Niederlage!",
@@ -590,19 +1012,18 @@ function R:ShowGameOver(result)
         },
         L = L,
         onRetry = function()
-            local E = ArcadiaNexus.TTT_Engine
             if not E then return end
-            local gs = R._lastGridSize or 3
-            E:StartGame({
-                boardSize    = gs,
-                winLength    = gs,
-                aiDifficulty = R._lastDifficulty or "easy",
-            })
+            if mp then
+                local Shell = ArcadiaNexus.MatchShell
+                if Shell and Shell.Rematch then Shell.Rematch("TICTACTOE") end
+                return
+            end
+            E:StartGame(R:_HotseatConfig({ seriesContinue = not seriesOver }))
         end,
         onExit = function()
-            local E = ArcadiaNexus.TTT_Engine
             if E then E:StopGame() end
         end,
+        buttons = buttons,
     })
     PlayGameSound(result)
 end
@@ -652,7 +1073,13 @@ function R:HighlightWinningLine(line)
     local tex = self.winLineTexture
     if tex.pulseAnim then tex.pulseAnim:Stop() end
 
-    if self.lastResult == "LOSS" then
+    local result = self.lastResult
+    if not result then
+        local E = ArcadiaNexus.TTT_Engine
+        local board = E and E.GetBoardState and E:GetBoardState()
+        result = board and board.result
+    end
+    if result == "LOSS" then
         tex:SetColorTexture(1, 0, 0, 0.9)
     else
         tex:SetColorTexture(0, 1, 0, 0.9)
@@ -677,4 +1104,7 @@ ArcadiaNexus.RegisterGame({
     engine    = "TTT_Engine",
     container = "_tttContainer",
     category  = "GESCHICK",
+    matchSeats = 2,
+    logo      = TTT_ASSETS.logo,
+    xp        = 8,
 })

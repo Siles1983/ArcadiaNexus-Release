@@ -29,8 +29,7 @@ local function GetAD()
 end
 
 local function GetUnlocked()
-    return (ArcadiaNexusDB and ArcadiaNexusDB.achievements
-        and ArcadiaNexusDB.achievements.unlocked) or {}
+    return (ArcadiaNexus.AchievementStore and ArcadiaNexus.AchievementStore.GetUnlocked()) or {}
 end
 
 -- ============================================================

@@ -30,6 +30,13 @@ ArcadiaNexus.RegisterLocale("ARCADIAPAIRS", "deDE", {
     lbl_moves       = "Züge",
     lbl_pairs       = "Paare",
     lbl_time        = "Zeit",
+    lbl_score       = "Stand",
+    hud_streak      = "Serie ×%d",
+    hud_win_float   = "Alle Paare!",
+    hud_lose_float  = "Zeit abgelaufen!",
+    hud_mp_win_float  = "Sieg!",
+    hud_mp_loss_float = "Niederlage!",
+    hud_mp_draw_float = "Unentschieden!",
 
     -- Hint (Renderer)
     hint_start      = "|cffaaaaaa Wähle eine Schwierigkeit um zu starten.|r",
@@ -47,6 +54,10 @@ ArcadiaNexus.RegisterLocale("ARCADIAPAIRS", "deDE", {
     -- Overlay: Verloren (Renderer)
     result_lose_title   = "|cffff4444Zeit abgelaufen!|r",
     result_lose_sub     = "|cffaaaaaa Paare gefunden:|r |cffffff00%d / %d|r\n|cffaaaaaa Züge:|r |cffffff00%d|r",
+    result_mp_win       = "|cffffd700Sieg!|r",
+    result_mp_loss      = "|cffff4444Niederlage!|r",
+    result_mp_draw      = "Unentschieden!",
+    result_mp_sub       = "Paare: %d–%d  Züge: %d",
 
     -- Settings-Panel: Box-Titel
     box_theme       = "Theme",
@@ -74,6 +85,7 @@ ArcadiaNexus.RegisterLocale("ARCADIAPAIRS", "deDE", {
     guide_miss      = "|cffffff00Kein Treffer:|r Beide Karten werden kurz angezeigt, dann wieder umgedreht.",
     guide_timer     = "|cffffff00Timer:|r Optional aktivierbar. Bei Ablauf: Spiel verloren. Wird oben rechts angezeigt.",
     guide_hint      = "|cffaaaaaa Schwierigkeit und Timer im Spielfeld wählbar. Thema & Rückseite hier in den Einstellungen.|r",
+    guide_mp        = "|cffffff00Mehrspieler:|r Duell 4×4 gegen einen Menschen. Treffer = nochmal. Verdeckte Karten bleiben geheim.",
 
     -- Reset
     btn_reset       = "Reset",
@@ -102,6 +114,13 @@ ArcadiaNexus.RegisterLocale("ARCADIAPAIRS", "enUS", {
     lbl_moves       = "Moves",
     lbl_pairs       = "Pairs",
     lbl_time        = "Time",
+    lbl_score       = "Score",
+    hud_streak      = "Streak ×%d",
+    hud_win_float   = "All pairs!",
+    hud_lose_float  = "Time's up!",
+    hud_mp_win_float  = "Victory!",
+    hud_mp_loss_float = "Defeat!",
+    hud_mp_draw_float = "Draw!",
 
     -- Hint
     hint_start      = "|cffaaaaaa Choose a difficulty to start.|r",
@@ -119,6 +138,10 @@ ArcadiaNexus.RegisterLocale("ARCADIAPAIRS", "enUS", {
     -- Overlay: Lost
     result_lose_title   = "|cffff4444Time's up!|r",
     result_lose_sub     = "|cffaaaaaa Pairs found:|r |cffffff00%d / %d|r\n|cffaaaaaa Moves:|r |cffffff00%d|r",
+    result_mp_win       = "|cffffd700Victory!|r",
+    result_mp_loss      = "|cffff4444Defeat!|r",
+    result_mp_draw      = "Draw!",
+    result_mp_sub       = "Pairs: %d–%d  Moves: %d",
 
     -- Settings boxes
     box_theme       = "Theme",
@@ -146,6 +169,7 @@ ArcadiaNexus.RegisterLocale("ARCADIAPAIRS", "enUS", {
     guide_miss      = "|cffffff00No match:|r Both cards are shown briefly, then flipped back.",
     guide_timer     = "|cffffff00Timer:|r Optional. When it runs out: game lost. Shown in the top right.",
     guide_hint      = "|cffaaaaaa Difficulty and timer chosen in the game area. Theme & card back set here.|r",
+    guide_mp        = "|cffffff00Multiplayer:|r 4×4 duel vs another player. A match keeps your turn. Hidden cards stay secret.",
 
     -- Reset
     btn_reset       = "Reset",

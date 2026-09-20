@@ -72,6 +72,8 @@ ArcadiaNexus.RegisterGame({
     renderer  = "HOL_Renderer",
     engine    = "HOL_Engine",
     container = "_holContainer",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\HigherOrLower\\Assets\\logo\\logo_hol",
+    xp        = 10,
 })
 
 -- ── Asset-Pfade ───────────────────────────────────────────────

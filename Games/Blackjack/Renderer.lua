@@ -30,6 +30,8 @@ ArcadiaNexus.RegisterGame({
     renderer  = "BJ_Renderer",
     engine    = "BJ_Engine",
     container = "_bjContainer",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\Blackjack\\assets\\logo\\logo_bj",
+    xp        = 10,
 })
 
 -- ── Konstanten ────────────────────────────────────────────────

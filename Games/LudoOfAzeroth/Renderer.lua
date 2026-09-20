@@ -1177,4 +1177,6 @@ ArcadiaNexus.RegisterGame({
     engine    = "LOA_Engine",
     container = "_loaContainer",
     category  = "STRATEGIE",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\LudoOfAzeroth\\assets\\logo\\logo_loa",
+    xp        = 12,
 })

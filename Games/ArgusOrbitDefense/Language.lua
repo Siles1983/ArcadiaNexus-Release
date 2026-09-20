@@ -72,6 +72,10 @@ ArcadiaNexus.RegisterLocale("ARGUSORBDEFENSE", "deDE", {
     sound_win            = "Sieg",
     sound_lose           = "Niederlage",
     lbl_screen_flash     = "Screen-Flash",
+    lbl_ship_parallax    = "Flug-Parallax (Sterne folgen dem Schiff)",
+    overlay_wave         = "Welle %d",
+    overlay_level        = "Level %d",
+    overlay_hunters      = "Fel Hunter im Anflug!",
 
     -- Spielanleitung
     guide_1           = "W / Pfeil oben: Schub",
@@ -182,6 +186,10 @@ ArcadiaNexus.RegisterLocale("ARGUSORBDEFENSE", "enUS", {
     sound_win            = "Victory",
     sound_lose           = "Defeat",
     lbl_screen_flash     = "Screen Flash",
+    lbl_ship_parallax    = "Flight parallax (stars follow the ship)",
+    overlay_wave         = "Wave %d",
+    overlay_level        = "Level %d",
+    overlay_hunters      = "Fel Hunters incoming!",
 
     -- Spielanleitung
     guide_1           = "W / Arrow Up: Thrust",

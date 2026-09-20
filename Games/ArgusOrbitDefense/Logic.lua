@@ -47,8 +47,9 @@ Logic.BULLET_SPEED    = 480   -- Pixel/s
 Logic.BULLET_LIFETIME = 1.4   -- Sekunden
 Logic.SHOOT_COOLDOWN  = 0.35  -- Sekunden zwischen Schüssen (normal)
 Logic.RAPID_COOLDOWN  = 0.12  -- Sekunden (Rapid Fire)
-Logic.MAX_BULLETS     = 8
-Logic.MAX_BULLETS_RAPID = 12
+-- Gleichzeitige Schüsse: so hoch, dass Cooldown+Lifetime limitieren, nicht der Cap.
+-- Rapid (0.12s) × Spread (3) × Lifetime (1.4s) ≈ 35; Puffer für Wrap/Trägheit.
+Logic.MAX_BULLETS     = 40
 Logic.BULLET_RADIUS      = 3
 Logic.BULLET_WRAP_RADIUS = 28   -- Wrap-Trigger: entspricht WRAP_MARGIN damit Bullet sofort an der Feldkante wrappt
 
@@ -597,10 +598,10 @@ function Logic:Tick(state, dt)
             state.shootTimer = state.shootTimer - dt
         end
         local cooldown   = (state.rapidTimer and state.rapidTimer > 0) and self.RAPID_COOLDOWN or self.SHOOT_COOLDOWN
-        local maxBullets = (state.rapidTimer and state.rapidTimer > 0) and self.MAX_BULLETS_RAPID or self.MAX_BULLETS
+        local hasSpread  = state.spreadTimer and state.spreadTimer > 0
+        local volley     = hasSpread and 3 or 1
 
-        if state.keyFire and state.shootTimer <= 0 and #state.bullets < maxBullets then
-            local hasSpread = state.spreadTimer and state.spreadTimer > 0
+        if state.keyFire and state.shootTimer <= 0 and (#state.bullets + volley) <= self.MAX_BULLETS then
             local angles = hasSpread
                 and { ship.angle - math.rad(20), ship.angle, ship.angle + math.rad(20) }
                 or  { ship.angle }

@@ -1101,4 +1101,6 @@ ArcadiaNexus.RegisterGame({
     engine    = "AC_Engine",
     container = "_acContainer",
     category  = "STRATEGIE",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothConquest\\assets\\logo\\logo_ac",
+    xp        = 10,
 })

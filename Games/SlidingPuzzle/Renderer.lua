@@ -954,4 +954,6 @@ ArcadiaNexus.RegisterGame({
     renderer  = "SLP_Renderer",
     engine    = "SLP_Engine",
     container = "_slpContainer",
+    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\SlidingPuzzle\\assets\\logo\\logo_moa",
+    xp        = 10,
 })

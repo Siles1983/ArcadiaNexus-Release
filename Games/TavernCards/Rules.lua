@@ -112,13 +112,6 @@ function R:PlayerHadPlayableBeforeWild4(gs, playerIndex)
         if card.color == ctx.activeColorBefore and not self:IsWildType(card) then
             return true
         end
-        if card.type == "NUMBER" and ctx.topCard
-        and ctx.topCard.type == "NUMBER" and card.value == ctx.topCard.value then
-            return true
-        end
-        if ctx.topCard and card.type == ctx.topCard.type and card.type ~= "NUMBER" then
-            return true
-        end
     end
     return false
 end

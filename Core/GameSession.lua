@@ -6,6 +6,7 @@
 
     API:
       sessionId = GameSession:Begin(gameId)
+      sessionId = GameSession:ForceBegin(gameId)  -- Recovery, überschreibt
       ok        = GameSession:Pause(gameId, sessionId)
       ok        = GameSession:Resume(gameId, sessionId)
       ok        = GameSession:End(gameId, sessionId)
@@ -39,12 +40,33 @@ function GS:_Matches(gameId, sessionId)
     return true
 end
 
---- Neue Spielsitzung beginnen. Gibt monotone sessionId zurück.
-function GS:Begin(gameId)
+--- Neue Spielsitzung beginnen. Gibt monotone sessionId zurück, oder nil
+--- wenn eine fremde Session aktiv bleibt. Eine verwaiste Session desselben
+--- Spiels wird ersetzt. Eine fremde Session wird zuerst über
+--- GameRegistry.StopActiveGame beendet.
+function GS:Begin(gameId, opts)
+    opts = opts or {}
     if self._current then
-        LogWarn("Begin('" .. tostring(gameId) .. "') während Session " ..
-            tostring(self._current.sessionId) .. " (" .. tostring(self._current.gameId) ..
-            ", " .. tostring(self._current.status) .. ") noch registriert ist")
+        if self._current.gameId == gameId then
+            LogWarn("Begin('" .. tostring(gameId) .. "') ersetzt verwaiste Session " ..
+                tostring(self._current.sessionId))
+            self._current = nil
+        elseif opts.force then
+            LogWarn("ForceBegin('" .. tostring(gameId) .. "') überschreibt Session " ..
+                tostring(self._current.sessionId) .. " (" .. tostring(self._current.gameId) .. ")")
+            self._current = nil
+        else
+            local GR = ArcadiaNexus.GameRegistry
+            if GR and GR.StopActiveGame then
+                pcall(GR.StopActiveGame)
+            end
+            if self._current then
+                LogWarn("Begin('" .. tostring(gameId) .. "') abgelehnt – Session " ..
+                    tostring(self._current.sessionId) .. " (" .. tostring(self._current.gameId) ..
+                    ", " .. tostring(self._current.status) .. ") noch aktiv")
+                return nil
+            end
+        end
     end
     self._nextSessionId = self._nextSessionId + 1
     self._current = {
@@ -55,6 +77,11 @@ function GS:Begin(gameId)
     }
     LogDebug("Begin " .. tostring(gameId) .. " session " .. tostring(self._nextSessionId))
     return self._nextSessionId
+end
+
+--- Recovery: aktive Session ohne Engine-Stop überschreiben.
+function GS:ForceBegin(gameId)
+    return self:Begin(gameId, { force = true })
 end
 
 --- Laufende Session temporaer pausieren. SaveAndPause-Pfade beenden sie nach

@@ -54,6 +54,10 @@ ArcadiaNexus.RegisterLocale("CHESS", "deDE", {
     result_loss_sub = "Der Horde-König hat gewonnen.\nZüge: ",
     result_draw     = "|cffaaaaaa Patt!|r",
     result_draw_sub = "Unentschieden – kein legaler Zug möglich.",
+    result_mp_win      = "|cffffd700Sieg!|r",
+    result_mp_win_sub  = "Schachmatt – dein Gegner ist besiegt.\nZüge: ",
+    result_mp_loss     = "Niederlage!",
+    result_mp_loss_sub = "Schachmatt – dein König ist gefallen.\nZüge: ",
 
     -- Settings-Panel: Box-Titel
     box_legend      = "Figuren-Übersicht",
@@ -92,6 +96,7 @@ ArcadiaNexus.RegisterLocale("CHESS", "deDE", {
     guide_2 = "Klicke eine eigene Figur an, danach ein grünes Feld zum Ziehen.",
     guide_3 = "Schlagen: ziehe auf ein Feld mit einer gegnerischen Figur.",
     guide_4 = "Schachmatt gewinnt. Patt endet unentschieden. Aufgabe zählt als Niederlage.",
+    guide_5 = "Im Mehrspieler-Tab spielst du gegen einen Menschen: Sitz 1 Allianz (unten), Sitz 2 Horde (oben). Keine KI.",
 
     -- Reset
     btn_reset       = "Reset",
@@ -144,6 +149,10 @@ ArcadiaNexus.RegisterLocale("CHESS", "enUS", {
     result_loss_sub = "The Horde King has won.\nMoves: ",
     result_draw     = "|cffaaaaaa Draw!|r",
     result_draw_sub = "Stalemate – no legal move possible.",
+    result_mp_win      = "|cffffd700Victory!|r",
+    result_mp_win_sub  = "Checkmate – your opponent is defeated.\nMoves: ",
+    result_mp_loss     = "Defeat!",
+    result_mp_loss_sub = "Checkmate – your king has fallen.\nMoves: ",
 
     -- Settings boxes
     box_legend      = "Piece Overview",
@@ -182,6 +191,7 @@ ArcadiaNexus.RegisterLocale("CHESS", "enUS", {
     guide_2 = "Click one of your pieces, then a highlighted square to move.",
     guide_3 = "Captures: move onto a square occupied by an enemy piece.",
     guide_4 = "Checkmate wins. Stalemate is a draw. Resigning counts as a loss.",
+    guide_5 = "On the Multiplayer tab you face another player: seat 1 Alliance (bottom), seat 2 Horde (top). No AI.",
 
     -- Reset
     btn_reset       = "Reset",

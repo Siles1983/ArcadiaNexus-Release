@@ -9,7 +9,7 @@
       SNK_GAME_STOPPED()
 
     Renderer wird für zeitkritische Darstellung direkt aufgerufen.
-    C_Timer.After → Ticker-Loop.
+    TimerGuard:After → Ticker-Loop.
     Tastatur-Input via KeyDown-Hook auf dem Game-Frame.
 ]]
 
@@ -22,8 +22,9 @@ E._sessionId = nil
 E.activeGame      = nil
 E._running        = false
 E._tickRate       = 0.18
-E._tickGeneration = 0  -- Erhöht sich bei jedem StartGame. Verhindert dass Callbacks
-                       -- eines alten Spiels in den neuen Tick-Loop einlaufen.
+
+local _timerGuard = ArcadiaNexus.TimerGuard.New()
+E._timerGuard     = _timerGuard
 
 -- ============================================================
 -- Sound
@@ -60,7 +61,6 @@ function E:StartGame(config)
     self.activeGame      = { board = board }
     self._running        = true
     self._tickRate       = diff.tickRate
-    self._tickGeneration = self._tickGeneration + 1  -- Invalidiert alle alten Timer-Closures
 
     PlaySNK("start")
     ArcadiaNexus.Engine:Emit("SNK_GAME_STARTED", board)
@@ -74,10 +74,8 @@ end
 -- ============================================================
 function E:ScheduleTick()
     if not self._running then return end
-    local gen = self._tickGeneration  -- Generation zum Zeitpunkt der Planung einfrieren
-    C_Timer.After(self._tickRate, function()
-        -- Abbrechen wenn dieser Callback zu einem alten Spiel gehört
-        if not self._running or self._tickGeneration ~= gen then return end
+    _timerGuard:After(self._tickRate, function()
+        if not self._running then return end
         self:DoTick()
     end)
 end
@@ -110,6 +108,7 @@ function E:DoTick()
     elseif result == "died" then
         PlaySNK("die")
         self._running = false
+        _timerGuard:Cancel()
         local payload = {
             gameId = "SNAKE", difficulty = board.difficulty,
             score = board.score or 0, result = "LOSS",
@@ -124,6 +123,7 @@ function E:DoTick()
         ArcadiaNexus.Engine:Emit("SNK_GAME_LOST", board, isNew)
     elseif result == "won" then
         self._running = false
+        _timerGuard:Cancel()
         local payload = {
             gameId = "SNAKE", difficulty = board.difficulty,
             score = board.score or 0, result = "WIN",
@@ -163,6 +163,7 @@ function E:StopGame()
     end
     self._running   = false
     self.activeGame = nil
+    _timerGuard:Cancel()
     ArcadiaNexus.Engine:Emit("SNK_GAME_STOPPED")
     local R = ArcadiaNexus.SNK_Renderer
     if R and R.EnterIdleState then R:EnterIdleState() end

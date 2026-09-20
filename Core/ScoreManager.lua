@@ -43,9 +43,7 @@ local MAX_HIGHSCORES = 3   -- Nur Top 3 speichern
 
 function SM:Init()
     GH_LogInfo("ScoreManager", "Leaderboard bereit")
-    if not ArcadiaNexusDB.leaderboard then
-        ArcadiaNexusDB.leaderboard = {}
-    end
+    ArcadiaNexus.StatsStore.GetLeaderboard()
 end
 
 -- ============================================================
@@ -53,7 +51,7 @@ end
 -- ============================================================
 
 function SM:_EnsureEntry(gameId, difficulty)
-    local lb = ArcadiaNexusDB.leaderboard
+    local lb = ArcadiaNexus.StatsStore.GetLeaderboard()
     if not lb[gameId] then
         lb[gameId] = {}
     end
@@ -148,7 +146,7 @@ function SM:GetScores(gameId, difficulty)
         difficulty = difficulty:lower()
     end
     local key   = difficulty or "default"
-    local lb    = ArcadiaNexusDB.leaderboard
+    local lb    = ArcadiaNexus.StatsStore.GetLeaderboard()
     if not lb or not lb[gameId] or not lb[gameId][key] then
         return {
             highscores  = {},
@@ -163,7 +161,7 @@ function SM:GetScores(gameId, difficulty)
 end
 
 function SM:GetAllEntries(gameId)
-    local lb = ArcadiaNexusDB.leaderboard
+    local lb = ArcadiaNexus.StatsStore.GetLeaderboard()
     if not lb or not lb[gameId] then return {} end
     local list = {}
     for _, entry in pairs(lb[gameId]) do
@@ -176,7 +174,7 @@ end
 
 -- Gibt alle bekannten GameIDs zurück
 function SM:GetAllGames()
-    return ArcadiaNexusDB.leaderboard or {}
+    return ArcadiaNexus.StatsStore.GetLeaderboard()
 end
 
 -- Bester gespeicherter Score (Highscore #1) für Spiel + Difficulty

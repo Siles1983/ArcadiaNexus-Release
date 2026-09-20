@@ -353,3 +353,319 @@ function Logic:EvaluateBoard(board)
     end
     return score
 end
+
+-- ============================================================
+-- Match (öffentliches 6×6, 2 Sitze). KI bleibt im Spiele-Tab.
+-- Intent: MOVE i=from (1–36), n=to (1–36); RESIGN.
+-- ============================================================
+
+Logic.GAME_ID = "CHESS"
+Logic.GAME_PROTO = 1
+Logic.MP_SIZE = 6
+
+local ENC = { PAWN = "P", ROOK = "R", KNIGHT = "N", QUEEN = "Q", KING = "K" }
+local DEC = {
+    P = "PAWN", R = "ROOK", N = "KNIGHT", Q = "QUEEN", K = "KING",
+    p = "PAWN", r = "ROOK", n = "KNIGHT", q = "QUEEN", k = "KING",
+}
+
+function Logic.Cell(r, c)
+    return (r - 1) * 6 + c
+end
+
+function Logic.RC(i)
+    i = tonumber(i)
+    if not i or i < 1 or i > 36 then return nil end
+    local r = math.floor((i - 1) / 6) + 1
+    local c = ((i - 1) % 6) + 1
+    return r, c
+end
+
+function Logic.PackBoard(board)
+    local t = {}
+    for r = 1, 6 do
+        for c = 1, 6 do
+            local p = board and board[r] and board[r][c]
+            if not p then
+                t[#t + 1] = "."
+            else
+                local ch = ENC[p.type] or "P"
+                if p.color == "black" then
+                    ch = string.lower(ch)
+                end
+                t[#t + 1] = ch
+            end
+        end
+    end
+    return table.concat(t)
+end
+
+function Logic.UnpackBoard(s)
+    s = type(s) == "string" and s or ""
+    if #s < 36 then
+        s = s .. string.rep(".", 36 - #s)
+    end
+    local board = {}
+    local i = 1
+    for r = 1, 6 do
+        board[r] = {}
+        for c = 1, 6 do
+            local ch = s:sub(i, i)
+            i = i + 1
+            if ch == "." or ch == "" then
+                board[r][c] = nil
+            else
+                local typ = DEC[ch]
+                if typ then
+                    local color = (ch == string.upper(ch)) and "white" or "black"
+                    board[r][c] = { type = typ, color = color }
+                else
+                    board[r][c] = nil
+                end
+            end
+        end
+    end
+    return board
+end
+
+function Logic.UnpackLastMove(lm)
+    if type(lm) ~= "string" or #lm ~= 4 then return nil end
+    local a, b, c, d = lm:match("^(%d)(%d)(%d)(%d)$")
+    if not a then return nil end
+    a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
+    if not a or a < 1 or a > 6 or b < 1 or b > 6 or c < 1 or c > 6 or d < 1 or d > 6 then
+        return nil
+    end
+    return { fromR = a, fromC = b, toR = c, toC = d }
+end
+
+local function UnpackCaptured(s, color)
+    local list = {}
+    if type(s) ~= "string" then return list end
+    for i = 1, #s do
+        local ch = s:sub(i, i)
+        local typ = DEC[ch]
+        if typ then
+            list[#list + 1] = { type = typ, color = color }
+        end
+    end
+    return list
+end
+
+function Logic.EmptyPublic()
+    return {
+        b = Logic.PackBoard(Logic:NewBoard()),
+        t = 1,
+        o = 0,
+        w = 0,
+        lm = "",
+        mc = 0,
+        cw = "",
+        cb = "",
+        over = false,
+        winner = 0,
+        turn = 1,
+    }
+end
+
+function Logic.ApplyMatch(pub, intent, seat)
+    if not pub then return false end
+    if pub.over or tonumber(pub.o) == 1 then return false end
+    seat = tonumber(seat) or 0
+    if seat ~= 1 and seat ~= 2 then return false end
+    local kind = (intent and intent.kind) or "MOVE"
+    if kind == "RESIGN" then
+        pub.over = true
+        pub.o = 1
+        pub.w = (seat == 1) and 2 or 1
+        pub.winner = pub.w
+        return true
+    end
+    if seat ~= (tonumber(pub.t) or pub.turn or 1) then return false end
+    local fromR, fromC = Logic.RC(intent and intent.i)
+    local toR, toC = Logic.RC(intent and intent.n)
+    if not fromR or not toR then return false end
+    local board = Logic.UnpackBoard(pub.b)
+    local color = (seat == 1) and "white" or "black"
+    local piece = Logic:GetPieceAt(board, fromR, fromC)
+    if not piece or piece.color ~= color then return false end
+    local legal = Logic:GetLegalMoves(board, fromR, fromC)
+    local move
+    for _, m in ipairs(legal) do
+        if m.toR == toR and m.toC == toC then
+            move = m
+            break
+        end
+    end
+    if not move then return false end
+    local captured = board[toR][toC]
+    board = Logic:ApplyMove(board, move)
+    pub.b = Logic.PackBoard(board)
+    pub.lm = string.format("%d%d%d%d", fromR, fromC, toR, toC)
+    pub.mc = (tonumber(pub.mc) or 0) + 1
+    if captured then
+        local ch = ENC[captured.type] or "P"
+        if captured.color == "black" then
+            pub.cw = (pub.cw or "") .. string.lower(ch)
+        else
+            pub.cb = (pub.cb or "") .. ch
+        end
+    end
+    local opp = (color == "white") and "black" or "white"
+    if Logic:IsCheckmate(board, opp) then
+        pub.over = true
+        pub.o = 1
+        pub.w = seat
+        pub.winner = seat
+    elseif Logic:IsStalemate(board, opp) then
+        pub.over = true
+        pub.o = 1
+        pub.w = 0
+        pub.winner = 0
+    else
+        pub.t = (seat == 1) and 2 or 1
+        pub.turn = pub.t
+    end
+    return true
+end
+
+function Logic.IsFinished(pub)
+    return pub and (pub.over == true or tonumber(pub.o) == 1)
+end
+
+function Logic.PackPublic(pub)
+    if not pub then return {} end
+    return {
+        b = pub.b,
+        t = pub.t or pub.turn or 1,
+        o = (pub.over or tonumber(pub.o) == 1) and 1 or 0,
+        w = pub.winner or pub.w or 0,
+        lm = pub.lm or "",
+        mc = pub.mc or 0,
+        cw = pub.cw or "",
+        cb = pub.cb or "",
+    }
+end
+
+function Logic.UnpackPublic(pub, f)
+    if not pub or not f then return end
+    if f.b ~= nil and f.b ~= "" then pub.b = f.b end
+    if f.t ~= nil then
+        pub.t = tonumber(f.t) or pub.t
+        pub.turn = pub.t
+    end
+    if f.o ~= nil then
+        pub.o = tonumber(f.o) or 0
+        pub.over = pub.o == 1
+    end
+    if f.w ~= nil then
+        pub.w = tonumber(f.w) or 0
+        pub.winner = pub.w
+    end
+    if f.lm ~= nil then pub.lm = f.lm end
+    if f.mc ~= nil then pub.mc = tonumber(f.mc) or pub.mc end
+    if f.cw ~= nil then pub.cw = f.cw end
+    if f.cb ~= nil then pub.cb = f.cb end
+end
+
+function Logic.PackStart(pub)
+    return Logic.PackPublic(pub)
+end
+
+function Logic.UnpackStart(pub, f)
+    Logic.UnpackPublic(pub, f)
+end
+
+function Logic.CanTryStart(node)
+    if not node then return false end
+    local n = 0
+    local max = node.maxSeats or 2
+    for i = 1, max do
+        local k = node.seats and node.seats[i]
+        if k and k ~= "" then
+            n = n + 1
+            if not (node.ready and node.ready[i]) then return false end
+        end
+    end
+    return n == 2
+end
+
+function Logic.BoardStateFromPublic(pub, localSeat)
+    pub = pub or Logic.EmptyPublic()
+    local board = Logic.UnpackBoard(pub.b)
+    local turnSeat = tonumber(pub.t) or pub.turn or 1
+    local turn = (turnSeat == 1) and "white" or "black"
+    local over = pub.over == true or tonumber(pub.o) == 1
+    local winner = tonumber(pub.winner or pub.w) or 0
+    localSeat = tonumber(localSeat) or 1
+    local result, localResult, phase
+    if over then
+        if winner == 0 then
+            result = "stalemate"
+            localResult = "DRAW"
+            phase = "STALEMATE"
+        else
+            result = (winner == 1) and "white_wins" or "black_wins"
+            localResult = (winner == localSeat) and "WIN" or "LOSS"
+            phase = "CHECKMATE"
+        end
+    else
+        phase = "PLAYING"
+    end
+    local inCheck = (not over) and Logic:IsInCheck(board, turn)
+    return {
+        board = board,
+        turn = turn,
+        phase = phase,
+        result = result,
+        localResult = localResult,
+        selected = nil,
+        legalMoves = {},
+        lastMove = Logic.UnpackLastMove(pub.lm),
+        inCheck = inCheck,
+        checkColor = inCheck and turn or nil,
+        moveCount = tonumber(pub.mc) or 0,
+        capturedByWhite = UnpackCaptured(pub.cw, "black"),
+        capturedByBlack = UnpackCaptured(pub.cb, "white"),
+        localSeat = localSeat,
+        gameOver = over,
+    }
+end
+
+function Logic.MatchOpts(engine)
+    return {
+        gameId = Logic.GAME_ID,
+        gameProto = Logic.GAME_PROTO,
+        maxSeats = 2,
+        newPublic = Logic.EmptyPublic,
+        seedOnStart = function()
+            return Logic.EmptyPublic()
+        end,
+        packPublic = Logic.PackPublic,
+        unpackPublic = Logic.UnpackPublic,
+        packStart = Logic.PackStart,
+        unpackStart = Logic.UnpackStart,
+        applyIntent = function(pub, intent, seat)
+            return Logic.ApplyMatch(pub, intent, seat)
+        end,
+        privateForSeat = function()
+            return nil
+        end,
+        isFinished = Logic.IsFinished,
+        onState = function(_, st)
+            if engine then engine:OnMatchState(st) end
+        end,
+        onResult = function(node, resultId)
+            if engine then engine:OnMatchResult(node, resultId) end
+        end,
+        onReject = function(_, f)
+            if engine then engine:OnMatchReject(f) end
+        end,
+        onPublic = function()
+            if engine then engine:OnMatchPublic() end
+        end,
+        canTryStart = function(node)
+            return Logic.CanTryStart(node)
+        end,
+    }
+end

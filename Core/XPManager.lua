@@ -4,7 +4,7 @@
     Version: 2.0.0
 
     Verantwortlichkeiten:
-      - Berechnet XP (BASE_XP x DifficultyMulti x ResultMulti)
+      - Berechnet XP (RegisterGame.xp x DifficultyMulti x ResultMulti)
       - Verwaltet Level-Up-Logik mit Max Level 50
       - Wird von GameResultProcessor aufgerufen (nicht direkt auf GAME_RESULT)
       - XP-Kurve: 80 + (level x 12) + (level^1.35)
@@ -13,7 +13,9 @@
 
     Oeffentliche API:
       XPManager:GetProfile()           -> ArcadiaNexusDB.profile
+      XPManager:NormalizeProfile()     -> ArcadiaNexusDB.profile
       XPManager:GetXPRequired(level)   -> number
+      XPManager:GetBaseXP(gameId)      -> number  (RegisterGame.xp)
       XPManager:GetTitle(level)        -> string
       XPManager:IsMaxLevel()           -> bool
 ]]
@@ -21,6 +23,10 @@
 local ArcadiaNexus = _G.ArcadiaNexus
 ArcadiaNexus.XPManager = {}
 local XPM = ArcadiaNexus.XPManager
+
+local function Profile()
+    return ArcadiaNexus.ProfileStore.Get()
+end
 
 -- ============================================================
 -- Konstanten
@@ -54,36 +60,8 @@ function XPM:GetTitle(level)
     return title
 end
 
--- ============================================================
--- XP-Tabellen
--- ============================================================
-
-local BASE_XP = {
-    TICTACTOE      =  8,
-    CONNECT4       = 10,
-    ["2048"]       = 12,
-    BATTLESHIP     = 14,
-    SUDOKU         = 18,
-    CHESS          = 20,
-    MINESWEEPER    = 10,
-    MEMORY         = 10,
-    MASTERMIND     = 12,
-    SIMONSAYS      =  8,
-    SNAKE          = 10,
-    LOA            = 12,
-    TETRIS         = 12,
-    WHACKAMOLE     =  8,
-    HANGMAN        = 10,
-    -- Neuere Spiele (ab v1.0)
-    MATCH3         = 12,
-    BLOCKBREAKER   = 10,
-    ALIENDEFENSE   = 14,
-    LIGHTSOUT      =  8,
-    REACTIONSTRIKE =  8,
-    AZEROTHWORDS   = 12,
-    NONOGRAM       = 16,
-    GOBLINBLAST    = 12,
-}
+-- Basis-XP kommt aus RegisterGame.xp (GameRegistry.GetBaseXP).
+-- Schwierigkeit und Ergebnis bleiben globale Multiplikatoren.
 
 local DIFF_MULTI = {
     easy   = 1.0,
@@ -110,7 +88,8 @@ function XPM:GetXPRequired(level)
 end
 
 function XPM:IsMaxLevel()
-    local p = ArcadiaNexusDB and ArcadiaNexusDB.profile
+    local PS = ArcadiaNexus.ProfileStore
+    local p = PS and PS.Get()
     return p and p.level >= MAX_LEVEL
 end
 
@@ -118,29 +97,48 @@ end
 -- DB-Init
 -- ============================================================
 
-local function EnsureProfile()
-    if not ArcadiaNexusDB.profile then
-        ArcadiaNexusDB.profile = {
-            level      = 1,
-            xp         = 0,
-            xpRequired = 0,
-            totalXP    = 0,
-            totalGames = 0,
-            wins       = 0,
-            losses     = 0,
-            draws      = 0,
-        }
+local function ClampInt(value, default, minV, maxV)
+    if type(value) ~= "number" then value = default end
+    if minV and value < minV then value = minV end
+    if maxV and value > maxV then value = maxV end
+    return math.floor(value)
+end
+
+function XPM:NormalizeProfile(profile)
+    local PS = ArcadiaNexus.ProfileStore
+    local p
+    if PS then
+        if type(profile) == "table" then
+            PS.Replace(profile)
+        end
+        p = PS.Get()
+    else
+        if not ArcadiaNexusDB then return nil end
+        if type(profile) == "table" then
+            ArcadiaNexusDB.profile = profile
+        elseif type(ArcadiaNexusDB.profile) ~= "table" then
+            ArcadiaNexusDB.profile = {}
+        end
+        p = ArcadiaNexusDB.profile
     end
-    local p = ArcadiaNexusDB.profile
-    if not p.level      then p.level      = 1 end
-    if not p.xp         then p.xp         = 0 end
-    if not p.totalXP    then p.totalXP    = 0 end
-    if not p.totalGames then p.totalGames = 0 end
-    if not p.wins       then p.wins       = 0 end
-    if not p.losses     then p.losses     = 0 end
-    if not p.draws      then p.draws      = 0 end
-    -- Immer neu berechnen (Migration: alte falsche Werte ueberschreiben)
+    p.level      = ClampInt(p.level, 1, 1, MAX_LEVEL)
+    p.xp         = ClampInt(p.xp, 0, 0)
+    p.totalXP    = ClampInt(p.totalXP, 0, 0)
+    p.totalGames = ClampInt(p.totalGames, 0, 0)
+    p.wins       = ClampInt(p.wins, 0, 0)
+    p.losses     = ClampInt(p.losses, 0, 0)
+    p.draws      = ClampInt(p.draws, 0, 0)
+    -- xpRequired nie aus Import/Reset uebernehmen
     p.xpRequired = XPM:GetXPRequired(p.level)
+    if p.level >= MAX_LEVEL then
+        p.xp         = 0
+        p.xpRequired = 0
+    end
+    return p
+end
+
+local function EnsureProfile()
+    XPM:NormalizeProfile()
 end
 
 -- ============================================================
@@ -164,7 +162,7 @@ end
 function XPM:HandleGameResult(data)
     if not data or not data.gameId or not data.result then return end
 
-    local profile = ArcadiaNexusDB.profile
+    local profile = Profile()
     profile.totalGames = profile.totalGames + 1
     if     data.result == "WIN"  then profile.wins   = profile.wins   + 1
     elseif data.result == "LOSS" then profile.losses = profile.losses + 1
@@ -173,7 +171,7 @@ function XPM:HandleGameResult(data)
 
     -- Kein XP mehr bei Max Level
     if self:IsMaxLevel() then
-        ArcadiaNexus.Engine:Emit("XP_UPDATED", ArcadiaNexusDB.profile)
+        ArcadiaNexus.Engine:Emit("XP_UPDATED", Profile())
         return
     end
 
@@ -189,7 +187,7 @@ function XPM:HandleGameResult(data)
     if xp > 0 then
         self:AddXP(xp)
     else
-        ArcadiaNexus.Engine:Emit("XP_UPDATED", ArcadiaNexusDB.profile)
+        ArcadiaNexus.Engine:Emit("XP_UPDATED", Profile())
     end
 end
 
@@ -197,8 +195,16 @@ end
 -- XP berechnen
 -- ============================================================
 
+function XPM:GetBaseXP(gameId)
+    local GR = ArcadiaNexus.GameRegistry
+    if GR and GR.GetBaseXP then
+        return GR.GetBaseXP(gameId)
+    end
+    return (GR and GR.DEFAULT_BASE_XP) or 10
+end
+
 function XPM:CalculateXP(gameId, difficulty, result)
-    local base = BASE_XP[gameId] or 10
+    local base = self:GetBaseXP(gameId)
     local diff = DIFF_MULTI[difficulty and difficulty:lower() or ""] or 1.0
     local res  = RESULT_MULTI[result] or 0
     return math.floor(base * diff * res)
@@ -209,11 +215,11 @@ end
 -- ============================================================
 
 function XPM:AddXP(amount)
-    local profile = ArcadiaNexusDB.profile
+    local profile = Profile()
     profile.xp      = profile.xp      + amount
     profile.totalXP = profile.totalXP + amount
     self:CheckLevelUp()
-    ArcadiaNexus.Engine:Emit("XP_UPDATED", ArcadiaNexusDB.profile)
+    ArcadiaNexus.Engine:Emit("XP_UPDATED", Profile())
 end
 
 -- ============================================================
@@ -221,7 +227,7 @@ end
 -- ============================================================
 
 function XPM:CheckLevelUp()
-    local profile = ArcadiaNexusDB.profile
+    local profile = Profile()
 
     while profile.level < MAX_LEVEL and profile.xp >= profile.xpRequired do
         local prevLevel    = profile.level
@@ -249,5 +255,5 @@ end
 
 function XPM:GetProfile()
     EnsureProfile()
-    return ArcadiaNexusDB.profile
+    return Profile()
 end

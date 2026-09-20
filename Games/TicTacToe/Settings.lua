@@ -75,6 +75,7 @@ S.Defaults = {
     soundOnWin  = true,
     soundOnLoss = true,
     soundOnDraw = true,
+    soundOnPlace = true,
 }
 
 -- ============================================================
@@ -190,10 +191,12 @@ function S:_EnforceRules(changedKey)
         db["soundOnWin"]  = false
         db["soundOnLoss"] = false
         db["soundOnDraw"] = false
+        db["soundOnPlace"] = false
     end
 
     -- ── Regel 5: Ein Einzel-Sound aktiviert → soundEnabled muss true sein ──
-    if (changedKey == "soundOnWin" or changedKey == "soundOnLoss" or changedKey == "soundOnDraw")
+    if (changedKey == "soundOnWin" or changedKey == "soundOnLoss"
+        or changedKey == "soundOnDraw" or changedKey == "soundOnPlace")
         and db[changedKey] == true then
         db["soundEnabled"] = true
     end

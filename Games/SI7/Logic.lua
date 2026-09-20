@@ -8,20 +8,18 @@ ArcadiaNexus.SI7_Logic = {}
 local L = ArcadiaNexus.SI7_Logic
 
 L.GAME_ID = "SI7"
-L.GAME_PROTO = 2
+L.GAME_PROTO = 6
 
 local ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 local ID_BASE = #ID_ALPHABET
 
-local function Words()
-    return ArcadiaNexus.SI7_Words
+local function Sets()
+    return ArcadiaNexus.SI7_WordSets
 end
 
-function L.Word(id)
-    local stableId = Words()[id]
-    local catalogue = ArcadiaNexus.HGM_Words
-    local word = catalogue and catalogue:GetLocalizedWord(stableId, ArcadiaNexus.ActiveLocale)
-    return word or "?"
+function L.Word(id, wordSet)
+    local sets = Sets()
+    return sets and sets:GetWord(wordSet, id, ArcadiaNexus.ActiveLocale) or "?"
 end
 
 function L.EmptyPublic()
@@ -38,16 +36,19 @@ function L.EmptyPublic()
         winReason = "",
         clues = 0,
         guesses = 0,
+        wordSet = "AZEROTH",
+        lastKind = "",
+        lastTeam = "",
+        lastIndex = 0,
     }
 end
 
-function L.Deal()
-    local pool = {}
-    local src = Words()
-    for i = 1, #src do pool[i] = i end
-    ArcadiaNexus.ArrayUtils.Shuffle(pool)
-    local ids = {}
-    for i = 1, 25 do ids[i] = pool[i] end
+function L.Deal(wordSet)
+    local sets = Sets()
+    wordSet = sets and sets:Normalize(wordSet) or "AZEROTH"
+    local count = sets and sets:GetCount(wordSet) or 0
+    if count < 25 then return L.EmptyPublic(), "" end
+    local ids = sets:TakeBoard(wordSet)
     local cells = {}
     for _ = 1, 9 do cells[#cells + 1] = "R" end
     for _ = 1, 8 do cells[#cells + 1] = "B" end
@@ -56,6 +57,7 @@ function L.Deal()
     ArcadiaNexus.ArrayUtils.Shuffle(cells)
     local pub = L.EmptyPublic()
     pub.ids = ids
+    pub.wordSet = wordSet
     return pub, table.concat(cells)
 end
 
@@ -157,9 +159,18 @@ end
 local function BoardHasWord(pub, word)
     word = string.upper(tostring(word or ""))
     for i = 1, 25 do
-        if L.Word(pub.ids[i]) == word then return true end
+        if L.Word(pub.ids[i], pub.wordSet) == word then return true end
     end
     return false
+end
+
+function L.ValidateClue(pub, word)
+    local clue = string.upper(tostring(word or ""):gsub("%s+", ""))
+    if clue == "" then return nil, "clue_empty" end
+    if #clue > 16 then return nil, "clue_long" end
+    if not clue:match("^[A-Z]+$") then return nil, "clue_chars" end
+    if BoardHasWord(pub, clue) then return nil, "clue_board" end
+    return clue
 end
 
 function L.Apply(pub, key, intent, seat)
@@ -182,11 +193,13 @@ function L.Apply(pub, key, intent, seat)
         pub.n = n
         pub.phase = "G"
         pub.clues = (pub.clues or 0) + 1
+        pub.lastKind, pub.lastTeam, pub.lastIndex = "C", team, 0
         return true
     end
 
     if kind == "PASS" then
         if spy or team ~= pub.turn or pub.phase ~= "G" then return false end
+        pub.lastKind, pub.lastTeam, pub.lastIndex = "P", team, 0
         EndTurn(pub)
         return true
     end
@@ -199,6 +212,7 @@ function L.Apply(pub, key, intent, seat)
         local col = key:sub(i, i)
         pub.mask = SetChar(pub.mask, i, col)
         pub.guesses = (pub.guesses or 0) + 1
+        pub.lastKind, pub.lastTeam, pub.lastIndex = "G", team, i
         if col == "X" then
             pub.winner = (team == "R") and "B" or "R"
             pub.winReason = "assassin"
@@ -295,6 +309,9 @@ function L.PackPublic(pub)
         wr = pub.winReason,
         k = pub.clues,
         g = pub.guesses,
+        x = pub.lastKind,
+        y = pub.lastTeam,
+        z = pub.lastIndex,
     }
 end
 
@@ -311,16 +328,37 @@ function L.UnpackPublic(pub, f)
     if f.wr ~= nil then pub.winReason = f.wr end
     if f.k ~= nil then pub.clues = tonumber(f.k) or pub.clues end
     if f.g ~= nil then pub.guesses = tonumber(f.g) or pub.guesses end
+    if f.x ~= nil then pub.lastKind = f.x end
+    if f.y ~= nil then pub.lastTeam = f.y end
+    if f.z ~= nil then pub.lastIndex = tonumber(f.z) or 0 end
 end
 
 function L.PackStart(pub)
-    return { ids = L.PackIds(pub) }
+    local sets = Sets()
+    local set = sets and sets:Get(pub.wordSet)
+    return { ids = L.PackIds(pub), ws = set and set.code or "A" }
+end
+
+function L.PackLobby(pub)
+    local sets = Sets()
+    local set = sets and sets:Get(pub and pub.wordSet)
+    return { ws = set and set.code or "A" }
 end
 
 function L.UnpackStart(pub, f)
+    local sets = Sets()
+    if f and f.ws and sets then
+        for id, set in pairs(sets.data) do
+            if set.code == f.ws then pub.wordSet = id break end
+        end
+    end
     if f and f.ids then
         pub.ids = L.UnpackIds(f.ids)
     end
+end
+
+function L.UnpackLobby(pub, f)
+    if f and f.ws then L.UnpackStart(pub, { ws = f.ws }) end
 end
 
 function L.PrivateForSeat(seat, key)
@@ -338,10 +376,12 @@ function L.MatchOpts(engine)
         maxSeats = 4,
         newPublic = L.EmptyPublic,
         seedOnStart = function()
-            return L.Deal()
+            return L.Deal(engine and engine._selectedWordSet)
         end,
         packPublic = L.PackPublic,
         unpackPublic = L.UnpackPublic,
+        packLobby = L.PackLobby,
+        unpackLobby = L.UnpackLobby,
         packStart = L.PackStart,
         unpackStart = L.UnpackStart,
         applyIntent = function(pub, intent, seat, key)
@@ -369,6 +409,11 @@ function L.MatchOpts(engine)
         end,
         canTryStart = function(node)
             return L.CanTryStart(node)
+        end,
+        announceFields = function()
+            local sets = Sets()
+            local set = sets and sets:Get(engine and engine._selectedWordSet)
+            return { ws = set and set.code or "A" }
         end,
     }
 end
