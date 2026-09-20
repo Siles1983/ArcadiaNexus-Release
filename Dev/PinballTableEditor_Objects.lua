@@ -569,3 +569,124 @@ function E:redraw()
  for _,t in ipairs(self._drainQuadLines or {}) do t:Hide() end
  for _,edge in ipairs(self._drainPerimeter or {}) do edge:Hide() end
 end
+
+-- Presentation shell: the editor model above remains untouched.
+local shellBuild, shellRedraw = E.build, E.redraw
+local function panel(parent)
+ local f=CreateFrame("Frame",nil,parent,"BackdropTemplate")
+ f:SetBackdrop({bgFile=WHITE,edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",tile=true,tileSize=8,edgeSize=10,insets={left=3,right=3,top=3,bottom=3}})
+ f:SetBackdropColor(.035,.05,.075,.96);f:SetBackdropBorderColor(.42,.30,.12,.9);return f
+end
+local function label(parent,text,font,color)
+ local fs=parent:CreateFontString(nil,"OVERLAY",font or "GameFontHighlightSmall");fs:SetText(text)
+ if color then fs:SetTextColor(color[1],color[2],color[3]) end;return fs
+end
+local function button(parent,text,width,click)
+ local b=CreateFrame("Button",nil,parent,"BackdropTemplate");b:SetSize(width,26)
+ b:SetBackdrop({bgFile=WHITE,edgeFile=WHITE,edgeSize=1});b:SetBackdropColor(.075,.10,.14,.98);b:SetBackdropBorderColor(.25,.34,.42,1)
+ b.label=label(b,text,"GameFontHighlightSmall",{.86,.82,.68});b.label:SetPoint("CENTER")
+ b:SetScript("OnEnter",function(self) self:SetBackdropColor(.13,.18,.23,1) end);b:SetScript("OnLeave",function(self) self:SetBackdropColor(.075,.10,.14,.98) end);b:SetScript("OnClick",click);return b
+end
+local function numberInput(parent,width)
+ local e=CreateFrame("EditBox",nil,parent,"BackdropTemplate");e:SetSize(width,24)
+ e:SetBackdrop({bgFile=WHITE,edgeFile=WHITE,edgeSize=1});e:SetBackdropColor(.025,.035,.05,1);e:SetBackdropBorderColor(.25,.34,.42,1)
+ e:SetFontObject(GameFontHighlightSmall);e:SetTextColor(.95,.90,.72);e:SetJustifyH("CENTER");e:SetAutoFocus(false);e:SetNumeric(false)
+ e:SetScript("OnEscapePressed",function(self) self:ClearFocus();E:refreshShell() end)
+ e:SetScript("OnEnterPressed",function(self) self:ClearFocus();if E._shell and E._shell.apply then E._shell.apply:Click() end end)
+ return e
+end
+local function hideOld(frame)
+ local old={Midway=1,Carousel=1,Move=1,["Draw wall"]=1,["Add post"]=1,Delete=1,["Reset table"]=1,["Export Lua"]=1,Bumper=1,Target=1,Kicker=1,Flipper=1,Slingshot=1,Ramp=1,Inlane=1,Outlane=1,Lock=1,Jackpot=1,Drain=1,Ball=1,Spring=1,Guide=1,["Reset live"]=1,["Left flip"]=1,["Right flip"]=1,["Angle -"]=1,["Angle +"]=1,["Check table"]=1}
+ for _,region in ipairs({frame:GetRegions()}) do
+  local text=region.GetText and region:GetText()
+  if text and (text:find("Legende:") or text=="|cffffd700Pinball Table Editor|r") then region:Hide() end
+ end
+ for _,child in ipairs({frame:GetChildren()}) do local text=child.text and child.text:GetText() or (child.GetText and child:GetText());if old[text] then child:Hide() end;hideOld(child) end
+end
+local function selectedInfo()
+ local h,d=E.selected,L();if not h or not d then return end
+ local q=(h.k=="lock" or h.k=="jackpot" or h.k=="drain") and d[h.k] or (d[h.k] and d[h.k][h.i]);if not q then return end
+ local names={bumpers="Bumper",targets="Target",kickers="Kicker",flippers="Flipper",slingshots="Slingshot",ramps="Rampe",inlanes="Inlane",outlanes="Outlane",lock="Arcane Lock",jackpot="Jackpot",drain="Drain",spawn="Ball-Spawn",spring="Feder",guide="Launch-Guide"};local rows={}
+ if q.id then rows[#rows+1]="ID\n"..q.id end
+ if q.x then rows[#rows+1]=string.format("Position\n%.1f / %.1f",q.x,q.y) elseif q.px then rows[#rows+1]=string.format("Drehpunkt\n%.1f / %.1f",q.px,q.py) elseif q.x1 then rows[#rows+1]=string.format("Ecke A\n%.1f / %.1f\n\nEcke B\n%.1f / %.1f",q.x1,q.y1,q.x2,q.y2) end
+ if q.r then rows[#rows+1]=string.format("Radius\n%.1f",q.r) end;if q.length then rows[#rows+1]=string.format("Laenge\n%.1f",q.length) end;if q.restAngle then rows[#rows+1]=string.format("Winkel\n%.0f deg",math.deg(q.restAngle)) end
+ return names[h.k] or h.k,rows,h
+end
+local function primaryFields(h)
+ local d=L();if not h or not d then return end
+ local q=(h.k=="lock" or h.k=="jackpot" or h.k=="drain") and d[h.k] or (d[h.k] and d[h.k][h.i]);if not q then return end
+ if q.x then return q,"x","y" end
+ if q.px then return q,"px","py" end
+ if q.x1 then return q,"x1","y1" end
+end
+function E:refreshShell()
+ if not self._shell then return end
+ for tool,b in pairs(self._shell.tools) do
+  local on=self.tool==tool;b:SetBackdropColor(on and .16 or .075,on and .22 or .10,on and .25 or .14,.98);b:SetBackdropBorderColor(on and .15 or .25,on and .92 or .34,on and 1 or .42,1)
+ end
+ local title,rows,h=selectedInfo()
+ if not title then
+  self._shell.title:SetText("Keine Auswahl");self._shell.hint:SetText("Mit ›Verschieben‹ ein Objekt auf dem Tisch auswählen.\n\nShift + Ziehen auf Kreisobjekten ändert den Radius.")
+  for _,line in ipairs(self._shell.rows) do line:Hide() end
+  self._shell.minus:Hide();self._shell.plus:Hide();self._shell.delete:Hide()
+  self._shell.posLabel:Hide();self._shell.posX:Hide();self._shell.posY:Hide();self._shell.apply:Hide()
+ else
+  self._shell.title:SetText(title);self._shell.hint:SetText("Auswahl aktiv")
+  for i,line in ipairs(self._shell.rows) do if rows[i] then line:SetText("|cff8b9aaa"..rows[i]:gsub("\n","|r\n"));line:Show() else line:Hide() end end
+  local flip=h.k=="flippers";self._shell.minus:SetShown(flip);self._shell.plus:SetShown(flip);self._shell.delete:Show()
+  local q,xKey,yKey=primaryFields(h)
+  if q then
+   self._shell.posLabel:SetText((xKey=="x1" and "ECKE A" or "POSITION").."  X / Y");self._shell.posX:SetText(string.format("%.1f",q[xKey]));self._shell.posY:SetText(string.format("%.1f",q[yKey]));self._shell.posLabel:Show();self._shell.posX:Show();self._shell.posY:Show();self._shell.apply:Show()
+  else self._shell.posLabel:Hide();self._shell.posX:Hide();self._shell.posY:Hide();self._shell.apply:Hide() end
+ end
+ local checks=self.tableChecks and self:tableChecks() or {};local good=0
+ for _,check in ipairs(checks) do if check.ok then good=good+1 end end
+ self._shell.health:SetText((good==#checks and "|cff55ff88VALIDIERUNG OK|r" or "|cffff7777VALIDIERUNG "..good.."/"..#checks.."|r"))
+end
+function E:build()
+ shellBuild(self);if self._shell then return end
+ local f=self.frame;f:SetSize(1120,780);hideOld(f)
+ local top=panel(f);top:SetPoint("TOPLEFT",10,-10);top:SetPoint("TOPRIGHT",-10,-10);top:SetHeight(42)
+ local title=label(top,"PINBALL  ·  TABLE EDITOR","GameFontNormalLarge",{1,.78,.18});title:SetPoint("LEFT",14,0)
+ local sub=label(top,"LAYOUT WORKBENCH","GameFontHighlightSmall",{.48,.62,.72});sub:SetPoint("LEFT",title,"RIGHT",12,0)
+ local left=panel(f);left:SetPoint("TOPLEFT",10,-60);left:SetPoint("BOTTOMLEFT",10,42);left:SetWidth(188)
+ local middle=panel(f);middle:SetPoint("TOPLEFT",208,-60);middle:SetPoint("BOTTOMRIGHT",f,"BOTTOMRIGHT",-232,42)
+ local right=panel(f);right:SetPoint("TOPRIGHT",-10,-60);right:SetPoint("BOTTOMRIGHT",-10,42);right:SetWidth(212)
+ local footer=panel(f);footer:SetPoint("BOTTOMLEFT",10,10);footer:SetPoint("BOTTOMRIGHT",-10,10);footer:SetHeight(24)
+ -- The work surface must be a child of its chrome panel.  Otherwise the panel,
+ -- created later than the original view, is rendered as a dark overlay above it.
+ self.view:SetParent(middle);self.view:ClearAllPoints();self.view:SetPoint("TOPLEFT",middle,8,-28);self.view:SetPoint("BOTTOMRIGHT",middle,-8,8);self.view:SetBackdropColor(.012,.018,.028,1)
+ self.status:ClearAllPoints();self.status:SetPoint("BOTTOMLEFT",16,14);self.status:SetJustifyH("LEFT")
+ local work=label(middle,"ARBEITSFLÄCHE  ·  Mausrad: Zoom  ·  Mittlere Taste: Verschieben","GameFontHighlightSmall",{.50,.62,.70});work:SetPoint("TOPLEFT",12,-9)
+ local close=button(top,"X",28,function() f:Hide() end);close:SetPoint("RIGHT",-8,0)
+ local check=button(top,"Prüfen",68,function() E:showTableChecks() end);check:SetPoint("RIGHT",close,"LEFT",-6,0)
+ local export=button(top,"Export Lua",86,function() E:export() end);export:SetPoint("RIGHT",check,"LEFT",-6,0)
+ local reset=button(top,"Tisch zurücksetzen",112,function() E:resetTable() end);reset:SetPoint("RIGHT",export,"LEFT",-6,0)
+ local s={tools={}};self._shell=s
+ local function section(text,y) local l=label(left,text,"GameFontNormalSmall",{1,.76,.18});l:SetPoint("TOPLEFT",12,y);return y-19 end
+ local y=-13;y=section("TISCHVORLAGE",y)
+ local midway=button(left,"Midway",78,function() E:setTable("darkmoon_midway") end);midway:SetPoint("TOPLEFT",12,y)
+ local carousel=button(left,"Carousel",78,function() E:setTable("darkmoon_carousel") end);carousel:SetPoint("TOPRIGHT",-12,y);y=y-38;y=section("WERKZEUGE",y)
+ local defs={{"Verschieben","move"},{"Wand zeichnen","wall"},{"Posten","post"},{"Löschen","delete"},{"Bumper","bumper"},{"Target","target"},{"Kicker","kicker"},{"Slingshot","sling"},{"Rampe","ramp"},{"Inlane","inlane"},{"Outlane","outlane"},{"Lock","lock"},{"Jackpot","jackpot"},{"Drain","drain"},{"Ball","ball"},{"Feder","spring"},{"Guide","guide"},{"Flipper links","flipper_left"},{"Flipper rechts","flipper_right"}}
+ for i,item in ipairs(defs) do
+  local b=button(left,item[1],78,function() E.tool=item[2];E:refreshShell() end)
+  b:SetPoint("TOPLEFT",12+((i-1)%2)*86,y-math.floor((i-1)/2)*31);s.tools[item[2]]=b
+ end
+ local insp=label(right,"INSPEKTOR","GameFontNormalSmall",{1,.76,.18});insp:SetPoint("TOPLEFT",12,-13)
+ s.title=label(right,"Keine Auswahl","GameFontNormal",{.90,.86,.70});s.title:SetPoint("TOPLEFT",12,-37)
+ s.hint=label(right,"","GameFontHighlightSmall",{.58,.65,.71});s.hint:SetPoint("TOPLEFT",12,-62);s.hint:SetWidth(186);s.hint:SetJustifyH("LEFT")
+ s.rows={};for i=1,4 do local line=label(right,"","GameFontHighlightSmall",{.86,.84,.76});line:SetPoint("TOPLEFT",12,-130-(i-1)*54);line:SetWidth(186);line:SetJustifyH("LEFT");s.rows[i]=line end
+ s.posLabel=label(right,"POSITION  X / Y","GameFontNormalSmall",{1,.76,.18});s.posLabel:SetPoint("BOTTOMLEFT",12,152)
+ s.posX=numberInput(right,88);s.posX:SetPoint("BOTTOMLEFT",12,122)
+ s.posY=numberInput(right,88);s.posY:SetPoint("BOTTOMRIGHT",-12,122)
+ s.apply=button(right,"Position anwenden",186,function()
+  local h=E.selected;local q,xKey,yKey=primaryFields(h);local x,y=tonumber(s.posX:GetText()),tonumber(s.posY:GetText())
+  if q and x and y then q[xKey],q[yKey]=x,y;E:redraw() else E:refreshShell() end
+ end);s.apply:SetPoint("BOTTOM",0,88)
+ s.minus=button(right,"Winkel -",88,function() local h=E.selected;if h and h.k=="flippers" then local q=L().flippers[h.i];q.restAngle=q.restAngle-math.rad(5);q.activeAngle=q.activeAngle-math.rad(5);E:redraw() end end);s.minus:SetPoint("BOTTOMLEFT",12,48)
+ s.plus=button(right,"Winkel +",88,function() local h=E.selected;if h and h.k=="flippers" then local q=L().flippers[h.i];q.restAngle=q.restAngle+math.rad(5);q.activeAngle=q.activeAngle+math.rad(5);E:redraw() end end);s.plus:SetPoint("BOTTOMRIGHT",-12,48)
+ s.delete=button(right,"Auswahl aufheben",186,function() E.selected=nil;E:redraw() end);s.delete:SetPoint("BOTTOM",0,14)
+ s.health=label(footer,"","GameFontHighlightSmall");s.health:SetPoint("RIGHT",-8,0)
+ self:layoutPlayfield();self:refreshShell()
+end
+function E:redraw() shellRedraw(self);self:refreshShell() end

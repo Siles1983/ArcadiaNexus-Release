@@ -203,6 +203,11 @@ function R:GetCardTexture(card)
     return SHARED_CARDS .. card.suit .. "\\" .. card.suit .. "_" .. rankFile
 end
 
+local function PadClickMode()
+    local GI = ArcadiaNexus.GameInput
+    return GI and GI.UsesCursor and GI.UsesCursor()
+end
+
 function R:_HandleCardClick(zone, index, cardIndex)
     if _dragActive then return end
     if _justDropped > 0 and (GetTime() - _justDropped) < 0.08 then return end
@@ -441,12 +446,16 @@ function R:Init()
     -- ── Stock ─────────────────────────────────────────────────
     _F.stockFrame = self:_CreateCardSlot(_F.playfield, CFG.stock_x, CFG.stock_y, "stock")
     _F.stockFrame:SetFrameLevel((_F.playfield:GetFrameLevel() or 1) + 1)
-    _F.stockFrame:SetScript("OnMouseUp", function(self, btn)
+    _F.stockFrame:SetScript("OnMouseUp", nil)
+    _F.stockFrame:SetScript("OnClick", function(_, btn)
         if btn == "LeftButton" then
             local E = GetEngine()
             if E then E:OnStockClick() end
         end
     end)
+    if _F.stockFrame.RegisterForClicks then
+        _F.stockFrame:RegisterForClicks("LeftButtonUp")
+    end
     _F.stockFrame:EnableMouse(true)
 
     -- ── Waste (3 Slots: Sichtbar im 3-Karten-Modus) ───────────
@@ -468,12 +477,20 @@ function R:Init()
         ff:EnableMouse(true)
         local fi = i
         ff:SetScript("OnMouseDown", function(_, btn)
+            if PadClickMode() then return end
             if btn ~= "LeftButton" then return end
             R:_StartPointer("foundation", fi, nil)
         end)
         ff:SetScript("OnMouseUp", function(_, btn)
+            if PadClickMode() then return end
             if btn ~= "LeftButton" then return end
             R:_EndPointer("foundation", fi, nil)
+        end)
+        ff:SetScript("OnClick", function(_, btn)
+            if btn ~= "LeftButton" then return end
+            if PadClickMode() then
+                R:_HandleCardClick("foundation", fi, nil)
+            end
         end)
         ff._emptyLbl = nil
     end
@@ -482,15 +499,25 @@ function R:Init()
     for i = 1, 7 do
         _F.tabFrames[i] = {}
         -- Permanenter Slot-Frame als Klick-Ziel für leere Spalten
-        local ts = CreateFrame("Frame", nil, _F.playfield)
+        local ts = CreateFrame("Button", nil, _F.playfield)
         ts:SetSize(CFG.card_w, CFG.card_h)
         ts:SetPoint("TOPLEFT", _F.playfield, "TOPLEFT", CFG.tableau_x[i], CFG.tableau_y)
         ts:SetFrameLevel((_F.playfield:GetFrameLevel() or 1) + 1)
         ts:EnableMouse(true)
+        if ts.RegisterForClicks then
+            ts:RegisterForClicks("LeftButtonUp")
+        end
         local col = i
         ts:SetScript("OnMouseUp", function(_, btn)
+            if PadClickMode() then return end
             if btn ~= "LeftButton" then return end
             R:_EndPointer("tableau", col, nil)
+        end)
+        ts:SetScript("OnClick", function(_, btn)
+            if btn ~= "LeftButton" then return end
+            if PadClickMode() then
+                R:_HandleCardClick("tableau", col, nil)
+            end
         end)
         _F.tabSlots[i] = ts
     end
@@ -623,6 +650,7 @@ function R:Init()
             if math.abs(cx - _dragPending.startX) > DRAG_THRESHOLD
                 or math.abs(cy - _dragPending.startY) > DRAG_THRESHOLD
             then
+                if PadClickMode() then return end
                 R:_ActivateDrag()
             end
             return
@@ -722,7 +750,7 @@ end
 
 -- ── Karten-Slot erstellen (leerer Platzhalter-Frame) ─────────
 function R:_CreateCardSlot(parent, x, y, tag)
-    local f = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    local f = CreateFrame("Button", nil, parent, "BackdropTemplate")
     f:SetSize(CFG.card_w, CFG.card_h)
     f:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     f:SetBackdrop({
@@ -733,6 +761,10 @@ function R:_CreateCardSlot(parent, x, y, tag)
     })
     f:SetBackdropColor(COL.empty[1], COL.empty[2], COL.empty[3], COL.empty[4])
     f:SetBackdropBorderColor(0.35, 0.33, 0.25, 0.8)
+    f:EnableMouse(true)
+    if f.RegisterForClicks then
+        f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    end
     f._tag = tag
     return f
 end
@@ -751,6 +783,9 @@ function R:_CreateCardFrame(parent, card, x, y, zone, idx, cardIdx)
     f:SetBackdropColor(1, 1, 1, 1)
     f:SetBackdropBorderColor(0.35, 0.33, 0.25, 0.9)
     f:EnableMouse(true)
+    if f.RegisterForClicks then
+        f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    end
 
     local tex = f:CreateTexture(nil, "ARTWORK")
     tex:SetPoint("TOPLEFT",  f, "TOPLEFT",  2,  -2)
@@ -771,12 +806,25 @@ function R:_CreateCardFrame(parent, card, x, y, zone, idx, cardIdx)
     f._cardIdx = cardIdx
 
     f:SetScript("OnMouseDown", function(self, btn)
+        if PadClickMode() then return end
         if btn ~= "LeftButton" then return end
         R:_StartPointer(self._zone, self._idx, self._cardIdx)
     end)
     f:SetScript("OnMouseUp", function(self, btn)
+        if PadClickMode() then return end
         if btn ~= "LeftButton" then return end
         R:_EndPointer(self._zone, self._idx, self._cardIdx)
+    end)
+    f:SetScript("OnClick", function(self, btn)
+        if not PadClickMode() then return end
+        if btn == "RightButton" then
+            local E = GetEngine()
+            if E then E:OnCardDoubleClick(self._zone, self._idx, self._cardIdx) end
+            return
+        end
+        if btn == "LeftButton" then
+            R:_HandleCardClick(self._zone, self._idx, self._cardIdx)
+        end
     end)
 
     f:SetScript("OnEnter", function(self)
@@ -925,12 +973,20 @@ function R:_UpdateWaste(gs)
                     wf:SetBackdropBorderColor(0.35, 0.33, 0.25, 0.9)
                 end
                 wf:SetScript("OnMouseDown", function(_, btn)
+                    if PadClickMode() then return end
                     if btn ~= "LeftButton" then return end
                     R:_StartPointer("waste", n, n)
                 end)
                 wf:SetScript("OnMouseUp", function(_, btn)
+                    if PadClickMode() then return end
                     if btn ~= "LeftButton" then return end
                     R:_EndPointer("waste", n, n)
+                end)
+                wf:SetScript("OnClick", function(_, btn)
+                    if not PadClickMode() then return end
+                    if btn == "LeftButton" then
+                        R:_HandleCardClick("waste", n, n)
+                    end
                 end)
             else
                 wf:EnableMouse(false)

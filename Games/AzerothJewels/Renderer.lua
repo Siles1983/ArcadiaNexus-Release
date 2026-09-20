@@ -1210,10 +1210,14 @@ function R:_BuildBoard(gs)
             cell:SetScript("OnMouseDown", function(btn, mouseButton)
                 if mouseButton ~= "LeftButton" then return end
                 if R._targeting then return end
+                local GI = ArcadiaNexus.GameInput
+                if GI and GI.UsesCursor and GI.UsesCursor() then return end
                 R:_BeginGemDrag(btn._row, btn._col)
             end)
             cell:SetScript("OnMouseUp", function(_, mouseButton)
                 if mouseButton ~= "LeftButton" then return end
+                local GI = ArcadiaNexus.GameInput
+                if GI and GI.UsesCursor and GI.UsesCursor() then return end
                 R:_FinishGemDrag()
             end)
             cell:SetScript("OnClick", function(btn, mouseButton)

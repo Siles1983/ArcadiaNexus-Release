@@ -661,6 +661,7 @@ function Renderer:_SetKeyboard(enable)
 end
 
 function Renderer:_SyncHoverFromMouse()
+    if self._padHover then return end
     local over = nil
     for col = 1, #self.colHitFrames do
         local hit = self.colHitFrames[col]
@@ -1219,6 +1220,7 @@ function Renderer:RenderBoard(board)
         end)
         hit:SetScript("OnEnter", function()
             if Renderer._suppressHover then return end
+            Renderer._padHover = false
             Renderer._hoverCol = hit._col
             Renderer:RefreshHover()
         end)
@@ -1280,6 +1282,12 @@ function Renderer:PaintDiscs(board)
             end
         end
     end
+end
+
+function Renderer:SetPadHoverCol(col)
+    self._padHover = true
+    self._hoverCol = col
+    self:RefreshHover()
 end
 
 function Renderer:RefreshHover()

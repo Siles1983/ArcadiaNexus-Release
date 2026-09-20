@@ -445,6 +445,7 @@ end
 function Renderer:OpenPopup(r, c)
     local cd = self.cells[r] and self.cells[r][c]
     if not cd then return end
+    local already = self.popupOpen
     self.popupOpen    = true
     self.popupTargetR = r
     self.popupTargetC = c
@@ -452,13 +453,30 @@ function Renderer:OpenPopup(r, c)
     self.popup:SetPoint("TOPLEFT", cd.frame, "TOPRIGHT", 4, 0)
     self.popup:Show()
     self.popup:Raise()
+    if not already then
+        local GI = ArcadiaNexus.GameInput
+        if GI and GI.OnUiOverlay then
+            pcall(GI.OnUiOverlay, self.popup.numBtns, {
+                onCancel = function()
+                    Renderer:ClosePopup()
+                end,
+            })
+        end
+    end
 end
 
 function Renderer:ClosePopup()
+    local wasOpen = self.popupOpen
     self.popupOpen    = false
     self.popupTargetR = nil
     self.popupTargetC = nil
     if self.popup then self.popup:Hide() end
+    if wasOpen then
+        local GI = ArcadiaNexus.GameInput
+        if GI and GI.OnUiOverlayClosed then
+            pcall(GI.OnUiOverlayClosed)
+        end
+    end
 end
 
 -- ============================================================

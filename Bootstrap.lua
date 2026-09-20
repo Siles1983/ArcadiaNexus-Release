@@ -274,9 +274,17 @@ function ArcadiaNexus.GetLocaleTable(gameID)
     else
         local active   = locales[ArcadiaNexus.ActiveLocale] or {}
         local fallback = locales["enUS"] or {}
+        -- rawget: wenn ActiveLocale == "enUS" sind active und fallback
+        -- dieselbe Tabelle. fallback[k] wuerde sonst __index endlos aufrufen.
         localeTable = setmetatable(active, {
             __index = function(_, k)
-                return fallback[k] or ("[" .. tostring(k) .. "]")
+                if fallback ~= active then
+                    local v = rawget(fallback, k)
+                    if v ~= nil then
+                        return v
+                    end
+                end
+                return "[" .. tostring(k) .. "]"
             end
         })
     end

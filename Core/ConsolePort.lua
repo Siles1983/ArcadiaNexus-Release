@@ -143,14 +143,17 @@ local CAPTURE_BUTTONS = {
     "PADDLEFT", "PADDRIGHT", "PADDUP", "PADDDOWN",
     "PAD1", "PAD2", "PAD3", "PAD4",
     "PADLSHOULDER", "PADRSHOULDER",
+    "PADLTRIGGER", "PADRTRIGGER",
     "PADBACK", "PADFORWARD", "PADSOCIAL", "PAD6",
 }
 
-function Bridge.SetGameplayCapture(enabled, onButton)
+function Bridge.SetGameplayCapture(enabled, onButton, opts)
+    opts = opts or {}
     local cp = _G.ConsolePort
     local hub = _G[HUB_FRAME_NAME]
+    local obstruct = enabled and opts.obstruct ~= false
     if cp and type(cp.SetCursorObstructor) == "function" and hub then
-        pcall(cp.SetCursorObstructor, cp, hub, enabled and true or nil)
+        pcall(cp.SetCursorObstructor, cp, hub, obstruct and true or nil)
     end
 
     local db = cp and type(cp.GetData) == "function" and cp:GetData() or nil
@@ -170,8 +173,9 @@ function Bridge.SetGameplayCapture(enabled, onButton)
     if type(Input.SetCommand) ~= "function" or not hub then
         return
     end
-    for i = 1, #CAPTURE_BUTTONS do
-        local id = CAPTURE_BUTTONS[i]
+    local list = opts.buttons or CAPTURE_BUTTONS
+    for i = 1, #list do
+        local id = list[i]
         pcall(function()
             Input:SetCommand(id, hub, true, nil, "ArcadiaPad", function(_, state)
                 if onButton then

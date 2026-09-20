@@ -17,6 +17,7 @@ local CAPTURE_BUTTONS = {
     "PADDLEFT", "PADDRIGHT", "PADDUP", "PADDDOWN",
     "PAD1", "PAD2", "PAD3", "PAD4",
     "PADLSHOULDER", "PADRSHOULDER",
+    "PADLTRIGGER", "PADRTRIGGER",
     "PADBACK", "PADFORWARD", "PADSOCIAL", "PAD6",
 }
 
@@ -54,6 +55,7 @@ GI._menuIndex    = 1
 GI._menuHighlight = nil
 GI._overlayStack  = {}
 GI._overlayCancel = nil
+GI._assistCol     = nil
 
 local function Engine(key)
     return key and ArcadiaNexus[key] or nil
@@ -105,8 +107,7 @@ local function HoldKeyPair(E, btn, pressed, downFn, upFn)
 end
 
 -- Kein Eintrag = kein Stick/D-Pad-Gameplay (Klickspiele nutzen den Hub-Cursor).
--- Noch in Entwicklung, bewusst ohne Profil:
--- AZEROTHFIGHTERS, DARKMOON_PINBALL, Arcane Barrage, AZEROTH_ASCENT, TINKERSREVENGE
+-- DevOnly, bewusst ohne Profil: AZEROTHFIGHTERS, AZEROTH_ASCENT, TINKERSREVENGE
 local PROFILES = {
     BLOCKBREAKER = {
         engine = "BB_Engine",
@@ -116,7 +117,12 @@ local PROFILES = {
                 E:HandleKey(pressed and "LEFT_DOWN" or "LEFT_UP")
             elseif btn == "PADRIGHT" then
                 E:HandleKey(pressed and "RIGHT_DOWN" or "RIGHT_UP")
-            elseif (btn == "PAD1" or btn == "PADFORWARD" or btn == "PAD4") and pressed then
+            elseif btn == "PAD1" and pressed then
+                local gs = E.gameState
+                if E.state == "PLAYING" and gs and gs.ballDocked then
+                    E:HandleKey("LAUNCH")
+                end
+            elseif (btn == "PADFORWARD" or btn == "PAD4") and pressed then
                 E:HandleKey("PAUSE")
             end
         end,
@@ -291,9 +297,138 @@ local PROFILES = {
             end
         end,
     },
+    DARKMOON_PINBALL = {
+        engine = "DMP_Engine",
+        analog = "x",
+        onButton = function(E, btn, pressed)
+            if btn == "PADLEFT" or btn == "PADLSHOULDER" or btn == "PADLTRIGGER" then
+                E:HandleKey(pressed and "LEFT_DOWN" or "LEFT_UP")
+            elseif btn == "PADRIGHT" or btn == "PADRSHOULDER" or btn == "PADRTRIGGER" then
+                E:HandleKey(pressed and "RIGHT_DOWN" or "RIGHT_UP")
+            elseif btn == "PAD1" then
+                E:HandleKey(pressed and "LAUNCH" or "LAUNCH_UP")
+            elseif pressed and btn == "PADUP" then
+                E:HandleKey("NUDGE_UP")
+            elseif pressed and btn == "PADDOWN" then
+                E:HandleKey("NUDGE_LEFT")
+            elseif pressed and btn == "PAD3" then
+                E:HandleKey("NUDGE_RIGHT")
+            elseif pressed and (btn == "PADFORWARD" or btn == "PAD4") then
+                E:HandleKey("PAUSE")
+            end
+        end,
+        onAxis = function(E, x)
+            SyncHold("left",  x < -DEADZONE,
+                function() E:HandleKey("LEFT_DOWN") end,
+                function() E:HandleKey("LEFT_UP") end)
+            SyncHold("right", x > DEADZONE,
+                function() E:HandleKey("RIGHT_DOWN") end,
+                function() E:HandleKey("RIGHT_UP") end)
+        end,
+    },
+    AZEROTHWORDS = {
+        engine = "WRD_Engine",
+        keepCursor = true,
+        captureButtons = {
+            "PAD2", "PAD3", "PAD4",
+            "PADLSHOULDER", "PADRSHOULDER",
+            "PADBACK", "PADFORWARD", "PADSOCIAL", "PAD6",
+        },
+        onButton = function(E, btn, pressed)
+            if not pressed then return end
+            if btn == "PADLSHOULDER" or btn == "PAD4" then
+                E:HandleInput("BACKSPACE")
+            elseif btn == "PADRSHOULDER" then
+                E:HandleInput("CONFIRM")
+            elseif btn == "PAD3" then
+                GI.ClickCursorNode("RightButton")
+            elseif btn == "PADFORWARD" then
+                GI.RequestPause()
+            end
+        end,
+    },
+    ARCADIAROWS = {
+        engine = "AR_Engine",
+        keepCursor = true,
+        captureButtons = {
+            "PAD2", "PAD3",
+            "PADLSHOULDER", "PADRSHOULDER",
+            "PADLTRIGGER", "PADRTRIGGER",
+            "PADBACK", "PADFORWARD", "PADSOCIAL", "PAD6",
+        },
+        onButton = function(E, btn, pressed)
+            if not pressed then return end
+            local R = ArcadiaNexus.AR_Renderer
+            if btn == "PADLSHOULDER" or btn == "PADRSHOULDER" then
+                local maxCol = 7
+                if R and R._boardCols then maxCol = R._boardCols end
+                local col = GI._assistCol or 4
+                if btn == "PADLSHOULDER" then col = col - 1 else col = col + 1 end
+                if col < 1 then col = maxCol end
+                if col > maxCol then col = 1 end
+                GI._assistCol = col
+                if R and R.SetPadHoverCol then
+                    R:SetPadHoverCol(col)
+                end
+            elseif btn == "PADLTRIGGER" then
+                E:HandlePlayerMove(GI._assistCol or 4)
+            elseif btn == "PADRTRIGGER" or btn == "PAD3" then
+                if E.HandlePlayerPopOut then
+                    E:HandlePlayerPopOut(GI._assistCol or 4)
+                end
+            elseif btn == "PADFORWARD" then
+                GI.RequestPause()
+            end
+        end,
+    },
+    AZEROTHTINYGUARDIANS = {
+        engine = "ATG_Engine",
+        keepCursor = true,
+        analog = "x",
+        captureButtons = {
+            "PAD2", "PAD3", "PADBACK", "PADFORWARD", "PADSOCIAL", "PAD6",
+        },
+        onButton = function(_, btn, pressed)
+            if not pressed then return end
+            if btn == "PAD3" then
+                GI.ClickCursorNode("RightButton")
+            elseif btn == "PADFORWARD" then
+                GI.RequestPause()
+            end
+        end,
+        onAxis = function(_, x)
+            local R = ArcadiaNexus.ATG_Renderer
+            if R and R.ApplyPadRotation then
+                R:ApplyPadRotation(x)
+            end
+        end,
+    },
 }
 
 GI.PROFILES = PROFILES
+
+local SKIP_GAMES = {
+    AZEROTHFIGHTERS = true,
+    AZEROTH_ASCENT  = true,
+    TINKERSREVENGE  = true,
+}
+
+local CURSOR_ASSIST_BUTTONS = {
+    "PAD2", "PAD3", "PADBACK", "PADSOCIAL", "PAD6", "PADFORWARD",
+}
+
+local CURSOR_ASSIST = {
+    keepCursor = true,
+    captureButtons = CURSOR_ASSIST_BUTTONS,
+    onButton = function(_, btn, pressed)
+        if not pressed then return end
+        if btn == "PAD3" then
+            GI.ClickCursorNode("RightButton")
+        elseif btn == "PADFORWARD" then
+            GI.RequestPause()
+        end
+    end,
+}
 
 local function Bridge()
     return ArcadiaNexus.ConsolePortBridge
@@ -306,6 +441,10 @@ end
 
 function GI.HasProfile(gameId)
     return gameId ~= nil and PROFILES[gameId] ~= nil
+end
+
+function GI.UsesCursor()
+    return GI.IsEnabled() and GI._profile ~= nil and GI._profile.keepCursor == true
 end
 
 local function ResetHolds()
@@ -349,20 +488,48 @@ local function EnsureCaptureFrame()
     return f
 end
 
-local function ClickFrame(btn)
+local function ClickFrame(btn, mouseButton)
     if not btn then return false end
+    mouseButton = mouseButton or "LeftButton"
     if btn.Click then
-        btn:Click("LeftButton")
+        btn:Click(mouseButton)
         return true
     end
     if btn.GetScript then
         local fn = btn:GetScript("OnClick")
         if fn then
-            fn(btn, "LeftButton")
+            fn(btn, mouseButton)
             return true
         end
     end
     return false
+end
+
+local function GetCursorNode()
+    local cp = _G.ConsolePort
+    if type(cp) == "table" then
+        if type(cp.GetCursorNode) == "function" then
+            local ok, node = pcall(cp.GetCursorNode, cp)
+            if ok and node then return node end
+        end
+        if type(cp.GetCurrentNode) == "function" then
+            local ok, node = pcall(cp.GetCurrentNode, cp)
+            if ok and node then return node end
+        end
+    end
+    local cursor = _G.ConsolePortCursor
+    if type(cursor) == "table" then
+        if type(cursor.GetCurrentNode) == "function" then
+            local ok, node = pcall(cursor.GetCurrentNode, cursor)
+            if ok and node then return node end
+        end
+        if cursor.node then return cursor.node end
+    end
+    return nil
+end
+
+function GI.ClickCursorNode(mouseButton)
+    return ClickFrame(GetCursorNode(), mouseButton or "LeftButton")
 end
 
 local function HighlightMenu(index)
@@ -420,6 +587,40 @@ function GI.RequestExit()
     if GR and GR.StopActiveGame then
         GR.StopActiveGame()
         return true
+    end
+    return false
+end
+
+function GI.RequestPause()
+    local GS = ArcadiaNexus.GameSession
+    local cur = GS and GS.GetCurrent and GS:GetCurrent()
+    local gameId = (cur and cur.gameId) or GI._activeGameId
+    local GR = ArcadiaNexus.GameRegistry
+    local renderer = GR and GR.GetRenderer and gameId and GR.GetRenderer(gameId)
+    if renderer then
+        local btn = renderer._pauseBtn or renderer.pauseBtn
+        if btn and (not btn.IsShown or btn:IsShown()) then
+            if ClickFrame(btn) then return true end
+        end
+        if renderer.TogglePause then
+            renderer:TogglePause()
+            return true
+        end
+    end
+    local E = GI._profile and Engine(GI._profile.engine)
+    if E then
+        if E.TogglePause then
+            E:TogglePause()
+            return true
+        end
+        if E.Pause and E.state == "PLAYING" then
+            E:Pause()
+            return true
+        end
+        if E.Resume and E.state == "PAUSED" then
+            E:Resume()
+            return true
+        end
     end
     return false
 end
@@ -498,9 +699,23 @@ function GI.OnUiOverlayClosed()
     GI._overlayCancel = nil
     GI._menuHighlight = nil
     if GI._profile then
+        local keep = GI._profile.keepCursor == true
+        local f = GI._captureFrame
+        if f then
+            f:Show()
+            if f.EnableGamePadButton then
+                f:EnableGamePadButton(not keep)
+            end
+            if f.EnableGamePadStick then
+                f:EnableGamePadStick(not keep)
+            end
+        end
         local B = Bridge()
         if B and B.SetGameplayCapture then
-            B.SetGameplayCapture(true, GI.HandleButton)
+            B.SetGameplayCapture(true, GI.HandleButton, {
+                obstruct = not keep,
+                buttons  = GI._profile.captureButtons,
+            })
         end
         return
     end
@@ -526,7 +741,7 @@ function GI.HandleButton(button, pressed)
     local profile = GI._profile
     if not profile or not profile.onButton then return false end
     local E = Engine(profile.engine)
-    if not E then return false end
+    if profile.engine and not E then return false end
     profile.onButton(E, button, pressed)
     return true
 end
@@ -539,7 +754,7 @@ function GI.HandleStick(stick, x, y)
     local profile = GI._profile
     if not profile or not profile.onAxis then return false end
     local E = Engine(profile.engine)
-    if not E then return false end
+    if profile.engine and not E then return false end
     x = tonumber(x) or 0
     y = tonumber(y) or 0
     GI._axis.x, GI._axis.y = x, y
@@ -565,14 +780,21 @@ function GI.Poll()
         return
     end
     if not GI._profile then return end
+    local pollList = CAPTURE_BUTTONS
+    if GI._profile.keepCursor and GI._profile.captureButtons then
+        pollList = GI._profile.captureButtons
+    end
     if IsGamePadButtonDown then
-        for i = 1, #CAPTURE_BUTTONS do
-            local btn = CAPTURE_BUTTONS[i]
+        for i = 1, #pollList do
+            local btn = pollList[i]
             local down = IsGamePadButtonDown(btn) == true
             if GI._held[btn] ~= down then
                 GI.HandleButton(btn, down)
             end
         end
+    end
+    if GI._profile.keepCursor and not GI._profile.onAxis then
+        return
     end
     if C_GamePad and C_GamePad.GetDeviceMappedState and C_GamePad.GetActiveDeviceID then
         local ok, state = pcall(function()
@@ -615,25 +837,45 @@ function GI.ReleaseAll()
     ResetHolds()
 end
 
+local function ApplyProfile(gameId, profile)
+    GI._activeGameId = gameId
+    GI._profile = profile
+    GI._assistCol = nil
+    ResetHolds()
+    local keep = profile.keepCursor == true
+    local f = EnsureCaptureFrame()
+    if f then
+        f:Show()
+        if f.EnableGamePadButton then
+            f:EnableGamePadButton(not keep)
+        end
+        if f.EnableGamePadStick then
+            f:EnableGamePadStick(not keep)
+        end
+    end
+    local B = Bridge()
+    if B and B.SetGameplayCapture then
+        B.SetGameplayCapture(true, GI.HandleButton, {
+            obstruct = not keep,
+            buttons  = profile.captureButtons,
+        })
+    end
+    return true
+end
+
 function GI.Start(gameId)
     GI.Stop()
     if not GI.IsEnabled() then return false end
     local profile = PROFILES[gameId]
     if not profile then return false end
-    GI._activeGameId = gameId
-    GI._profile = profile
-    ResetHolds()
-    local f = EnsureCaptureFrame()
-    if f then
-        f:Show()
-        if f.EnableGamePadButton then f:EnableGamePadButton(true) end
-        if f.EnableGamePadStick then f:EnableGamePadStick(true) end
-    end
-    local B = Bridge()
-    if B and B.SetGameplayCapture then
-        B.SetGameplayCapture(true, GI.HandleButton)
-    end
-    return true
+    return ApplyProfile(gameId, profile)
+end
+
+function GI.StartCursorAssist(gameId)
+    GI.Stop()
+    if not GI.IsEnabled() then return false end
+    if not gameId or SKIP_GAMES[gameId] then return false end
+    return ApplyProfile(gameId, CURSOR_ASSIST)
 end
 
 function GI.Stop()
@@ -651,15 +893,19 @@ function GI.Stop()
     GI._menuButtons = nil
     GI._overlayCancel = nil
     GI._overlayStack = {}
+    GI._assistCol = nil
     ResetHolds()
 end
 
 function GI.OnBegin(gameId)
+    if SKIP_GAMES[gameId] then
+        GI.Stop()
+        return false
+    end
     if GI.HasProfile(gameId) then
         return GI.Start(gameId)
     end
-    GI.Stop()
-    return false
+    return GI.StartCursorAssist(gameId)
 end
 
 function GI.OnPause()
@@ -674,10 +920,7 @@ function GI.OnPause()
 end
 
 function GI.OnResume(gameId)
-    if GI._profile or GI.HasProfile(gameId) then
-        return GI.Start(gameId or GI._activeGameId)
-    end
-    return false
+    return GI.OnBegin(gameId or GI._activeGameId)
 end
 
 function GI.InstallSessionHooks()

@@ -366,7 +366,6 @@ Games/BarrelBrawl/Renderer.lua
 Games/BarrelBrawl/BarrelBrawl_Achievements.lua
 Games/BarrelBrawl/BarrelBrawl_Leaderboard.lua
 
-
 Dev/LevelEditor/Language.lua
 Dev/LevelEditor/Catalog.lua
 Dev/LevelEditor/Serialize.lua

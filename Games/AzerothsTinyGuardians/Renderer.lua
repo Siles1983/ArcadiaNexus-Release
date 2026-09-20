@@ -446,6 +446,29 @@ function R:_EndModelDrag(which)
     end
 end
 
+function R:ApplyPadRotation(x)
+    x = tonumber(x) or 0
+    if math.abs(x) < 0.25 then return end
+    local which = "play"
+    local model = self._petModel
+    if (not model or not model.IsShown or not model:IsShown()) and self._stallModel
+        and self._stallModel.IsShown and self._stallModel:IsShown() then
+        which = "stall"
+        model = self._stallModel
+    end
+    if not model or not model.SetRotation then return end
+    local rot
+    if which == "stall" then
+        rot = (self._stallRotation or self._stallRotDefault or 0) + x * 0.12
+        self._stallRotation = rot
+    else
+        rot = (self._playRotation or self._playRotDefault or 0) + x * 0.12
+        self._playRotation = rot
+    end
+    model:SetRotation(rot)
+    self:_ScheduleCamReset(which)
+end
+
 function R:_EnableModelDrag(model, which)
     if not model or not model.EnableMouse then return end
     model:EnableMouse(true)
