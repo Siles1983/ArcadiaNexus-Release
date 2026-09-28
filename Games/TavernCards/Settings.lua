@@ -20,7 +20,6 @@ S.Defaults = {
     soundOnSpecial  = true,
     soundOnWin      = true,
     soundOnLose     = true,
-    soundOnUno      = true,
     rules = {
         stackDraw2     = true,
         stackDraw4     = true,

@@ -1,3 +1,69 @@
+### Arcadia Nexus 1.1.6 Changelog
+
+### English
+
+- Profile
+- Identity header: character portrait and name, active title, XP bar, Tavern Gold, and login streak.
+- Next title with remaining XP. Game stats show record, top three titles by plays, and top categories.
+- The most-played game’s logo sits as a watermark behind the stats; it switches when another title takes the lead.
+- Challenges: Game of the Day, daily and weekly tasks with progress. Hover shows the actual goal and reward. Rows with a fixed game open that title.
+- Title catalog: pick an unlocked title and show it in the header. Empty rows explain when nothing is played or unlocked yet.
+- The title catalog now shows only unlocked titles. Hovering over a title restores its original text color when the pointer leaves.
+- The profile level cap rises from 50 to 100. The existing XP curve continues, and titles now unlock every five levels through 100; previous titles keep their unlock levels.
+- Players already at level 50 can earn XP again. Games played at the former cap do not grant XP retroactively.
+
+- Challenges
+- Daily and weekly tasks now draw from the current public catalog, not only the early titles.
+- Daily and weekly tasks refresh when their period changes, including while the client stays open.
+
+- Achievements
+- General now has a “Levels & Titles” subsection with 20 individual Gold achievements, one every five levels from 5 to 100. Each description names the title unlocked at that level.
+- The former tiered “Rising Star” achievement is replaced. Previously unlocked tiers keep their completion dates, and already reached levels are recognized.
+- New General achievements track login streaks (7/14/30 days), completed daily challenge streaks (10/25/50 days), and completed weekly challenge streaks (4/8/12 weeks). One completed challenge per day or week counts; additional completions in that period do not extend the streak again.
+- Removed unused login-streak title and theme unlock events. The login streak and its existing XP and Gold milestone rewards remain.
+
+- Fixes and stability
+- Interim game results now update only scores and game statistics. They no longer award profile progress, XP, achievements, challenges, or the first-game daily bonus.
+- The first-game bonus is awarded once per calendar day through the checked result pipeline. A claim for the current day survives a reset or import, and duplicate match results cannot award it again. The “Invincible” challenge keeps its hard-win streak across reloads and resets it on a counted loss.
+- Alchemist's Sort migrates old level saves only once; deleted slots stay deleted. Old hint, shake, and feedback callbacks cannot affect a later session. The level selector shows unlocked levels and best moves/time, and a paused puzzle can be resumed after opening it.
+- Achievement groups registered after addon load now receive normalized icons, retroactive checks, and a refresh of the visible achievement view.
+- Tavern Cards plays the special sound for both WILD and WILD4. Match version detection uses the current `C_AddOns.GetAddOnMetadata` API. Azeroth Conquest has its missing board border.
+- Azeroth Jewels now uses the shared campaign-progress logic while preserving older stars, inventory, Endless progress, and paused levels.
+- Multiplayer roster handling shares one name-normalization path. Removed unused Settings rebuild hooks, dead helpers, and hidden Fighter projectile actors; DungeonDemo is listed among the development games.
+
+### Deutsch
+
+- Profil
+- Identitätskopf: Charakterportrait und Name, aktiver Titel, XP-Balken, Tavern-Gold und Login-Streak.
+- Nächster Titel mit Rest-XP. Spielstatistik zeigt Bilanz, die drei meistgespielten Titel und die stärksten Kategorien.
+- Logo des meistgespielten Spiels als Wasserzeichen hinter den Werten; wechselt, wenn ein anderes Spiel die Spitze übernimmt.
+- Challenges: Spiel des Tages, tägliche und wöchentliche Aufgaben mit Fortschritt. Hover zeigt Ziel und Belohnung. Zeilen mit festem Spiel öffnen den Titel.
+- Titel-Katalog: freigeschalteten Titel wählen und im Header anzeigen. Leere Zeilen erklären, wenn noch nichts gespielt oder freigeschaltet ist.
+- Der Titel-Katalog zeigt nur noch freigeschaltete Titel. Nach dem Überfahren mit der Maus kehrt die Schrift zur ursprünglichen Farbe zurück.
+- Das maximale Profil-Level steigt von 50 auf 100. Die bisherige XP-Kurve läuft weiter; Titel werden bis Level 100 alle fünf Level freigeschaltet. Bisherige Titel behalten ihre Freischalt-Level.
+- Spieler auf Level 50 können wieder XP sammeln. Für Spiele am bisherigen Levelmaximum gibt es keine rückwirkende XP-Gutschrift.
+
+- Challenges
+- Tägliche und wöchentliche Aufgaben kommen aus dem aktuellen öffentlichen Katalog, nicht nur aus den frühen Titeln.
+- Tägliche und wöchentliche Aufgaben wechseln nun beim Tages- beziehungsweise Wochenwechsel, auch wenn der Client geöffnet bleibt.
+
+- Erfolge
+- Unter „Allgemein“ gibt es den Unterpunkt „Level & Titel“ mit 20 einzelnen Gold-Erfolgen: alle fünf Level von 5 bis 100. Jede Beschreibung nennt den dabei freigeschalteten Titel.
+- Der bisherige gestufte Erfolg „Aufsteiger“ wird ersetzt. Bereits freigeschaltete Stufen behalten ihr Abschlussdatum; erreichte Level werden anerkannt.
+- Neue allgemeine Erfolge würdigen Login-Serien (7/14/30 Tage), Daily-Serien (10/25/50 Tage) und Weekly-Serien (4/8/12 Wochen). Pro Tag beziehungsweise Woche zählt mindestens eine abgeschlossene Herausforderung; weitere Abschlüsse im selben Zeitraum verlängern die Serie nicht mehrfach.
+- Wirkungslose Titel- und Theme-Freischalt-Events der Login-Serie entfernt. Die Login-Serie und ihre bisherigen XP- und Gold-Meilensteinbelohnungen bleiben erhalten.
+
+- Korrekturen und Stabilität
+- Zwischenergebnisse aktualisieren nur noch Score und Spielstatistiken. Sie vergeben keinen Profilfortschritt, keine XP, Erfolge, Challenges oder den Tagesbonus für das erste Spiel.
+- Der Bonus für das erste Spiel wird über die geprüfte Ergebnisverarbeitung einmal pro Kalendertag vergeben. Ein Anspruch für den aktuellen Tag bleibt nach Reset oder Import erhalten; doppelte Match-Ergebnisse lösen ihn nicht erneut aus. Die Challenge „Unbesiegbar“ speichert ihre Siegesserie über Reloads und setzt sie bei einer gezählten Niederlage zurück.
+- Alchemist's Sort migriert alte Level-Spielstände nur einmal; gelöschte Slots bleiben gelöscht. Alte Hinweis-, Shake- und Feedback-Callbacks greifen nicht in spätere Sessions ein. Die Levelauswahl zeigt Freischaltungen und Bestwerte für Züge/Zeit; ein pausiertes Rätsel lässt sich nach dem Öffnen fortsetzen.
+- Nach dem Addon-Start registrierte Erfolgsgruppen erhalten normalisierte Icons, eine rückwirkende Prüfung und eine Aktualisierung der sichtbaren Erfolgsansicht.
+- Tavern Cards spielt das Spezialgeräusch für WILD und WILD4. Die Match-Version nutzt die aktuelle API `C_AddOns.GetAddOnMetadata`. Azeroth Conquest besitzt wieder seinen fehlenden Brettrahmen.
+- Azeroth Jewels nutzt die gemeinsame Kampagnenfortschritts-Logik und erhält alte Sterne, Inventar, Endless-Fortschritt und pausierte Level.
+- Die Multiplayer-Gruppenliste verwendet einen gemeinsamen Pfad zur Namensnormalisierung. Ungenutzte Settings-`rebuild`-Einträge, tote Helfer und versteckte Fighter-Projektil-Actors wurden entfernt; DungeonDemo steht nun in der Liste der Entwicklungsspiele.
+
+---
+
 ### Arcadia Nexus 1.1.5 Changelog
 
 ### English

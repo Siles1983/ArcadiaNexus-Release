@@ -26,7 +26,6 @@ local function BuildHangmanSettingsPanel(parent)
                 }),
             },
         },
-        rebuild = BuildHangmanSettingsPanel,
     })
 end
 

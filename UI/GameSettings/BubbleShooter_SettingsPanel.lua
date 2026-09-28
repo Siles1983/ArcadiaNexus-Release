@@ -60,7 +60,6 @@ local function BuildBubbleShooterSettingsPanel(parent)
                 }),
             },
         },
-        rebuild = BuildBubbleShooterSettingsPanel,
     })
 end
 

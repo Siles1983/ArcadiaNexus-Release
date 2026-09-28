@@ -123,8 +123,6 @@ local LAYER_PAD = 2
 local FILL_MAX_Y = BOTTLE_H - 25
 
 -- Animations-Konstanten
-local ANIM_STEPS    = 8
-local ANIM_INTERVAL = 0.04
 
 -- ── Frames / State ────────────────────────────────────────────
 R._container    = nil
@@ -144,10 +142,14 @@ R._loadingDotsFS  = nil
 R._loadingDotTimer= nil
 R._loadingDotTick = 0
 R._feedbackFS   = nil
-R._feedbackTimer = 0
+R._hintGuard    = ArcadiaNexus.TimerGuard.New()
+R._feedbackGuard = ArcadiaNexus.TimerGuard.New()
+R._hintToken    = 0
+R._hintFrames   = nil
 R._controlsFrame = nil
 R._slotMenu      = nil
 R._exitBtn       = nil
+R._levelSelect   = nil
 
 -- ── Init ──────────────────────────────────────────────────────
 function R:Init()
@@ -156,6 +158,7 @@ function R:Init()
     self:_CreateLogo()
     self:_CreateHUD()
     self:_CreateSlotMenu()
+    self:_CreateLevelSelect()
     self:_CreateControls()
     self:_CreateOverlays()
     self:EnterIdle()
@@ -180,6 +183,9 @@ function R:_CreateMainFrame()
     _G.ArcadiaNexus._alsContainer = f
 
     f:SetScript("OnHide", function()
+        if ArcadiaNexus.ALS_Engine.state == "LEVEL_SELECT" then
+            ArcadiaNexus.ALS_Engine:SaveAndStop()
+        end
         ArcadiaNexus.GameSession:HandleRendererHide("ALCHEMISTSSORT", ArcadiaNexus.ALS_Engine, function(E)
             if E.state ~= "IDLE" then
                 E:SaveAndStop()
@@ -247,16 +253,20 @@ function R:_CreateHUD()
     local L = ArcadiaNexus.GetLocaleTable("ALCHEMISTSSORT")
 
     -- Level-Box (identisches Styling wie Timer- und Counter-Box)
-    local lvlBox = CreateFrame("Frame", nil, canvas, "BackdropTemplate")
+    local lvlBox = CreateFrame("Button", nil, canvas, "BackdropTemplate")
     lvlBox:SetSize(CFG.hud_level_w, CFG.hud_level_h)
     lvlBox:SetPoint("TOPLEFT", canvas, "TOPLEFT", CFG.hud_level_x, CFG.hud_level_y)
     lvlBox:SetBackdrop({ bgFile="Interface\\Buttons\\WHITE8X8", edgeFile="Interface\\Buttons\\WHITE8X8", edgeSize=1 })
     lvlBox:SetBackdropColor(0.05, 0.05, 0.05, 0.8)
     lvlBox:SetBackdropBorderColor(0.3, 0.25, 0.1, 1)
+    lvlBox:RegisterForClicks("LeftButtonUp")
+    lvlBox:SetScript("OnClick", function()
+        ArcadiaNexus.ALS_Engine:OpenLevelSelect()
+    end)
 
     local lvlLbl = lvlBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     lvlLbl:SetPoint("TOP", lvlBox, "TOP", 0, -4)
-    lvlLbl:SetText(L and L.lbl_level or "Level")
+    lvlLbl:SetText(L and L.lbl_choose_level or "Level ▼")
     lvlLbl:SetTextColor(0.7, 0.65, 0.5)
     local lvlVal = lvlBox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     lvlVal:SetPoint("BOTTOM", lvlBox, "BOTTOM", 0, 4)
@@ -681,23 +691,67 @@ end
 
 -- ── Shake (ungültiger Zug) ────────────────────────────────────
 
+local function IsCurrentSession(sid)
+    local E = ArcadiaNexus.ALS_Engine
+    return sid and E and E._sessionId == sid
+        and ArcadiaNexus.GameSession:IsSession(E, sid)
+end
+
+function R:_ClearHint()
+    for _, tf in ipairs(self._hintFrames or {}) do
+        if tf._selTex then tf._selTex:Hide() end
+    end
+    self._hintFrames = nil
+end
+
+function R:CancelTransientEffects()
+    self._hintGuard:Cancel()
+    self._feedbackGuard:Cancel()
+    self._hintToken = self._hintToken + 1
+    self:_ClearHint()
+    if self._feedbackFS then self._feedbackFS:Hide() end
+    for _, tf in ipairs(self._tubeFrames) do
+        if tf._shakeGuard then tf._shakeGuard:Cancel() end
+        if tf._shakeOrigin then
+            tf:ClearAllPoints()
+            tf:SetPoint("TOPLEFT", self._playfield, "TOPLEFT",
+                tf._shakeOrigin.x, tf._shakeOrigin.y)
+            tf._shakeOrigin = nil
+        end
+    end
+end
+
 function R:ShakeTube(tubeIdx)
     local tf = self._tubeFrames[tubeIdx]
     if not tf then return end
 
+    tf._shakeGuard = tf._shakeGuard or ArcadiaNexus.TimerGuard.New()
+    tf._shakeGuard:Cancel()
+    if tf._shakeOrigin then
+        tf:ClearAllPoints()
+        tf:SetPoint("TOPLEFT", self._playfield, "TOPLEFT",
+            tf._shakeOrigin.x, tf._shakeOrigin.y)
+    end
+    local sid = ArcadiaNexus.ALS_Engine._sessionId
+    if not IsCurrentSession(sid) then return end
+
     local origOffX = tf:GetLeft() - self._playfield:GetLeft()
     local origOffY = tf:GetTop()  - self._playfield:GetTop()
+    tf._shakeOrigin = { x=origOffX, y=origOffY }
 
     local offsets = { 5, -5, 4, -4, 2, -2, 1, 0 }
     local step    = 0
 
     local function DoShake()
+        if not IsCurrentSession(sid) or self._tubeFrames[tubeIdx] ~= tf then return end
         step = step + 1
         tf:ClearAllPoints()
         tf:SetPoint("TOPLEFT", self._playfield, "TOPLEFT",
             origOffX + offsets[step], origOffY)
         if step < #offsets then
-            C_Timer.After(0.04, DoShake)
+            tf._shakeGuard:After(0.04, DoShake)
+        else
+            tf._shakeOrigin = nil
         end
     end
     DoShake()
@@ -706,6 +760,11 @@ end
 -- ── Tipp-Highlight ────────────────────────────────────────────
 
 function R:ShowHint(srcIdx, dstIdx, onDone)
+    self._hintGuard:Cancel()
+    self._hintToken = self._hintToken + 1
+    self:_ClearHint()
+    local token = self._hintToken
+    local sid = ArcadiaNexus.ALS_Engine._sessionId
     local srcTF = self._tubeFrames[srcIdx]
     local dstTF = self._tubeFrames[dstIdx]
     if not srcTF or not dstTF then
@@ -728,10 +787,11 @@ function R:ShowHint(srcIdx, dstIdx, onDone)
 
     Highlight(srcTF, true)
     Highlight(dstTF, true)
+    self._hintFrames = { srcTF, dstTF }
 
-    C_Timer.After(2.0, function()
-        Highlight(srcTF, false)
-        Highlight(dstTF, false)
+    self._hintGuard:After(2.0, function()
+        if token ~= self._hintToken or not IsCurrentSession(sid) then return end
+        self:_ClearHint()
         if onDone then onDone() end
     end)
 end
@@ -742,9 +802,12 @@ function R:ShowFeedback(msgKey)
     local L = ArcadiaNexus.GetLocaleTable("ALCHEMISTSSORT")
     local msg = L and L[msgKey] or msgKey
     if not self._feedbackFS then return end
+    self._feedbackGuard:Cancel()
+    local sid = ArcadiaNexus.ALS_Engine._sessionId
     self._feedbackFS:SetText(msg)
     self._feedbackFS:Show()
-    C_Timer.After(1.5, function()
+    self._feedbackGuard:After(1.5, function()
+        if not IsCurrentSession(sid) then return end
         if self._feedbackFS then self._feedbackFS:Hide() end
     end)
 end
@@ -798,7 +861,7 @@ end
 
 -- ── Win-Overlay ───────────────────────────────────────────────
 
-function R:ShowWinOverlay(score, moves, elapsed)
+function R:ShowWinOverlay(score, moves, elapsed, stars, bestStars)
     local parent = self._playfield
     if not parent then return end
     local L  = ArcadiaNexus.GetLocaleTable("ALCHEMISTSSORT")
@@ -806,6 +869,8 @@ function R:ShowWinOverlay(score, moves, elapsed)
     local sec     = math.floor(elapsed)
     local timeStr = ArcadiaNexus.Format.SecondsMMSS(sec, false)
     local lines = {}
+    lines[#lines + 1] = string.format(L and L.result_stars or "Sterne: %d (Bestwert: %d)",
+        stars or 0, bestStars or 0)
     if L and L.win_moves then
         lines[#lines + 1] = string.format(L.win_moves, moves)
     else
@@ -830,6 +895,12 @@ function R:ShowWinOverlay(score, moves, elapsed)
                 onClick = function()
                     local E = ArcadiaNexus.ALS_Engine
                     if E then E:StartLevel(ArcadiaNexus.ALS_Settings:GetCurrentLevel()) end
+                end,
+            },
+            {
+                label   = L and L.btn_level_select or "Levelauswahl",
+                onClick = function()
+                    ArcadiaNexus.ALS_Engine:OpenLevelSelect()
                 end,
             },
         },
@@ -859,6 +930,55 @@ function R:ShowConfirmReset(onConfirm)
     end
 end
 
+-- ── Levelauswahl ──────────────────────────────────────────────
+
+function R:_CreateLevelSelect()
+    if self._levelSelect or not self._canvas then return end
+    self._levelSelect = ArcadiaNexus.UI.CreateCampaignMap({
+        parent = self._canvas,
+        getView = function()
+            local S = ArcadiaNexus.ALS_Settings
+            local L = ArcadiaNexus.GetLocaleTable("ALCHEMISTSSORT") or {}
+            local unlocked = math.max(1, tonumber(S:GetUnlockedLevel()) or 1)
+            local save = S:LoadSlot(S:GetActiveSlot())
+            return {
+                levelCount = unlocked,
+                padLastPage = true,
+                currentLevel = S:GetCurrentLevel(),
+                titleFormat = L.map_title,
+                subtitle = string.format(L.map_progress or "Frei bis %d · Sterne: %d", unlocked, S:SumStars(save)),
+                lockedText = L.map_locked or "—",
+                actionLabel = save and save.midGame and (L.btn_resume_level or "Fortsetzen") or nil,
+                getLevel = function(level)
+                    local best = S:GetLevelBest(level)
+                    local stars = S:GetStar(save, level)
+                    local moves = best and best.moves and string.format(L.level_best_moves or "%d Züge", best.moves)
+                    local elapsed = best and best.time and string.format(L.level_best_time or "%s",
+                        ArcadiaNexus.Format.SecondsMMSS(math.floor(best.time), false))
+                    return {
+                        unlocked = level <= unlocked,
+                        text = stars > 0 and string.rep("*", stars) or "—",
+                        tooltipTitle = (L.lbl_level or "Level") .. " " .. level,
+                        tooltipText = string.format(L.level_stars or "Sterne: %d / 3", stars)
+                            .. (moves and ("\n" .. moves) or "")
+                            .. (elapsed and ("\n" .. (L.lbl_time or "Zeit") .. ": " .. elapsed) or ""),
+                    }
+                end,
+            }
+        end,
+        onSelect = function(level) ArcadiaNexus.ALS_Engine:SelectLevel(level) end,
+        onAction = function() ArcadiaNexus.ALS_Engine:ResumeSelectedLevel() end,
+    })
+end
+
+function R:ShowLevelSelect(save)
+    if self._levelSelect then self._levelSelect:Show(save and save.currentLevel or 1) end
+end
+
+function R:HideLevelSelect()
+    if self._levelSelect then self._levelSelect:Hide() end
+end
+
 -- ── Slot-Menü ─────────────────────────────────────────────────
 
 function R:_CreateSlotMenu()
@@ -876,7 +996,8 @@ function R:_CreateSlotMenu()
         loadSlot      = function(slot) return S and S:LoadSlot(slot) end,
         deleteSlot    = function(slot) if S then S:DeleteSlot(slot) end end,
         formatInfo    = function(save, loc)
-            return string.format(loc.slot_info or "Level %d", save.currentLevel or 1)
+            return string.format(loc.slot_info_unlocked or "L%d · frei bis %d · %d Sterne",
+                save.currentLevel or 1, save.unlockedLevel or save.currentLevel or 1, S:SumStars(save))
         end,
         isPaused      = function(save) return save.midGame ~= nil end,
         formatPaused  = function(save, loc)
@@ -911,6 +1032,7 @@ function R:OnStateChanged(newState)
     end
 
     if newState == "PLAYING" then
+        self:HideLevelSelect()
         if self._logoTex then self._logoTex:Hide() end
         if self._hud.levelBox then self._hud.levelBox:Show() end
         if self._hud.timerBox then self._hud.timerBox:Show() end
@@ -926,6 +1048,22 @@ function R:OnStateChanged(newState)
 
     if newState == "IDLE" then
         self:EnterIdle()
+        return
+    end
+
+    if newState == "LEVEL_SELECT" then
+        for _, tf in ipairs(self._tubeFrames) do tf:Hide() end
+        if self._hud.levelBox then self._hud.levelBox:Hide() end
+        if self._hud.timerBox then self._hud.timerBox:Hide() end
+        if self._hud.cntBox then self._hud.cntBox:Hide() end
+        if self._slotMenu then self._slotMenu:Hide() end
+        if self._logoTex then self._logoTex:Hide() end
+        if self._btnStart then self._btnStart:Hide() end
+        if self._exitBtn then self._exitBtn:Show() end
+        if self._btnReset then self._btnReset:SetShown(false) end
+        if self._btnUndo then self._btnUndo:SetShown(false) end
+        if self._btnHint then self._btnHint:SetShown(false) end
+        if self._btnAdd then self._btnAdd:SetShown(false) end
         return
     end
 
@@ -948,6 +1086,8 @@ function R:OnStateChanged(newState)
 end
 
 function R:EnterIdle()
+    self:CancelTransientEffects()
+    self:HideLevelSelect()
     local L = ArcadiaNexus.GetLocaleTable("ALCHEMISTSSORT")
     -- Flaschen ausblenden
     for _, tf in ipairs(self._tubeFrames) do

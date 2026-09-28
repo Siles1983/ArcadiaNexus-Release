@@ -104,7 +104,6 @@ local function BuildCodebreakerSettingsPanel(parent)
                 }),
             },
         },
-        rebuild = BuildCodebreakerSettingsPanel,
     })
 end
 

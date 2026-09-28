@@ -24,6 +24,8 @@
       SM:GetScores(gameId, difficulty)  → { highscores={}, wins=N, losses=N, draws=N, gamesPlayed=N, bestLevel=N, customStats={} }
       SM:GetBestScore(gameId, difficulty) → bester Score (Highscore #1)
       SM:GetAllGames()                  → { gameId = { difficulties = {...} } }
+      SM:GetGameTotals(gameId)          → { plays, wins, losses, draws, bestScore }
+      SM:GetRankedGames()               → { { gameId, plays, ... }, ... } nach Partien
 ]]
 
 local ArcadiaNexus = _G.ArcadiaNexus
@@ -175,6 +177,52 @@ end
 -- Gibt alle bekannten GameIDs zurück
 function SM:GetAllGames()
     return ArcadiaNexus.StatsStore.GetLeaderboard()
+end
+
+function SM:GetGameTotals(gameId)
+    local plays, wins, losses, draws, best = 0, 0, 0, 0, 0
+    for _, entry in ipairs(self:GetAllEntries(gameId)) do
+        local played = tonumber(entry.gamesPlayed)
+        if not played or played <= 0 then
+            played = (entry.wins or 0) + (entry.losses or 0) + (entry.draws or 0)
+        end
+        plays  = plays  + played
+        wins   = wins   + (entry.wins or 0)
+        losses = losses + (entry.losses or 0)
+        draws  = draws  + (entry.draws or 0)
+        for _, hs in ipairs(entry.highscores or {}) do
+            if type(hs) == "number" and hs > best then
+                best = hs
+            end
+        end
+    end
+    return {
+        plays     = plays,
+        wins      = wins,
+        losses    = losses,
+        draws     = draws,
+        bestScore = best,
+    }
+end
+
+function SM:GetRankedGames()
+    local lb = ArcadiaNexus.StatsStore.GetLeaderboard()
+    local list = {}
+    if type(lb) ~= "table" then return list end
+    for gameId, _ in pairs(lb) do
+        local totals = self:GetGameTotals(gameId)
+        if totals.plays > 0 then
+            totals.gameId = gameId
+            list[#list + 1] = totals
+        end
+    end
+    table.sort(list, function(a, b)
+        if a.plays ~= b.plays then
+            return a.plays > b.plays
+        end
+        return tostring(a.gameId) < tostring(b.gameId)
+    end)
+    return list
 end
 
 -- Bester gespeicherter Score (Highscore #1) für Spiel + Difficulty

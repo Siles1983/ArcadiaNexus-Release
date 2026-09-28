@@ -77,7 +77,7 @@ end
 -- STATS (Leaderboard, Streak, Challenges)
 -- ============================================================
 
-local EMPTY_STREAK = { current = 0, best = 0, lastLogin = 0, claimedToday = false }
+local EMPTY_STREAK = { current = 0, best = 0, lastLogin = 0 }
 local EMPTY_CHALLENGES = {
     daily   = {},
     weekly  = {},
@@ -230,7 +230,7 @@ end
 -- TAVERN GOLD
 -- ============================================================
 
-local EMPTY_GOLD = { balance = 0, lifetime = 0, log = {} }
+local EMPTY_GOLD = { balance = 0, lifetime = 0, log = {}, lastFirstGameDay = 0 }
 
 local TavernGoldStore = {}
 ArcadiaNexus.TavernGoldStore = TavernGoldStore
@@ -244,6 +244,7 @@ function TavernGoldStore.Get()
     if type(g.log) ~= "table" then g.log = {} end
     if type(g.lifetime) ~= "number" then g.lifetime = 0 end
     if type(g.balance) ~= "number" then g.balance = 0 end
+    if type(g.lastFirstGameDay) ~= "number" then g.lastFirstGameDay = 0 end
     return g
 end
 

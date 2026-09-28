@@ -30,33 +30,6 @@ local function NeedMp()
     return true
 end
 
-local function GroupKeys()
-    local me = ArcadiaNexus.MatchTransport.LocalPlayerKey()
-    local keys = {}
-    local seen = {}
-    local function add(unit)
-        if not unit or not UnitExists or not UnitExists(unit) then return end
-        if UnitIsUnit and UnitIsUnit(unit, "player") then return end
-        local name, realm = UnitFullName(unit)
-        if not name then return end
-        realm = realm or (GetNormalizedRealmName and GetNormalizedRealmName()) or ""
-        realm = tostring(realm):gsub("%s+", "")
-        local key = (realm ~= "") and (name .. "-" .. realm) or name
-        if key ~= me and not seen[key] then
-            seen[key] = true
-            keys[#keys + 1] = key
-        end
-    end
-    if IsInRaid and IsInRaid() then
-        local n = GetNumGroupMembers and GetNumGroupMembers() or 0
-        for i = 1, n do add("raid" .. i) end
-    elseif IsInGroup and IsInGroup() then
-        local n = GetNumSubgroupMembers and GetNumSubgroupMembers() or 4
-        for i = 1, n do add("party" .. i) end
-    end
-    return keys
-end
-
 function L.EnsureNode()
     if node and node:GetState() ~= "ABORTED" and node:GetState() ~= "FINISHED" then
         return node
@@ -114,7 +87,7 @@ function L.Join(target)
     if target ~= "" then
         targets[1] = ArcadiaNexus.MatchTransport.NormalizeSender(target)
     else
-        targets = GroupKeys()
+        targets = ArcadiaNexus.MatchTransport.GroupMemberKeys()
     end
     if #targets == 0 then
         Say("Kein zweiter Spieler. /anlive braucht eine Party oder |cffffffff/anlive join Name-Realm|r")

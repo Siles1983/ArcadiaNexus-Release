@@ -34,7 +34,6 @@ local function BuildSlidingPuzzleSettingsPanel(parent)
                 }, 15),
             },
         },
-        rebuild = BuildSlidingPuzzleSettingsPanel,
     })
 end
 

@@ -60,6 +60,9 @@ function TR.Normalize(raw)
     d.lanes = d.lanes or {}
     d.sensors = d.sensors or {}
     d.flippers = d.flippers or {}
+    d.decorations = d.decorations or {}
+    d.lights = d.lights or {}
+    d.textFields = d.textFields or {}
     d.inlanes = d.inlanes or d.rollovers
     d.outlanes = d.outlanes or {}
     local function HasSensorType(typ)

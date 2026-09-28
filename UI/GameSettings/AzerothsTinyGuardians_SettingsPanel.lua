@@ -37,7 +37,6 @@ local function BuildATGSettingsPanel(parent)
                 }),
             },
         },
-        rebuild = BuildATGSettingsPanel,
     })
 end
 

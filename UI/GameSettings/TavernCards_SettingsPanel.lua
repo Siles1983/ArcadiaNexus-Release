@@ -117,7 +117,6 @@ local function BuildTavernCardsSettingsPanel(parent)
                 end,
             },
         },
-        rebuild = BuildTavernCardsSettingsPanel,
     })
 end
 

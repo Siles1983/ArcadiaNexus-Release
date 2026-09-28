@@ -138,7 +138,6 @@ local function BuildBlockdropSettingsPanel(parent)
                 }),
             },
         },
-        rebuild   = BuildBlockdropSettingsPanel,
     })
 end
 

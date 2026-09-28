@@ -3,10 +3,11 @@
     UI/Settings/HubSettings_TabDeveloper.lua
 
     Enthält:
-        - _BuildTabDeveloper (DevMode Checkbox + Bestätigungs-Dialog)
+        - _BuildTabDeveloper (DevMode Checkbox + dynamische DevTools)
 
     Abhängigkeiten:
         UI/Settings/HubSettings_Core.lua → ArcadiaNexus.HubSettings, _ShowConfirm
+        Core/DevToolRegistry.lua
 ]]
 
 local UI          = ArcadiaNexus.UI
@@ -17,6 +18,22 @@ local function L(key)
     return tbl and tbl[key] or nil
 end
 
+local function ToolLabel(tool)
+    if tool.labelKey then
+        local t = L(tool.labelKey)
+        if t then return t end
+    end
+    return tool.label or tool.id
+end
+
+local function ToolHint(tool)
+    if tool.hintKey then
+        local t = L(tool.hintKey)
+        if t then return t end
+    end
+    return tool.hint or ""
+end
+
 -- ============================================================
 -- TAB: ENTWICKLER (DevMode Checkbox)
 -- ============================================================
@@ -25,7 +42,7 @@ function HubSettings:_BuildTabDeveloper(parent)
     local P = UI.BOX_PAD
     local devBox, devContent = UI.CreateBox(parent,
         L("hubsettings_dev_section") or "Entwickler",
-        P, 0, 0, 200, P)
+        P, 0, 0, 280, P)
 
     local devDesc = devContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     devDesc:SetPoint("TOPLEFT", devContent, "TOPLEFT", 0, 0)
@@ -58,6 +75,7 @@ function HubSettings:_BuildTabDeveloper(parent)
     end)
     local locked = ArcadiaNexus.DevAccessLocked and ArcadiaNexus.DevAccessLocked()
     local allowed = not ArcadiaNexus.CanAccessDevMode or ArcadiaNexus.CanAccessDevMode()
+    local anchorBelow = devCB
     if locked and not allowed then
         local lockFS = devContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         lockFS:SetPoint("TOPLEFT", devCB, "BOTTOMLEFT", 0, -10)
@@ -68,6 +86,7 @@ function HubSettings:_BuildTabDeveloper(parent)
         lockFS:SetText(L("hubsettings_dev_locked") or
             "Developer-Modus ist an eine Charakter-Allowlist gebunden.")
         devCB:SetEnabled(false)
+        anchorBelow = lockFS
     elseif not locked then
         local hintFS = devContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         hintFS:SetPoint("TOPLEFT", devCB, "BOTTOMLEFT", 0, -10)
@@ -77,33 +96,51 @@ function HubSettings:_BuildTabDeveloper(parent)
         hintFS:SetTextColor(0.70, 0.65, 0.50)
         hintFS:SetText(L("hubsettings_dev_allowlist_hint") or
             "Noch nicht verriegelt. /andevwho ausführen und den Key in Core/DevAccess.lua eintragen.")
+        anchorBelow = hintFS
     end
     self._devModeCB = devCB
 
-    local editorBtn = UI.CreateArcadiaButton(devContent,
-        L("hubsettings_dev_leveleditor") or "Level-Editor", 160, 28)
-    editorBtn:ClearAllPoints()
-    editorBtn:SetPoint("TOPLEFT", devCB, "BOTTOMLEFT", 0, -42)
-    editorBtn:SetScript("OnClick", function()
-        if ArcadiaNexus.LevelEditor and ArcadiaNexus.LevelEditor.Toggle then
-            ArcadiaNexus.LevelEditor.Toggle()
+    local tools = ArcadiaNexus.DevToolRegistry
+        and ArcadiaNexus.DevToolRegistry.GetVisible
+        and ArcadiaNexus.DevToolRegistry.GetVisible()
+        or {}
+
+    if #tools == 0 then
+        local emptyFS = devContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        emptyFS:SetPoint("TOPLEFT", anchorBelow, "BOTTOMLEFT", 0, -24)
+        emptyFS:SetPoint("RIGHT", devContent, "RIGHT", 0, 0)
+        emptyFS:SetJustifyH("LEFT")
+        emptyFS:SetWordWrap(true)
+        emptyFS:SetTextColor(0.70, 0.65, 0.50)
+        emptyFS:SetText(L("hubsettings_dev_editors_missing") or
+            "Kein Editor-Addon geladen. ArcadiaNexusEditors installieren (DevMode).")
+        return
+    end
+
+    local prev = nil
+    for i, tool in ipairs(tools) do
+        local btn = UI.CreateArcadiaButton(devContent, ToolLabel(tool), 160, 28)
+        btn:ClearAllPoints()
+        if prev then
+            btn:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -8)
+        else
+            btn:SetPoint("TOPLEFT", anchorBelow, "BOTTOMLEFT", 0, -24)
         end
-    end)
-    local editorHint = devContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    editorHint:SetPoint("LEFT", editorBtn, "RIGHT", 10, 0)
-    editorHint:SetTextColor(0.70, 0.65, 0.50)
-    local pinballBtn = UI.CreateArcadiaButton(devContent, "Pinball Editor", 160, 28)
-    pinballBtn:SetPoint("TOPLEFT", editorBtn, "BOTTOMLEFT", 0, -8)
-    pinballBtn:SetScript("OnClick", function()
-        if ArcadiaNexus.PinballTableEditor and ArcadiaNexus.PinballTableEditor.Toggle then
-            ArcadiaNexus.PinballTableEditor.Toggle()
+        local toggleFn = tool.Toggle
+        btn:SetScript("OnClick", function()
+            if type(toggleFn) == "function" then
+                toggleFn()
+            end
+        end)
+        local hint = ToolHint(tool)
+        if hint ~= "" then
+            local hintFS = devContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            hintFS:SetPoint("LEFT", btn, "RIGHT", 10, 0)
+            hintFS:SetTextColor(0.70, 0.65, 0.50)
+            hintFS:SetText(hint)
         end
-    end)
-    local pinballHint = devContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    pinballHint:SetPoint("LEFT", pinballBtn, "RIGHT", 10, 0)
-    pinballHint:SetTextColor(0.70, 0.65, 0.50)
-    pinballHint:SetText("/anpedit - align pinball colliders to the table")
-    editorHint:SetText(L("hubsettings_dev_leveleditor_hint") or "/anledit  –  Phase 15: Erde / Treppen / Emitter (AA)")
+        prev = btn
+    end
 end
 
 -- ============================================================

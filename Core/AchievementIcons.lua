@@ -97,22 +97,27 @@ function AI:AuditAll()
 end
 
 --- Normalisiert alle Icons in AchievementData (nach Index-Aggregation).
-function AI:NormalizeAllRegistered()
-    local data = ArcadiaNexus.AchievementData
-    if not data then return end
-    local issues = {}
-    for _, group in ipairs(data) do
-        group._iconRaw = group.icon
-        if not self:IsValid(group.icon) then
-            issues[#issues + 1] = {
-                id     = group.id or "?",
-                gameId = group.gameId,
-                icon   = group.icon,
-            }
-        end
-        group.icon = self:Normalize(group.icon, group.id)
+function AI:NormalizeGroup(group)
+    if not group or group._iconNormalized then return end
+    group._iconRaw = group.icon
+    if not self:IsValid(group.icon) then
+        local issues = ArcadiaNexus._achievementIconAudit or {}
+        issues[#issues + 1] = {
+            id     = group.id or "?",
+            gameId = group.gameId,
+            icon   = group.icon,
+        }
+        ArcadiaNexus._achievementIconAudit = issues
     end
-    ArcadiaNexus._achievementIconAudit = issues
+    group.icon = self:Normalize(group.icon, group.id)
+    group._iconNormalized = true
+end
+
+function AI:NormalizeAllRegistered()
+    ArcadiaNexus._achievementIconAudit = ArcadiaNexus._achievementIconAudit or {}
+    for _, group in ipairs(ArcadiaNexus.AchievementData or {}) do
+        self:NormalizeGroup(group)
+    end
 end
 
 --- Prüft registrierte Achievements anhand der Original-Icon-Werte.
@@ -120,7 +125,8 @@ function AI:AuditRegistered()
     local data   = ArcadiaNexus.AchievementData or {}
     local issues = {}
     for _, group in ipairs(data) do
-        local raw = group._iconRaw or group.icon
+        local raw = group._iconNormalized and group._iconRaw or group.icon
+        if group._iconNormalized and group._iconRaw == nil then raw = nil end
         if not self:IsValid(raw) then
             issues[#issues + 1] = {
                 id     = group.id or "?",

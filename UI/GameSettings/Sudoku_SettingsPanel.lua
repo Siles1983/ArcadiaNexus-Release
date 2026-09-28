@@ -39,7 +39,6 @@ local function BuildSudokuSettingsPanel(parent)
                 },
             },
         },
-        rebuild = BuildSudokuSettingsPanel,
     })
 end
 

@@ -65,9 +65,9 @@ local DB_DEFAULTS = {
         unlocked = {},
         progress = {},
     },
-    streak       = { current = 0, best = 0, lastLogin = 0, claimedToday = false },
+    streak       = { current = 0, best = 0, lastLogin = 0 },
     challenges   = { daily = {}, weekly = {}, history = { completedTotal = 0, goldEarned = 0 } },
-    tavernGold   = { balance = 0, lifetime = 0, log = {} },
+    tavernGold   = { balance = 0, lifetime = 0, log = {}, lastFirstGameDay = 0 },
     toastAnchor  = { x = 0, y = -200 },
     gotdAnchor   = { x = 0, y = -220 },
     windowPos    = nil,   -- gespeicherte Fensterposition (wird beim Verschieben gefüllt)

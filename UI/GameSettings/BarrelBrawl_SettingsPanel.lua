@@ -32,7 +32,6 @@ local function BuildBarrelBrawlSettingsPanel(parent)
                 }),
             },
         },
-        rebuild = BuildBarrelBrawlSettingsPanel,
     })
 end
 

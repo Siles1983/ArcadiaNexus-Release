@@ -62,6 +62,12 @@ local function Loc()
     return ArcadiaNexus.GetLocaleTable(GAME_ID)
 end
 
+local function DeviceEnabled(gs, object)
+    if not object or not object.activation then return true end
+    local Logic = ArcadiaNexus.DMP_Logic
+    return not Logic or not Logic.IsActivationMet or Logic:IsActivationMet(gs, object.activation)
+end
+
 local function FormatScore(n)
     if ArcadiaNexus.Format and ArcadiaNexus.Format.Score then
         return ArcadiaNexus.Format.Score(n or 0)
@@ -576,6 +582,10 @@ end
 
 function R:UpdateHUD(gs)
     local L = Loc()
+    local hud = (gs and gs.def and gs.def.hud) or {}
+    if self._scoreBox then self._scoreBox:SetShown(hud.score ~= false) end
+    if self._ballsBox then self._ballsBox:SetShown(hud.balls ~= false) end
+    if self._comboBox then self._comboBox:SetShown(hud.combo ~= false) end
     if self._scoreFS then
         self._scoreFS:SetText((L.lbl_score or "Score") .. ": " .. FormatScore(gs and gs.score or 0))
         self._scoreFS:SetTextColor(1.0, 0.84, 0.36)
@@ -618,7 +628,7 @@ function R:UpdateHUD(gs)
             self._missionFS:SetTextColor(0.88, 0.72, 1.0)
         end
         if self._missionBox then
-            if text ~= "" then self._missionBox:Show() else self._missionBox:Hide() end
+            if hud.mission ~= false and text ~= "" then self._missionBox:Show() else self._missionBox:Hide() end
         end
     end
 end
@@ -648,7 +658,7 @@ function R:_ApplyPlayfield(theme)
     end
 end
 
-function R:_Spr(path, x, y, w, h, rot, a, mirrorX)
+function R:_Spr(path, x, y, w, h, rot, a, mirrorX, color)
     if not path or not self._sprLayer then return end
     self._sprUsed = (self._sprUsed or 0) + 1
     local tex = self._spr[self._sprUsed]
@@ -664,7 +674,8 @@ function R:_Spr(path, x, y, w, h, rot, a, mirrorX)
     tex:ClearAllPoints()
     tex:SetSize(w * WS(), h * WS())
     tex:SetPoint("CENTER", self._fieldFrame, "TOPLEFT", x * WS(), -y * WS())
-    tex:SetVertexColor(1, 1, 1, a or 1)
+    local c = color or {1, 1, 1}
+    tex:SetVertexColor(c[1] or 1, c[2] or 1, c[3] or 1, a or 1)
     if tex.SetRotation then tex:SetRotation(rot or 0) end
 end
 
@@ -673,6 +684,37 @@ function R:_HideSprites()
         self._spr[i]:Hide()
     end
     self._sprUsed = 0
+end
+
+-- Decorative labels deliberately live in the renderer: they have no physics,
+-- score, or input responsibilities.  Keeping a small pool avoids allocating
+-- font strings during a busy multiball.
+function R:_DrawTextFields(gs)
+    self._textFields = self._textFields or {}
+    local used, def = 0, gs and gs.def
+    for _, q in ipairs((def and def.textFields) or {}) do
+        if DeviceEnabled(gs, q) then
+            used = used + 1
+            local fs = self._textFields[used]
+            if not fs then
+                fs = self._fieldFrame:CreateFontString(nil, "OVERLAY")
+                self._textFields[used] = fs
+            end
+            local phase = (gs.elapsed or 0) * (q.speed or 4)
+            local pulse = q.animation == "pulse" and (.72 + .28 * math.sin(phase)) or 1
+            local flash = q.animation == "flash" and ((math.floor((gs.elapsed or 0) * (q.speed or 4)) % 2 == 0) and 1 or .22) or 1
+            local fade = q.animation == "fade" and (.18 + .82 * ((math.sin(phase) + 1) * .5)) or 1
+            local explode = q.animation == "explode" and (.72 + 1.05 * ((math.sin(phase) + 1) * .5)) or 1
+            local c, s = q.color or {1, .82, .25}, WS()
+            fs:ClearAllPoints()
+            fs:SetPoint("CENTER", self._fieldFrame, "TOPLEFT", (q.x or 140) * s, -(q.y or 220) * s)
+            fs:SetText(q.text or "TEXT")
+            fs:SetFont(STANDARD_TEXT_FONT, math.max(8, q.size or 14) * s * explode, q.bold and "THICKOUTLINE" or (q.outline and "OUTLINE" or ""))
+            fs:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, (q.alpha or 1) * pulse * flash * fade)
+            fs:Show()
+        end
+    end
+    for i = used + 1, #(self._textFields or {}) do self._textFields[i]:Hide() end
 end
 
 function R:_DrawSprites(gs)
@@ -685,6 +727,19 @@ function R:_DrawSprites(gs)
     local def = gs.def
     local chaseActive = gs.multiball or gs.mission or (gs.combo or 0) >= 3 or (gs.scoreFrenzyT or 0) > 0
     local chaseStep = math.floor((gs.elapsed or 0) * (gs.multiball and 10 or 6))
+    for _, light in ipairs(def.lights or {}) do
+        if DeviceEnabled(gs, light) then
+            local pulse = light.pulse and (.78 + .22 * math.sin((gs.elapsed or 0) * (light.pulseSpeed or 4))) or 1
+            self:_Spr(AssetGet("fx", "glow"), light.x or 140, light.y or 220,
+                (light.radius or 18) * 2, (light.radius or 18) * 2, 0, (light.alpha or .7) * pulse, nil, light.color)
+        end
+    end
+    for _, q in ipairs(def.decorations or {}) do
+        if DeviceEnabled(gs, q) then
+            self:_Spr(AssetGet("decor", q.asset), q.x or 140, q.y or 220,
+                q.w or q.size or 24, q.h or q.size or 24, q.rotation or 0, q.alpha or 1, q.flipX)
+        end
+    end
     if def.slingshots then
         for i = 1, #def.slingshots do
             local s = def.slingshots[i]
@@ -725,41 +780,46 @@ function R:_DrawSprites(gs)
     if def.inlanes then
         for i = 1, #def.inlanes do
             local ln = def.inlanes[i]
+            local enabled = DeviceEnabled(gs, ln)
             local st = "off"
             if gs.kickbackArmed and gs.kickbackArmed[ln.side] then st = "lit" end
             if chaseActive and ((i - 1) == (chaseStep % #def.inlanes)) then st = "completed" end
             local mx, my = (ln.x1 + ln.x2) * 0.5, (ln.y1 + ln.y2) * 0.5
-            self:_Spr(AssetGet("lane", st), mx, my, ln.x2 - ln.x1, 12, 0, 0.9)
+            self:_Spr(AssetGet("lane", st), mx, my, ln.x2 - ln.x1, 12, 0, enabled and 0.9 or 0.22)
         end
     end
     if def.outlanes then
         for i = 1, #def.outlanes do
             local o = def.outlanes[i]
+            local enabled = DeviceEnabled(gs, o)
             local st = "idle"
             if gs.kickbackArmed and gs.kickbackArmed[o.side] then st = "armed" end
             if gs.kickbackT and (gs.kickbackT[o.side] or 0) > 0 and gs.kickbackArmed and not gs.kickbackArmed[o.side] then
                 st = "fire"
             end
             local mx = (o.x1 + o.x2) * 0.5
-            self:_Spr(AssetGet("kickback", st), mx, o.y1 + 8, 22, 22, 0, 0.95)
+            self:_Spr(AssetGet("kickback", st), mx, o.y1 + 8, 22, 22, 0, enabled and 0.95 or 0.22)
         end
     end
     if def.lock then
         local lk = def.lock
-        local on = gs.mission and gs.mission.id == "arcane_lock"
-        self:_Spr(AssetGet("light", on and "on" or "off"), (lk.x1 + lk.x2) * 0.5, (lk.y1 + lk.y2) * 0.5, 16, 16, 0, 1)
+        local enabled = DeviceEnabled(gs, lk)
+        local on = enabled and gs.mission and gs.mission.id == "arcane_lock"
+        self:_Spr(AssetGet("light", on and "on" or "off"), (lk.x1 + lk.x2) * 0.5, (lk.y1 + lk.y2) * 0.5, 16, 16, 0, enabled and 1 or 0.22)
     end
     if def.jackpot then
         local jp = def.jackpot
-        local flash = gs.multiball
-        self:_Spr(AssetGet("light", flash and "flash" or "off"), (jp.x1 + jp.x2) * 0.5, (jp.y1 + jp.y2) * 0.5, 18, 18, 0, 1)
+        local enabled = DeviceEnabled(gs, jp)
+        local flash = enabled and gs.multiball
+        self:_Spr(AssetGet("light", flash and "flash" or "off"), (jp.x1 + jp.x2) * 0.5, (jp.y1 + jp.y2) * 0.5, 18, 18, 0, enabled and 1 or 0.22)
         if flash then
             self:_Spr(AssetGet("arrow", "base"), (jp.x1 + jp.x2) * 0.5, jp.y1 - 10, 16, 16, 0, 1)
         end
     end
     for i = 1, #(gs.flippers or {}) do
         local f = gs.flippers[i]
-        local active = math.abs((f.angle or 0) - (f.restAngle or 0)) > 0.08
+        local enabled = f.enabled ~= false
+        local active = enabled and math.abs((f.angle or 0) - (f.restAngle or 0)) > 0.08
         local mx = f.px + math.cos(f.angle) * f.length * 0.5
         local my = f.py + math.sin(f.angle) * f.length * 0.5
         local state = active and "activeGlow" or "base"
@@ -771,7 +831,7 @@ function R:_DrawSprites(gs)
             renderAngle = renderAngle + math.pi
         end
         self:_Spr(AssetGet("flipper", state),
-            mx, my, f.length + 14, f.radius * 5, renderAngle, 1
+            mx, my, f.length + 14, f.radius * 5, renderAngle, enabled and 1 or 0.28
         )
     end
     local lane = def.launchLane or {}
@@ -897,21 +957,23 @@ function R:_DrawTable(gs)
     if def.outlanes then
         for i = 1, #def.outlanes do
             local o = def.outlanes[i]
+            local enabled = DeviceEnabled(gs, o)
             local armed = gs.kickbackArmed and gs.kickbackArmed[o.side]
             local save = (gs.outlaneSaveT or 0) > 0
             local r, g, b = 0.85, 0.25, 0.2
             if armed or save then r, g, b = 0.25, 0.9, 0.4 end
-            self:_DrawSeg(o.x1, o.y1, o.x2, o.y1, r, g, b, 0.9)
-            self:_DrawSeg(o.x1, o.y2, o.x2, o.y2, r, g, b, 0.55)
+            self:_DrawSeg(o.x1, o.y1, o.x2, o.y1, r, g, b, enabled and 0.9 or 0.18)
+            self:_DrawSeg(o.x1, o.y2, o.x2, o.y2, r, g, b, enabled and 0.55 or 0.11)
         end
     end
     if def.inlanes then
         for i = 1, #def.inlanes do
             local o = def.inlanes[i]
+            local enabled = DeviceEnabled(gs, o)
             local armed = gs.kickbackArmed and gs.kickbackArmed[o.side]
             local r, g, b = 0.4, 0.7, 1
             if armed then r, g, b = 0.3, 1, 0.55 end
-            self:_DrawSeg(o.x1, o.y1, o.x2, o.y1, r, g, b, 0.85)
+            self:_DrawSeg(o.x1, o.y1, o.x2, o.y1, r, g, b, enabled and 0.85 or 0.18)
         end
     end
     for i = 1, #def.bumpers do
@@ -926,11 +988,12 @@ function R:_DrawTable(gs)
     if def.ramps then
         for i = 1, #def.ramps do
             local r = def.ramps[i]
+            local enabled = DeviceEnabled(gs, r)
             local pulse = 0.55 + 0.35 * math.abs(math.sin((gs.elapsed or 0) * 7))
             local lit = gs.rampQual and r.side and gs.rampQual[r.side]
             local a = lit and pulse or 0.85
-            self:_DrawSeg(r.x1, r.y1, r.x2, r.y1, 0.45, 0.85, 1, a)
-            self:_DrawSeg(r.x1, r.y2, r.x2, r.y2, 0.45, 0.85, 1, a * 0.6)
+            self:_DrawSeg(r.x1, r.y1, r.x2, r.y1, 0.45, 0.85, 1, enabled and a or 0.18)
+            self:_DrawSeg(r.x1, r.y2, r.x2, r.y2, 0.45, 0.85, 1, enabled and a * 0.6 or 0.11)
         end
     end
     if def.targets then
@@ -944,20 +1007,22 @@ function R:_DrawTable(gs)
     end
     if def.lock then
         local lk = def.lock
+        local enabled = DeviceEnabled(gs, lk)
         local a = (gs.mission and gs.mission.id == "arcane_lock") and 0.95 or 0.55
-        self:_DrawSeg(lk.x1, lk.y1, lk.x2, lk.y1, 0.75, 0.4, 1, a)
-        self:_DrawSeg(lk.x1, lk.y2, lk.x2, lk.y2, 0.75, 0.4, 1, a * 0.6)
+        self:_DrawSeg(lk.x1, lk.y1, lk.x2, lk.y1, 0.75, 0.4, 1, enabled and a or 0.18)
+        self:_DrawSeg(lk.x1, lk.y2, lk.x2, lk.y2, 0.75, 0.4, 1, enabled and a * 0.6 or 0.11)
     end
     if def.jackpot then
         local jp = def.jackpot
+        local enabled = DeviceEnabled(gs, jp)
         local a = gs.multiball and 1 or 0.4
-        self:_DrawSeg(jp.x1, jp.y1, jp.x2, jp.y1, 1, 0.85, 0.25, a)
-        self:_DrawSeg(jp.x1, jp.y2, jp.x2, jp.y2, 1, 0.85, 0.25, a * 0.6)
+        self:_DrawSeg(jp.x1, jp.y1, jp.x2, jp.y1, 1, 0.85, 0.25, enabled and a or 0.18)
+        self:_DrawSeg(jp.x1, jp.y2, jp.x2, jp.y2, 1, 0.85, 0.25, enabled and a * 0.6 or 0.11)
     end
     if def.kickers then
         for i = 1, #def.kickers do
             local k = def.kickers[i]
-            self:_DrawCirc(k.x, k.y, k.r, 0.95, 0.55, 0.2, 0.7)
+            self:_DrawCirc(k.x, k.y, k.r, 0.95, 0.55, 0.2, DeviceEnabled(gs, k) and 0.7 or 0.16)
         end
     end
     if def.posts then
@@ -970,12 +1035,13 @@ function R:_DrawTable(gs)
         local f = gs.flippers[i]
         local tx = f.px + math.cos(f.angle) * f.length
         local ty = f.py + math.sin(f.angle) * f.length
-        local active = math.abs((f.angle or 0) - (f.restAngle or 0)) > 0.08
+        local enabled = f.enabled ~= false
+        local active = enabled and math.abs((f.angle or 0) - (f.restAngle or 0)) > 0.08
         local r, g, b = 0.95, 0.82, 0.35
         if active then r, g, b = 1, 0.95, 0.55 end
-        self:_DrawSeg(f.px, f.py, tx, ty, r, g, b, 1)
-        self:_DrawCirc(f.px, f.py, 3, 1, 0.9, 0.4, 1)
-        self:_DrawCirc(tx, ty, f.radius, r, g, b, 0.7)
+        self:_DrawSeg(f.px, f.py, tx, ty, r, g, b, enabled and 1 or 0.25)
+        self:_DrawCirc(f.px, f.py, 3, 1, 0.9, 0.4, enabled and 1 or 0.25)
+        self:_DrawCirc(tx, ty, f.radius, r, g, b, enabled and 0.7 or 0.18)
     end
     for i = 1, #gs.balls do
         local ball = gs.balls[i]
@@ -1301,6 +1367,7 @@ end
 function R:UpdateView(gs, dt)
     self:UpdateHUD(gs)
     self:_DrawSprites(gs)
+    self:_DrawTextFields(gs)
     self:_DrawTable(gs)
     self:_DrawFx(gs, dt or 0)
     self:_TickEye(dt or 0)

@@ -2,7 +2,7 @@
 ## Title: Arcadia Nexus
 ## Notes: Arcadia Nexus - Mini-Game Framework
 ## Author: Siles
-## Version: 1.1.5
+## Version: 1.1.6
 ## IconTexture: Interface\Icons\INV_Misc_Dice_01
 ## SavedVariables: ArcadiaNexusDB
 ## OptionalDeps: ConsolePort
@@ -15,6 +15,8 @@ Core/GameRegistry.lua
 Core/CategoryRegistry.lua
 Core/TabRegistry.lua
 Core/HubSettingsTabRegistry.lua
+Core/DevToolRegistry.lua
+Core/DevPlaytest.lua
 
 Core/DevAccess.lua
 Core/Debug.lua
@@ -27,6 +29,13 @@ UI/Core/FramePool.lua
 Core/Format.lua
 Core/ArrayUtils.lua
 Core/LevelPool.lua
+Core/TopDown/Catalog.lua
+Core/TopDown/Tileset.lua
+Core/TopDown/Serialize.lua
+Core/TopDown/Logic.lua
+Core/DungeonGenerator.lua
+Core/DungeonTopology.lua
+Core/DungeonRoomLayout.lua
 Core/CampaignProgress.lua
 Core/GameSession.lua
 Core/GameLifecycle.lua
@@ -366,14 +375,6 @@ Games/BarrelBrawl/Renderer.lua
 Games/BarrelBrawl/BarrelBrawl_Achievements.lua
 Games/BarrelBrawl/BarrelBrawl_Leaderboard.lua
 
-Dev/LevelEditor/Language.lua
-Dev/LevelEditor/Catalog.lua
-Dev/LevelEditor/Serialize.lua
-Dev/LevelEditor/Sample_Showcase.lua
-Dev/LevelEditor/Editor.lua
-Dev/PinballTableEditor.lua
-Dev/PinballTableEditor_Objects.lua
-
 Games/AlchemistsSort/Language.lua
 Games/AlchemistsSort/Settings.lua
 Games/AlchemistsSort/Colors.lua
@@ -437,6 +438,7 @@ UI/Core/GameControlsBar.lua
 UI/Dialogs/GameResultDialog.lua
 UI/Dialogs/GameResultHelpers.lua
 UI/Dialogs/SaveSlotMenu.lua
+UI/Dialogs/CampaignMap.lua
 UI/Core/TabsController.lua
 UI/HubTabs/HubTab_Games.lua
 UI/HubTabs/HubTab_Match.lua

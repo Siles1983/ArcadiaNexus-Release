@@ -661,7 +661,6 @@ end
       showReset  – Reset-Button anzeigen (default true)
       onReset    – optional, nach S:Reset()
       refresh    – optional, nach dem zentralen Widget-Refresh
-      rebuild    – ungenutzt (Reset baut nicht mehr neu)
 ]]
 function GS.Build(parent, config)
     if not parent or not config or not config.settings then return end

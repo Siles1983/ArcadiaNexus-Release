@@ -117,11 +117,12 @@ local function Unesc(s)
 end
 
 function P.AddonVersion()
-    if GetAddOnMetadata then
-        local v = GetAddOnMetadata("ArcadiaNexus", "Version")
+    local metadata = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
+    if metadata then
+        local v = metadata("ArcadiaNexus", "Version")
         if v and v ~= "" then return v end
     end
-    return "1.1.0"
+    return "unknown"
 end
 
 --- @param msgType string

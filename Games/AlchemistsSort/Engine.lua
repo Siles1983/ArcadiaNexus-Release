@@ -7,6 +7,7 @@
 --                  ↘ HINT (Sub, 2s)  ↗
 --                  ↘ WIN
 --                  ↘ PAUSED
+--                  ↘ LEVEL_SELECT (gespeicherte Pause oder Sieg)
 --
 --  Regeln:
 --  - Während POURING: alle Klicks ignoriert (_animating-Flag)
@@ -46,7 +47,6 @@ E._timerGuard       = _timerGuard
 
 -- Sounds
 local SND_BASE    = "Interface\\AddOns\\ArcadiaNexus\\Games\\AlchemistsSort\\Assets\\sounds\\"
-local SND_POUR    = SND_BASE .. "flow.wav"
 local SND_WIN     = SND_BASE .. "win.wav"
 local SND_INVALID = SOUNDKIT and SOUNDKIT.UI_MINIMAP_PING or 1
 
@@ -66,6 +66,8 @@ end
 
 function E:_InvalidateTimers()
     _timerGuard:Cancel()
+    local R = ArcadiaNexus.ALS_Renderer
+    if R and R.CancelTransientEffects then R:CancelTransientEffects() end
 end
 
 function E:_SetState(newState)
@@ -139,6 +141,7 @@ function E:StartLevel(levelNum)
     self:_StopTimer()
 
     local R = ArcadiaNexus.ALS_Renderer
+    if R and R.HideLevelSelect then R:HideLevelSelect() end
     if R and R.ShowLoading then R:ShowLoading() end
 
     local Gen = ArcadiaNexus.ALS_LevelGen
@@ -328,6 +331,7 @@ function E:_CheckWinOrContinue()
 end
 
 function E:_OnWin()
+    if self.state == "WIN" then return end
     self:_StopTimer()
     self:_SetState("WIN")
 
@@ -341,11 +345,18 @@ function E:_OnWin()
     local timeBonus   = math.max(0, 300 - math.floor(elapsed)) * 2
     local score       = math.max(0, baseScore - movePenalty + timeBonus)
 
+    local grade = ArcadiaNexus.ALS_Logic:GradeCampaignStars({
+        tubes = self._tubes,
+        usedUndo = self._usedUndo,
+        usedHint = self._usedHint,
+        usedAddTube = self._usedAddTube,
+    })
+    local bestStars = S:RecordLevel(lvl, grade)
+
     -- Statistiken
     S:IncrementSolved()
     S:SubmitScore(score)
     S:SubmitLevelBest(lvl, self._moveCount, elapsed)
-    S:UnlockLevel(lvl + 1)
     S:SetCurrentLevel(lvl + 1)
     S:ClearMidGame(S:GetActiveSlot())
     S:IncrementStreak()
@@ -369,12 +380,15 @@ function E:_OnWin()
                 usedUndo     = self._usedUndo,
                 usedHint     = self._usedHint,
                 usedAddTube  = self._usedAddTube,
+                stars        = grade,
+                bestStars    = bestStars,
+                totalStars   = S:SumStars(S:LoadSlot(S:GetActiveSlot())),
             },
         })
     end
 
     local R = ArcadiaNexus.ALS_Renderer
-    if R then R:ShowWinOverlay(score, self._moveCount, elapsed) end
+    if R then R:ShowWinOverlay(score, self._moveCount, elapsed, grade, bestStars) end
 end
 
 -- ── Aktionen: Reset, Tipp, Leere Röhre ───────────────────────
@@ -426,8 +440,10 @@ function E:RequestHint()
     local R = ArcadiaNexus.ALS_Renderer
     if R then
         R:SetSelected(nil)
+        local sid = self._sessionId
         R:ShowHint(srcIdx, dstIdx, function()
-            if self.state == "HINT" then
+            if self._sessionId == sid and ArcadiaNexus.GameSession:IsSession(self, sid)
+               and self.state == "HINT" then
                 self:_SetState("PLAYING")
             end
         end)
@@ -500,15 +516,52 @@ end
 
 function E:SaveAndStop()
     local S = ArcadiaNexus.ALS_Settings
-    if S and self.state ~= "IDLE" and self.state ~= "WIN" then
+    if S and self.state ~= "IDLE" and self.state ~= "WIN" and self.state ~= "LEVEL_SELECT" then
         S:SaveMidGame(S:GetActiveSlot(), self:_CaptureMidGame())
     end
     self:StopGame()
 end
 
+function E:OpenLevelSelect()
+    if self._animating or (self.state ~= "PLAYING" and self.state ~= "SELECTED"
+        and self.state ~= "HINT" and self.state ~= "WIN"
+        and self.state ~= "IDLE" and self.state ~= "LEVEL_SELECT") then return false end
+
+    local S = ArcadiaNexus.ALS_Settings
+    if not S:LoadSlot(S:GetActiveSlot()) then return false end
+
+    self:SaveAndStop()
+    self:_SetState("LEVEL_SELECT")
+    local R = ArcadiaNexus.ALS_Renderer
+    if R and R.ShowLevelSelect then R:ShowLevelSelect(S:LoadSlot(S:GetActiveSlot())) end
+    return true
+end
+
+function E:SelectLevel(level)
+    if self.state ~= "LEVEL_SELECT" then return false end
+    level = tonumber(level)
+    local S = ArcadiaNexus.ALS_Settings
+    if not S:IsLevelUnlocked(level) then
+        return false
+    end
+    S:ClearMidGame(S:GetActiveSlot())
+    self:StartLevel(level)
+    return true
+end
+
+function E:ResumeSelectedLevel()
+    if self.state ~= "LEVEL_SELECT" then return false end
+    local S = ArcadiaNexus.ALS_Settings
+    local save = S:LoadSlot(S:GetActiveSlot())
+    if not save or not save.midGame then return false end
+    self:ResumeMidGame(save.midGame)
+    return true
+end
+
 function E:ResumeMidGame(mid)
     local Logic = ArcadiaNexus.ALS_Logic
     local R     = ArcadiaNexus.ALS_Renderer
+    if R and R.HideLevelSelect then R:HideLevelSelect() end
     if not mid or not Logic then
         self:StartLevel(1)
         return
@@ -563,8 +616,9 @@ function E:StartGame(config)
     local save = S:LoadSlot(slot)
 
     if mode == "new" then
+        self:StopGame()
         S:ResetSlot(slot)
-        self:StartLevel(1)
+        self:OpenLevelSelect()
         return
     end
 

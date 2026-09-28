@@ -147,7 +147,6 @@ local function BuildArcadiaPairsSettingsPanel(parent)
                 }),
             },
         },
-        rebuild = BuildArcadiaPairsSettingsPanel,
     })
 end
 

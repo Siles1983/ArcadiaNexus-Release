@@ -62,7 +62,6 @@ local function BuildWhackAMoleSettingsPanel(parent)
                 }),
             },
         },
-        rebuild = BuildWhackAMoleSettingsPanel,
     })
 end
 

@@ -7,6 +7,7 @@
       2. XPManager         → Profil-XP, Level-Up
       3. AchievementManager → Achievements prüen / freischalten
       4. ChallengeManager  → Daily/Weekly-Fortschritt
+      5. StreakManager     → erstes gezähltes Spiel des Tages
 
     API:
       ArcadiaNexus.GameResultProcessor:Init()
@@ -50,9 +51,12 @@ function GRP:Process(data)
     end
 
     self:_RunStep("ScoreManager", ArcadiaNexus.ScoreManager, "HandleGameResult", data)
+    -- Zwischenstände aktualisieren nur Scores und Spielstatistiken.
+    if data.recordPlayed == false then return true end
     self:_RunStep("XPManager", ArcadiaNexus.XPManager, "HandleGameResult", data)
     self:_RunStep("AchievementManager", ArcadiaNexus.AchievementManager, "HandleGameResult", data)
     self:_RunStep("ChallengeManager", ArcadiaNexus.ChallengeManager, "HandleGameResult", data)
+    self:_RunStep("StreakManager", ArcadiaNexus.StreakManager, "HandleGameResult", data)
     return true
 end
 

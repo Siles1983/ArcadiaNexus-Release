@@ -127,17 +127,6 @@ local CFG = {
     goal_pu_y     = -170,
     goal_pu_alpha = 0.75,
 
-    -- Levelkarte (10 Kacheln, 2×5) + Goldrahmen wie HUD
-    map_tile_w      = 54,
-    map_tile_h      = 62,
-    map_gap_x       = 8,
-    map_gap_y       = 10,
-    map_panel_w     = 348,
-    map_panel_h     = 268,
-    map_panel_alpha = 0.75,
-    map_pad         = 10,
-    map_header_h    = 58,
-
     -- Combo-Anzeige (über dem Board)
     combo_y       = 190,
 
@@ -184,6 +173,7 @@ R._slotMenu      = nil
 local _fxGuard = ArcadiaNexus.TimerGuard.New()
 local _animLoop = ArcadiaNexus.GameLoop.Create("ArcadiaNexus_AJ_Renderer_AnimLoop")
 local _hintLoop = ArcadiaNexus.GameLoop.Create("ArcadiaNexus_AJ_Renderer_HintLoop")
+local _dragLoop = ArcadiaNexus.GameLoop.Create("ArcadiaNexus_AJ_Renderer_DragLoop")
 
 local function StartAnimLoop(tickFn)
     _animLoop:Stop()
@@ -382,6 +372,7 @@ local function MakeCell(parent, size)
     local f = CreateFrame("Button", nil, parent, "BackdropTemplate")
     f:SetSize(size, size)
     f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    f:RegisterForDrag("LeftButton")
     f:SetBackdrop({
         bgFile   = "Interface\\Buttons\\WHITE8X8",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
@@ -434,6 +425,8 @@ local function AcquireCell(parent, size)
     f:SetScript("OnClick", nil)
     f:SetScript("OnMouseDown", nil)
     f:SetScript("OnMouseUp", nil)
+    f:SetScript("OnDragStart", nil)
+    f:SetScript("OnDragStop", nil)
     f:SetScript("OnEnter", nil)
     f:SetScript("OnLeave", nil)
     if f.animTick then f.animTick:SetScript("OnUpdate", nil); f.animTick = nil end
@@ -453,6 +446,8 @@ local function ReleaseCell(f)
     f:SetScript("OnClick", nil)
     f:SetScript("OnMouseDown", nil)
     f:SetScript("OnMouseUp", nil)
+    f:SetScript("OnDragStart", nil)
+    f:SetScript("OnDragStop", nil)
     f:SetScript("OnEnter", nil)
     f:SetScript("OnLeave", nil)
     if f._tex  then f._tex:SetTexture(nil); f._tex:SetAlpha(1); f._tex:SetVertexColor(1,1,1,1) end
@@ -602,17 +597,6 @@ end
 -- ============================================================
 -- HUD
 -- ============================================================
-local function MakeHudPair(f, x, label)
-    local lbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    lbl:SetPoint("CENTER", f, "CENTER", x, CFG.hud_lbl_y)
-    lbl:SetTextColor(0.75, 0.70, 0.55)
-    lbl:SetText("|cffffd700" .. label .. "|r")
-    local val = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    val:SetPoint("CENTER", f, "CENTER", x, CFG.hud_val_y)
-    val:SetText("--")
-    return lbl, val
-end
-
 function R:_CreateHUD()
     local f = self._canvas
     local L = Loc()
@@ -1104,7 +1088,7 @@ function R:_ShowDragHover(row, col)
 end
 
 function R:_StopDragWatch()
-    if self._dragWatch then self._dragWatch:SetScript("OnUpdate", nil) end
+    _dragLoop:Stop()
 end
 
 -- Nachbarzelle unter dem Cursor. Nicht btn._row: WoW liefert MouseUp
@@ -1142,18 +1126,10 @@ function R:_FinishGemDrag()
 end
 
 function R:_BeginGemDrag(row, col)
-    self._skipClick = false
     self._drag = { row = row, col = col }
     local E = ArcadiaNexus.AJ_Engine
     if E and E._CancelIdleHint then E:_CancelIdleHint() end
-    local board = self._board
-    if not board then return end
-    if not self._dragWatch then
-        self._dragWatch = CreateFrame("Frame", nil, board)
-    else
-        self._dragWatch:SetParent(board)
-    end
-    self._dragWatch:SetScript("OnUpdate", function()
+    _dragLoop:Start(function()
         local d = R._drag
         if not d then
             R:_StopDragWatch()
@@ -1207,17 +1183,14 @@ function R:_BuildBoard(gs)
             cell:SetPoint("TOPLEFT", board, "TOPLEFT", (c - 1) * cs, -(r - 1) * cs)
             cell._row = r
             cell._col = c
-            cell:SetScript("OnMouseDown", function(btn, mouseButton)
-                if mouseButton ~= "LeftButton" then return end
+            cell:SetScript("OnMouseDown", function(_, mouseButton)
+                if mouseButton == "LeftButton" then R._skipClick = false end
+            end)
+            cell:SetScript("OnDragStart", function(btn)
                 if R._targeting then return end
-                local GI = ArcadiaNexus.GameInput
-                if GI and GI.UsesCursor and GI.UsesCursor() then return end
                 R:_BeginGemDrag(btn._row, btn._col)
             end)
-            cell:SetScript("OnMouseUp", function(_, mouseButton)
-                if mouseButton ~= "LeftButton" then return end
-                local GI = ArcadiaNexus.GameInput
-                if GI and GI.UsesCursor and GI.UsesCursor() then return end
+            cell:SetScript("OnDragStop", function()
                 R:_FinishGemDrag()
             end)
             cell:SetScript("OnClick", function(btn, mouseButton)
@@ -1225,6 +1198,7 @@ function R:_BuildBoard(gs)
                     R._skipClick = false
                     return
                 end
+                if R._drag then return end
                 local E = ArcadiaNexus.AJ_Engine
                 if E then
                     E:OnCellClick(btn._row, btn._col, mouseButton, IsShiftKeyDown())
@@ -1485,8 +1459,6 @@ function R:_CreateSlotMenu()
     })
 end
 
-local MAP_PAGE_SIZE = 10
-
 local function StarGlyphs(n)
     n = math.max(0, math.min(3, tonumber(n) or 0))
     if n <= 0 then return "—" end
@@ -1494,110 +1466,36 @@ local function StarGlyphs(n)
 end
 
 function R:_CreateLevelMap()
-    if self._mapFrame or not self._fieldFrame then return end
-    local UI = ArcadiaNexus.UI
-    local f = CreateFrame("Frame", nil, self._fieldFrame)
-    f:SetAllPoints(self._fieldFrame)
-    f:Hide()
-    self._mapFrame = f
-
-    local panel = CreateFrame("Frame", nil, f)
-    panel:SetSize(CFG.map_panel_w, CFG.map_panel_h)
-    panel:SetPoint("CENTER", f, "CENTER", 0, 8)
-    self._mapPanel = panel
-
-    if UI and UI.CreateGoldGridFrame then
-        self._mapGold = UI.CreateGoldGridFrame(f, panel, {
-            w         = CFG.map_panel_w,
-            h         = CFG.map_panel_h,
-            pad       = CFG.map_pad,
-            fillAlpha = CFG.map_panel_alpha,
-            levelAdd  = 1,
-        })
-        panel:SetFrameLevel((f:GetFrameLevel() or 1) + 4)
-    end
-
-    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", panel, "TOP", 0, -14)
-    title:SetTextColor(1, 0.85, 0.35)
-    self._mapTitleFS = title
-
-    local sub = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    sub:SetPoint("TOP", title, "BOTTOM", 0, -4)
-    sub:SetTextColor(0.80, 0.80, 0.70)
-    self._mapSubFS = sub
-
-    self._mapTiles = {}
-    local tw, th = CFG.map_tile_w, CFG.map_tile_h
-    local gx, gy = CFG.map_gap_x, CFG.map_gap_y
-    local cols = 5
-    local totalW = cols * tw + (cols - 1) * gx
-    local padX = math.floor((CFG.map_panel_w - totalW) / 2)
-    local topY = -(CFG.map_header_h or 58)
-
-    for i = 1, MAP_PAGE_SIZE do
-        local col = ((i - 1) % cols)
-        local row = math.floor((i - 1) / cols)
-        local btn = CreateFrame("Button", nil, panel, "BackdropTemplate")
-        btn:SetSize(tw, th)
-        btn:SetPoint("TOPLEFT", panel, "TOPLEFT",
-            padX + col * (tw + gx), topY - row * (th + gy))
-        btn:SetBackdrop({
-            bgFile   = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            tile = false, edgeSize = 1,
-            insets = { left = 1, right = 1, top = 1, bottom = 1 },
-        })
-        local num = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        num:SetPoint("CENTER", btn, "CENTER", 0, 8)
-        local stars = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        stars:SetPoint("CENTER", btn, "CENTER", 0, -12)
-        stars:SetTextColor(1, 0.82, 0.2)
-        btn._numFS = num
-        btn._starFS = stars
-        btn:SetScript("OnClick", function(selfBtn)
-            if selfBtn._locked then return end
-            local E = ArcadiaNexus.AJ_Engine
-            if E and E.SelectMapLevel then E:SelectMapLevel(selfBtn._level) end
-        end)
-        self._mapTiles[i] = btn
-    end
-
-    self._mapPrev = UI.CreateArcadiaButton(panel, "<", 36, 28)
-    self._mapPrev:SetPoint("BOTTOM", panel, "BOTTOM", -90, 12)
-    self._mapPrev:SetScript("OnClick", function()
-        R._mapPage = math.max(1, (R._mapPage or 1) - 1)
-        R:_RefreshLevelMap()
-    end)
-    self._mapNext = UI.CreateArcadiaButton(panel, ">", 36, 28)
-    self._mapNext:SetPoint("BOTTOM", panel, "BOTTOM", 90, 12)
-    self._mapNext:SetScript("OnClick", function()
-        local pages = R:_MapPageCount()
-        R._mapPage = math.min(pages, (R._mapPage or 1) + 1)
-        R:_RefreshLevelMap()
-    end)
-    self._mapPageFS = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    self._mapPageFS:SetPoint("BOTTOM", panel, "BOTTOM", 0, 18)
-    self._mapPageFS:SetTextColor(0.80, 0.80, 0.70)
-
-    self._mapEndless = UI.CreateArcadiaButton(f, Loc()["btn_endless"] or "Endlos", 110, 28)
-    self._mapEndless:SetPoint("TOP", panel, "BOTTOM", 0, -8)
-    self._mapEndless:SetScript("OnClick", function()
-        local E = ArcadiaNexus.AJ_Engine
-        if E and E.SelectEndless then E:SelectEndless() end
-    end)
-    self._mapEndless:Hide()
-end
-
-function R:_MapPageCount()
-    local Levels = ArcadiaNexus.AJ_Levels
-    local count = (Levels and Levels.COUNT) or 100
-    return math.max(1, math.ceil(count / MAP_PAGE_SIZE))
+    if self._campaignMap or not self._canvas then return end
+    self._campaignMap = ArcadiaNexus.UI.CreateCampaignMap({
+        parent = self._canvas,
+        getView = function()
+            local S = ArcadiaNexus.AJ_Settings
+            local count = ArcadiaNexus.AJ_Levels.COUNT
+            local save = R._mapSave
+            local L = Loc()
+            return {
+                levelCount = count,
+                currentLevel = save and save.level or 1,
+                titleFormat = L["map_title"],
+                subtitle = string.format(L["map_stars_total"] or "%d / %d", S:SumStars(save), count * 3),
+                lockedText = L["map_locked"],
+                actionLabel = save and (save.clearedLevel or 0) >= count and (L["btn_endless"] or "Endlos") or nil,
+                getLevel = function(level)
+                    return {
+                        unlocked = S:IsLevelUnlocked(save, level, count),
+                        text = StarGlyphs(S:GetStar(save, level)),
+                    }
+                end,
+            }
+        end,
+        onSelect = function(level) ArcadiaNexus.AJ_Engine:SelectMapLevel(level) end,
+        onAction = function() ArcadiaNexus.AJ_Engine:SelectEndless() end,
+    })
 end
 
 function R:_HideLevelMap()
-    if self._mapFrame then self._mapFrame:Hide() end
-    if self._mapGold then self._mapGold:Hide() end
+    if self._campaignMap then self._campaignMap:Hide() end
 end
 
 function R:ShowLevelMap(save, focusLevel)
@@ -1614,83 +1512,10 @@ function R:ShowLevelMap(save, focusLevel)
     local Levels = ArcadiaNexus.AJ_Levels
     local count = (Levels and Levels.COUNT) or 100
     local focus = math.max(1, math.min(focusLevel or (save and save.level) or 1, count))
-    self._mapPage = math.ceil(focus / MAP_PAGE_SIZE)
-    if self._mapFrame then self._mapFrame:Show() end
-    if self._mapGold then self._mapGold:Show() end
+    if self._campaignMap then self._campaignMap:Show(focus) end
     if self._hintFS then
         self._hintFS:Show()
         self:ShowHint(Loc()["hint_select_level"] or "")
-    end
-    self:_RefreshLevelMap()
-end
-
-function R:_RefreshLevelMap()
-    local S = ArcadiaNexus.AJ_Settings
-    local Levels = ArcadiaNexus.AJ_Levels
-    local L = Loc()
-    local save = self._mapSave
-    local count = (Levels and Levels.COUNT) or 100
-    local pages = self:_MapPageCount()
-    local page = math.max(1, math.min(self._mapPage or 1, pages))
-    self._mapPage = page
-    local first = (page - 1) * MAP_PAGE_SIZE + 1
-    local last = math.min(count, page * MAP_PAGE_SIZE)
-    if self._mapTitleFS then
-        self._mapTitleFS:SetText(string.format(L["map_title"] or "Level %d–%d", first, last))
-    end
-    if self._mapSubFS then
-        local sum = S and S:SumStars(save) or 0
-        self._mapSubFS:SetText(string.format(L["map_stars_total"] or "%d / %d", sum, count * 3))
-    end
-    if self._mapPageFS then
-        self._mapPageFS:SetText(string.format("%d / %d", page, pages))
-    end
-    if self._mapEndless then
-        local unlocked = save and (save.clearedLevel or 0) >= count
-        if unlocked then self._mapEndless:Show() else self._mapEndless:Hide() end
-    end
-    local cursor = save and (save.level or 1) or 1
-    for i = 1, MAP_PAGE_SIZE do
-        local btn = self._mapTiles and self._mapTiles[i]
-        local level = first + i - 1
-        if btn then
-            if level > count then
-                btn:Hide()
-            else
-                btn:Show()
-                btn._level = level
-                local unlocked = S and S:IsLevelUnlocked(save, level, count)
-                btn._locked = not unlocked
-                btn._numFS:SetText(tostring(level))
-                if not unlocked then
-                    btn:SetBackdropColor(0.08, 0.08, 0.10, 0.85)
-                    btn:SetBackdropBorderColor(0.25, 0.25, 0.28, 1)
-                    btn._numFS:SetTextColor(0.45, 0.45, 0.48)
-                    btn._starFS:SetText(L["map_locked"] or "—")
-                    btn._starFS:SetTextColor(0.40, 0.40, 0.42)
-                else
-                    local isCurrent = (level == math.min(cursor, count))
-                    if isCurrent then
-                        btn:SetBackdropColor(0.18, 0.14, 0.06, 0.95)
-                        btn:SetBackdropBorderColor(1, 0.84, 0.2, 1)
-                        btn._numFS:SetTextColor(1, 0.90, 0.40)
-                    else
-                        btn:SetBackdropColor(0.10, 0.12, 0.16, 0.90)
-                        btn:SetBackdropBorderColor(0.55, 0.50, 0.32, 1)
-                        btn._numFS:SetTextColor(0.90, 0.88, 0.80)
-                    end
-                    local st = S:GetStar(save, level)
-                    btn._starFS:SetText(StarGlyphs(st))
-                    btn._starFS:SetTextColor(1, 0.82, 0.2)
-                end
-            end
-        end
-    end
-    if self._mapPrev then
-        if page <= 1 then self._mapPrev:Disable() else self._mapPrev:Enable() end
-    end
-    if self._mapNext then
-        if page >= pages then self._mapNext:Disable() else self._mapNext:Enable() end
     end
 end
 

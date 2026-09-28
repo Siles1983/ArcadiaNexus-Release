@@ -98,7 +98,10 @@ local function GetCategoryGroups(includeAllgemein, filterFn)
         table.insert(groups, {
             id    = "ALLGEMEIN",
             label = L("cat_ALLGEMEIN") or "Allgemein",
-            games = { { id = "ALLGEMEIN", label = L("cat_ALLGEMEIN") or "Allgemein" } },
+            games = {
+                { id = "ALLGEMEIN", label = L("cat_ALLGEMEIN") or "Allgemein" },
+                { id = "LEVEL_TITEL", label = L("ach_level_titles") or "Level & Titel" },
+            },
         })
     end
 

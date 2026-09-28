@@ -107,6 +107,15 @@ end
 
 -- ── Hint-Suche ────────────────────────────────────────────────
 
+-- Completion always earns one star. The generator's minMoves is only an
+-- estimate, so ratings use the aid flags preserved across pause and reset.
+function L:GradeCampaignStars(state)
+    if not state or not state.tubes or #state.tubes == 0 or not self:CheckWin(state.tubes) then return 0 end
+    if state.usedAddTube then return 1 end
+    if state.usedHint or state.usedUndo then return 2 end
+    return 3
+end
+
 -- Gibt srcIdx, dstIdx zurück oder nil wenn kein Zug möglich.
 -- Bevorzugt Züge die eine Röhre befüllen (gleiche Farbe oben in Ziel).
 function L:FindHint(tubes)

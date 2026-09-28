@@ -75,6 +75,26 @@ local function EnsureSaves(db)
     return db.saves
 end
 
+local function CampaignOptions(count)
+    local levels = ArcadiaNexus.AJ_Levels
+    return { levelCount=count or (levels and levels.COUNT) or 100, maxStars=3 }
+end
+
+-- Das alte `level` bleibt der UI-Cursor (101 nach Kampagnenende). Der
+-- gemeinsame Helper verwaltet Sterne und Freischaltungen über einen Adapter.
+function S:Campaign(save, count)
+    if type(save) ~= "table" then return nil end
+    local CP = ArcadiaNexus.CampaignProgress
+    local progress = CP.Normalize({
+        stars=save.stars, clearedLevel=save.clearedLevel,
+        currentLevel=save.level or 1,
+    }, CampaignOptions(count))
+    save.stars = progress.stars
+    save.clearedLevel = progress.clearedLevel
+    save.campaignVersion = progress.campaignVersion
+    return progress
+end
+
 function S:GetActiveSlot()
     local db = GetDB()
     EnsureSaves(db)
@@ -94,7 +114,7 @@ function S:SaveSlot(slot, data)
     if not slot or slot < 1 or slot > S.MAX_SLOTS then return end
     local db = GetDB()
     local saves = EnsureSaves(db)
-    saves[slot] = {
+    local save = {
         level       = data.level or 1,
         totalScore  = data.totalScore or 0,
         difficulty  = data.difficulty or "easy",
@@ -108,12 +128,16 @@ function S:SaveSlot(slot, data)
         endlessWave     = data.endlessWave or 0,
         endlessRunScore = data.endlessRunScore or 0,
     }
+    self:Campaign(save)
+    saves[slot] = save
 end
 
 function S:LoadSlot(slot)
     if not slot or slot < 1 or slot > S.MAX_SLOTS then return nil end
     local db = GetDB()
-    return EnsureSaves(db)[slot]
+    local save = EnsureSaves(db)[slot]
+    if save then self:Campaign(save) end
+    return save
 end
 
 function S:DeleteSlot(slot)
@@ -169,37 +193,17 @@ function S:NoteEndlessBest(wave)
     end
 end
 
-function S:CopyStars(stars)
-    local out = {}
-    if type(stars) ~= "table" then return out end
-    for k, v in pairs(stars) do
-        local n = tonumber(k)
-        if n then out[n] = tonumber(v) or 0 end
-    end
-    return out
+function S:GetStar(save, level)
+    return ArcadiaNexus.CampaignProgress.GetStars(self:Campaign(save), level)
 end
 
 function S:SumStars(save)
-    local sum = 0
-    if not save or type(save.stars) ~= "table" then return 0 end
-    for _, v in pairs(save.stars) do
-        sum = sum + (tonumber(v) or 0)
-    end
-    return sum
-end
-
-function S:GetStar(save, level)
-    if not save or type(save.stars) ~= "table" then return 0 end
-    return tonumber(save.stars[level]) or 0
+    return ArcadiaNexus.CampaignProgress.TotalStars(self:Campaign(save))
 end
 
 function S:IsLevelUnlocked(save, level, count)
     if not save or not level or level < 1 then return false end
-    if count and level > count then return false end
-    if level == 1 then return true end
-    local cleared = tonumber(save.clearedLevel) or 0
-    if cleared >= (level - 1) then return true end
-    if self:GetStar(save, level - 1) >= 1 then return true end
-    local cursor = tonumber(save.level) or 1
-    return cursor >= level
+    if level > CampaignOptions(count).levelCount then return false end
+    return ArcadiaNexus.CampaignProgress.IsLevelUnlocked(
+        self:Campaign(save, count), level, CampaignOptions(count))
 end

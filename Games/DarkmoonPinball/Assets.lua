@@ -46,6 +46,19 @@ ArcadiaNexus.DMP_Assets = {
     post = {
         base = "Interface\\AddOns\\ArcadiaNexus\\Games\\DarkmoonPinball\\assets\\sprites\\post",
     },
+    decor = {
+        arrow = "Interface\\AddOns\\ArcadiaNexus\\Games\\DarkmoonPinball\\assets\\sprites\\arrow",
+        post = "Interface\\AddOns\\ArcadiaNexus\\Games\\DarkmoonPinball\\assets\\sprites\\post",
+        lamp = "Interface\\AddOns\\ArcadiaNexus\\Games\\DarkmoonPinball\\assets\\sprites\\light_on",
+        skull = "Interface\\AddOns\\ArcadiaNexus\\Games\\DarkmoonPinball\\assets\\sprites\\bumper_idle",
+    },
+    decor = {
+        arrow = "Interface\\AddOns\\ArcadiaNexus\\Games\\DarkmoonPinball\\assets\\sprites\\arrow",
+        post = "Interface\\AddOns\\ArcadiaNexus\\Games\\DarkmoonPinball\\assets\\sprites\\post",
+        eye = "Interface\\AddOns\\ArcadiaNexus\\Games\\DarkmoonPinball\\assets\\sprites\\eye_sclera",
+        lamp = "Interface\\AddOns\\ArcadiaNexus\\Games\\DarkmoonPinball\\assets\\sprites\\light_on",
+        skull = "Interface\\AddOns\\ArcadiaNexus\\Games\\DarkmoonPinball\\assets\\sprites\\bumper_idle",
+    },
     playfield = {
         midway = "Interface\\AddOns\\ArcadiaNexus\\Games\\DarkmoonPinball\\assets\\playfield\\midway_bg",
         carousel = "Interface\\AddOns\\ArcadiaNexus\\Games\\DarkmoonPinball\\assets\\playfield\\carousel_bg",
@@ -75,4 +88,3 @@ function ArcadiaNexus.DMP_Assets.Get(kind, state)
     if type(pack) ~= "table" then return nil end
     return pack[state] or pack.idle or pack.base or pack.off or pack.midway
 end
-

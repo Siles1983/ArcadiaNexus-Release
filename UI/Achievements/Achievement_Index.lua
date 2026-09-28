@@ -18,13 +18,9 @@
 
 local ArcadiaNexus = _G.ArcadiaNexus
 
-ArcadiaNexus.AchievementData = {}
-local D = ArcadiaNexus.AchievementData
-
-for _, group in ipairs(ArcadiaNexus._pendingAchievements or {}) do
-    D[#D + 1] = group
-end
-ArcadiaNexus._pendingAchievements = nil
+-- Dieselbe Tabelle bleibt nach dem TOC als Registry für externe Addons erhalten.
+ArcadiaNexus._pendingAchievements = ArcadiaNexus._pendingAchievements or {}
+ArcadiaNexus.AchievementData = ArcadiaNexus._pendingAchievements
 
 if ArcadiaNexus.AchievementIcons and ArcadiaNexus.AchievementIcons.NormalizeAllRegistered then
     ArcadiaNexus.AchievementIcons:NormalizeAllRegistered()

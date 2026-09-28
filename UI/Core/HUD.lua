@@ -25,6 +25,21 @@ local function Profile()
     return PS and PS.Get() or {}
 end
 
+local function DisplayTitle(prof, level)
+    local XPM = ArcadiaNexus.XPManager
+    local active = prof and prof.activeTitle
+    if active and active ~= "" then
+        if XPM and XPM.GetLocalizedTitleForKey then
+            return XPM:GetLocalizedTitleForKey(active)
+        end
+        return active
+    end
+    if XPM and XPM.GetLocalizedTitle then
+        return XPM:GetLocalizedTitle(level or 1)
+    end
+    return (XPM and XPM.GetTitle) and XPM:GetTitle(level or 1) or "Arcade Initiate"
+end
+
 local function UpdateBadge()
     if not F().badgeFS then return end
 
@@ -49,17 +64,8 @@ local function UpdateBadge()
     end
 
     if F().titleFS then
-        local XPM    = ArcadiaNexus.XPManager
-        local prof   = Profile()
-        -- Aktiven Titel aus DB lesen; Fallback: höchster freigeschalteter Titel
-        local activeTitle = prof.activeTitle
-        local displayTitle
-        if activeTitle then
-            displayTitle = activeTitle
-        else
-            displayTitle = (XPM and XPM.GetTitle) and XPM:GetTitle(level) or "Arcade Initiate"
-        end
-        -- Sichtbarkeit respektieren
+        local prof = Profile()
+        local displayTitle = DisplayTitle(prof, level)
         local visible = (prof.titleVisible ~= false)
         if visible then
             F().titleFS:SetText(displayTitle)
@@ -132,8 +138,6 @@ ArcadiaNexus.Engine:On("ARCADE_LEVEL_UP", function(data)
     end
     if F().titleFS then
         local newLevel = data and data.level or 1
-        local newTitle = data and data.title or
-            (ArcadiaNexus.XPManager and ArcadiaNexus.XPManager:GetTitle(newLevel)) or ""
         F().titleFS:SetText(string.format(
             (L("HEADER_LEVEL_UP") or "Arcade Level %d erreicht!"), newLevel))
         F().titleFS:SetTextColor(0.20, 1.00, 0.20)
@@ -142,7 +146,7 @@ ArcadiaNexus.Engine:On("ARCADE_LEVEL_UP", function(data)
             if F().titleFS then
                 -- Nach Animation: aktiven Titel aus DB lesen
                 local prof = Profile()
-                local displayTitle = prof.activeTitle or newTitle
+                local displayTitle = DisplayTitle(prof, newLevel)
                 local visible = (prof.titleVisible ~= false)
                 if visible then
                     F().titleFS:SetText(displayTitle)

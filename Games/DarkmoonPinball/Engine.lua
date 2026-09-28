@@ -162,6 +162,7 @@ function E:_Tick(dt)
             over = true
         else
             PresentAction(act, gs, Settings, Renderer)
+            if self._devActionSink then self._devActionSink(act, gs) end
         end
     end
 

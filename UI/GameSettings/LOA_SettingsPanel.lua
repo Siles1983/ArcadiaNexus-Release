@@ -33,7 +33,6 @@ local function BuildLoaSettingsPanel(parent)
                 }, 15),
             },
         },
-        rebuild = BuildLoaSettingsPanel,
     })
 end
 

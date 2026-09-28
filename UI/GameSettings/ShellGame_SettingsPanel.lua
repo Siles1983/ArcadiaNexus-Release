@@ -266,7 +266,6 @@ local function BuildShellGameSettingsPanel(parent)
                 },
             },
         },
-        rebuild = BuildShellGameSettingsPanel,
     })
 end
 

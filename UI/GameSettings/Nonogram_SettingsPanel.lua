@@ -35,7 +35,6 @@ local function BuildNonogramSettingsPanel(parent)
                 }),
             },
         },
-        rebuild = BuildNonogramSettingsPanel,
     })
 end
 

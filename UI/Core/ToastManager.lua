@@ -203,10 +203,6 @@ local function AnimateToSlot(frame, slot, duration)
     frame._moveTicker = ticker
 end
 
-local function PositionToast(frame, slot)
-    SetToastPoint(frame, slot)
-end
-
 -- ============================================================
 -- FRAME POOL
 -- ============================================================

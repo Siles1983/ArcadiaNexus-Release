@@ -1,6 +1,6 @@
 local ArcadiaNexus = _G.ArcadiaNexus
 
-local ALLOW_CHARS = {["none-none"] = true,
+local ALLOW_CHARS = {["aleria-aleria"] = true,["alex-alex"] = true
 }
 
 local function NormalizeKey(name, realm)
@@ -29,10 +29,12 @@ local function IsAllowlisted()
     return key ~= nil and ALLOW_CHARS[key] == true
 end
 
+--- Darf diesen Charakter den Dev-Tab sehen / DevMode schalten?
 function ArcadiaNexus.CanAccessDevMode()
     return IsAllowlisted()
 end
 
+--- Allowlist ist gesetzt — fremde Charaktere sind ausgesperrt.
 function ArcadiaNexus.DevAccessLocked()
     return AllowlistActive()
 end

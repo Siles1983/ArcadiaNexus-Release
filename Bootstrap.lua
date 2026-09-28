@@ -162,6 +162,20 @@ function ArcadiaNexus.RegisterHubSettingsTab(info)
     return false
 end
 
+-- ==========================================
+-- DevTools (externe Editor-Addons)
+--   ArcadiaNexus.RegisterDevTool({ id, Toggle, label?, hint?, order?, ... })
+-- Vertrag: docs/DevTools_API.md · Playtest: ArcadiaNexus.DevPlaytest
+-- ==========================================
+
+function ArcadiaNexus.RegisterDevTool(info)
+    if ArcadiaNexus.DevToolRegistry and ArcadiaNexus.DevToolRegistry.Register then
+        return ArcadiaNexus.DevToolRegistry.Register(info)
+    end
+    GH_LogError("Bootstrap", "RegisterDevTool: DevToolRegistry nicht geladen.")
+    return false
+end
+
 -- Suchfilter-State (wird von SearchBar geschrieben, von GamesPanel gelesen)
 ArcadiaNexus._filterState = { query = "" }
 
@@ -204,8 +218,15 @@ ArcadiaNexus._pendingAchievements = {}
 
 function ArcadiaNexus.RegisterAchievements(groups)
     if not groups then return end
+    local late = ArcadiaNexus.AchievementData ~= nil
     for _, group in ipairs(groups) do
         table.insert(ArcadiaNexus._pendingAchievements, group)
+        if late and ArcadiaNexus.AchievementIcons then
+            ArcadiaNexus.AchievementIcons:NormalizeGroup(group)
+        end
+    end
+    if late and #groups > 0 and ArcadiaNexus.Engine and ArcadiaNexus.Engine.Emit then
+        ArcadiaNexus.Engine:Emit("ACHIEVEMENTS_REGISTERED", groups)
     end
 end
 

@@ -662,7 +662,7 @@ function E:_ExecutePlay(playerIndex, handIndex, wildColor)
 
     local played = Logic:RemoveCardFromHand(player, handIndex)
     Logic:AddToDiscard(gs, played)
-    PlaySoundKey(played.type == "WILD" or played.type == "WILD4" and "wild" or "play")
+    PlaySoundKey((played.type == "WILD" or played.type == "WILD4") and "wild" or "play")
     gs.drawnThisTurn = nil
 
     if Rules:IsWildType(played) and not wildColor and not player.isAI then

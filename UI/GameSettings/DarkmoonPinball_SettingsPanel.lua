@@ -46,7 +46,6 @@ local function BuildDarkmoonPinballSettingsPanel(parent)
                 }),
             },
         },
-        rebuild = BuildDarkmoonPinballSettingsPanel,
     })
 end
 

@@ -103,7 +103,6 @@ local function BuildArcadiasEchoSettingsPanel(parent)
                 }),
             },
         },
-        rebuild = BuildArcadiasEchoSettingsPanel,
     })
 end
 

@@ -42,7 +42,6 @@ local function BuildArgusOrbitDefenseSettingsPanel(parent)
                 }),
             },
         },
-        rebuild = BuildArgusOrbitDefenseSettingsPanel,
     })
 end
 

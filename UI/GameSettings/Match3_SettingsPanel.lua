@@ -127,7 +127,6 @@ local function BuildMatch3SettingsPanel(parent)
                 R._timerCheckbox:SetChecked(S:Get("timerActive"))
             end
         end,
-        rebuild = BuildMatch3SettingsPanel,
     })
 end
 

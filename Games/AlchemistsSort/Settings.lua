@@ -23,15 +23,54 @@ local function GetDB()
     return P:GetGameSettings(DB_KEY)
 end
 
+local function NonNegativeInt(value)
+    value = tonumber(value)
+    if not value or value ~= value or value == math.huge or value == -math.huge then return 0 end
+    return math.max(0, math.floor(value))
+end
+
+-- Sort has no final level. Grow the normalization bound with the saved progress;
+-- never use the currently selected replay level as the campaign's upper bound.
+local function NormalizeCampaign(save)
+    if type(save) ~= "table" then return nil end
+    local CP = ArcadiaNexus.CampaignProgress
+    local legacy = save.campaignVersion == nil
+    local unlocked = math.max(1, NonNegativeInt(save.unlockedLevel),
+        NonNegativeInt(save.currentLevel), NonNegativeInt(save.clearedLevel) + 1)
+    if type(save.stars) == "table" then
+        for level, stars in pairs(save.stars) do
+            if NonNegativeInt(stars) > 0 then
+                unlocked = math.max(unlocked, NonNegativeInt(level) + 1)
+            end
+        end
+    end
+    save.clearedLevel = math.max(NonNegativeInt(save.clearedLevel), unlocked - 1)
+    CP.Normalize(save, { levelCount=unlocked, maxStars=3 })
+    -- Legacy unlocks prove completion, but not how many aids were used.
+    -- Grant only the completion star, once; global move/time records are not ratings.
+    if legacy then
+        for level = 1, save.clearedLevel do
+            if CP.GetStars(save, level) == 0 then save.stars[level] = 1 end
+        end
+    end
+    save.unlockedLevel = unlocked -- compatibility field for the existing slot UI
+    return save
+end
+
 local function EnsureSaves(db)
-    if not db.saves then db.saves = {} end
+    local hadSlots = type(db.saves) == "table"
+    if not hadSlots then db.saves = {} end
     if not db.activeSlot then db.activeSlot = 1 end
-    if not db.saves[1] and (db.currentLevel or db.unlockedLevel) then
+    -- Nur Daten ohne Slot-Tabelle sind noch nicht migriert. Eine vorhandene,
+    -- leere Tabelle kann einen bewusst gelöschten ersten Slot bedeuten.
+    if not hadSlots and (db.currentLevel or db.unlockedLevel) then
         db.saves[1] = {
             currentLevel  = db.currentLevel or 1,
             unlockedLevel = db.unlockedLevel or db.currentLevel or 1,
         }
     end
+    db.currentLevel = nil
+    db.unlockedLevel = nil
     return db.saves
 end
 
@@ -40,7 +79,7 @@ local function EnsureSlot(db, slot)
     if not saves[slot] then
         saves[slot] = { currentLevel = 1, unlockedLevel = 1 }
     end
-    return saves[slot]
+    return NormalizeCampaign(saves[slot])
 end
 
 local function EnsureStats()
@@ -98,7 +137,7 @@ function S:LoadSlot(slot)
     if slot < 1 or slot > S.MAX_SLOTS then return nil end
     local db = GetDB()
     EnsureSaves(db)
-    return db.saves[slot]
+    return NormalizeCampaign(db.saves[slot])
 end
 
 function S:SaveMidGame(slot, midGame)
@@ -126,7 +165,7 @@ function S:ResetSlot(slot)
     if not slot or slot < 1 or slot > S.MAX_SLOTS then return end
     local db = GetDB()
     local save = EnsureSlot(db, slot)
-    save.currentLevel  = 1
+    ArcadiaNexus.CampaignProgress.Reset(save)
     save.unlockedLevel = 1
     save.midGame       = nil
     save.timestamp     = time()
@@ -141,7 +180,7 @@ end
 function S:SetCurrentLevel(lvl)
     local db = GetDB()
     local save = EnsureSlot(db, self:GetActiveSlot())
-    save.currentLevel = lvl
+    save.currentLevel = math.max(1, math.min(save.unlockedLevel, NonNegativeInt(lvl)))
 end
 
 function S:GetUnlockedLevel()
@@ -149,12 +188,31 @@ function S:GetUnlockedLevel()
     return (save and save.unlockedLevel) or 1
 end
 
-function S:UnlockLevel(lvl)
-    local db = GetDB()
-    local save = EnsureSlot(db, self:GetActiveSlot())
-    if not save.unlockedLevel or lvl > save.unlockedLevel then
-        save.unlockedLevel = lvl
-    end
+function S:IsLevelUnlocked(level)
+    local save = self:LoadSlot(self:GetActiveSlot())
+    if not save or type(level) ~= "number" or level ~= math.floor(level)
+        or level < 1 or level > save.unlockedLevel then return false end
+    return ArcadiaNexus.CampaignProgress.IsLevelUnlocked(save, level,
+        { levelCount=save.unlockedLevel, maxStars=3 })
+end
+
+function S:GetStar(save, level)
+    return ArcadiaNexus.CampaignProgress.GetStars(save, level)
+end
+
+function S:SumStars(save)
+    return ArcadiaNexus.CampaignProgress.TotalStars(save)
+end
+
+function S:RecordLevel(level, stars)
+    if not self:IsLevelUnlocked(level) or type(stars) ~= "number"
+        or stars ~= math.floor(stars) or stars < 1 or stars > 3 then return 0, false, 0 end
+    local save = self:LoadSlot(self:GetActiveSlot())
+    local best, improved, gained = ArcadiaNexus.CampaignProgress.RecordLevel(save, level, stars,
+        { levelCount=math.max(save.unlockedLevel, level + 1), maxStars=3 })
+    save.unlockedLevel = math.max(save.unlockedLevel, save.clearedLevel + 1)
+    save.timestamp = time()
+    return best, improved, gained
 end
 
 -- ── Statistiken ───────────────────────────────────────────────

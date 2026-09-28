@@ -28,7 +28,61 @@ local AM = ArcadiaNexus.AchievementManager
 
 function AM:Init()
     ArcadiaNexus.AchievementStore.Get()
+    AM:_MigrateLegacyLevel()
+    ArcadiaNexus.Engine:On("STREAK_UPDATED", function()
+        AM:_CheckById("GLOBAL_LOGIN_STREAK")
+    end)
+    ArcadiaNexus.Engine:On("CHALLENGE_COMPLETE", function(ch)
+        if ch then
+            AM:_CheckById("GLOBAL_DAILY_STREAK")
+            AM:_CheckById("GLOBAL_WEEKLY_STREAK")
+        end
+    end)
+    ArcadiaNexus.Engine:On("ARCADE_LEVEL_UP", function()
+        AM:_CheckLevelGroups()
+    end)
+    ArcadiaNexus.Engine:On("ACHIEVEMENTS_REGISTERED", function(groups)
+        AM:_CheckRetroactive(groups)
+    end)
     AM:_CheckRetroactive()
+end
+
+function AM:_MigrateLegacyLevel()
+    local unlocked = ArcadiaNexus.AchievementStore.GetUnlocked()
+    local progress = ArcadiaNexus.AchievementStore.GetProgress()
+    local old = {
+        { id = "GLOBAL_LEVEL_BRONZE", level = 5 },
+        { id = "GLOBAL_LEVEL_SILBER", level = 15 },
+        { id = "GLOBAL_LEVEL_GOLD", level = 30 },
+    }
+    for _, entry in ipairs(old) do
+        local timestamp = unlocked[entry.id]
+        if timestamp then
+            local groupId = "GLOBAL_LEVEL_" .. entry.level
+            local tierId = groupId .. "_GOLD"
+            if not unlocked[tierId] then unlocked[tierId] = timestamp end
+            local groupProgress = ArcadiaNexus.AchievementStore.EnsureGroup(groupId)
+            groupProgress.tier = 1
+            groupProgress.current = math.max(groupProgress.current or 0, entry.level)
+            unlocked[entry.id] = nil
+        end
+    end
+    progress.GLOBAL_LEVEL = nil
+end
+
+function AM:_CheckById(groupId)
+    for _, group in ipairs(ArcadiaNexus.AchievementData or {}) do
+        if group.id == groupId then
+            AM:_CheckGroup(group, {})
+            return
+        end
+    end
+end
+
+function AM:_CheckLevelGroups()
+    for _, group in ipairs(ArcadiaNexus.AchievementData or {}) do
+        if group.gameId == "LEVEL_TITEL" then AM:_CheckGroup(group, {}) end
+    end
 end
 
 -- ============================================================
@@ -44,7 +98,7 @@ end
 -- Nur für Achievements die aus ScoreManager-Daten berechenbar sind
 -- ============================================================
 
-function AM:_CheckRetroactive()
+function AM:_CheckRetroactive(groups)
     local SM = ArcadiaNexus.ScoreManager
     if not SM then return end
 
@@ -78,15 +132,15 @@ function AM:_CheckRetroactive()
         allGames     = allData,
     }
 
-    AM:_Check(retroData)
+    AM:_Check(retroData, groups)
 end
 
 -- ============================================================
 -- Haupt-Prüflogik
 -- ============================================================
 
-function AM:_Check(data)
-    local achData = ArcadiaNexus.AchievementData
+function AM:_Check(data, groups)
+    local achData = groups or ArcadiaNexus.AchievementData
     if not achData then return end
 
     for _, group in ipairs(achData) do
@@ -122,7 +176,9 @@ function AM:_CheckGroup(group, data)
         if prog.current >= tier.target then
             -- Nur freischalten wenn noch nicht in unlocked
             if not ArcadiaNexus.AchievementStore.IsUnlocked(tier.id) then
+                prog.tier = i
                 AM:_Unlock(tier, group, i)
+            else
                 prog.tier = i
             end
         else

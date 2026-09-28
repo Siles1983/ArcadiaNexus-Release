@@ -55,7 +55,6 @@ local function BuildBlockBreakerSettingsPanel(parent)
                 GS.GuideSection(nil, L, { "guide_1", "guide_2", "guide_3", "guide_4", "guide_5", "guide_6", "guide_7", "guide_8" }),
             },
         },
-        rebuild = BuildBlockBreakerSettingsPanel,
     })
 end
 

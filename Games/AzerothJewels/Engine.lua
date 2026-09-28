@@ -799,22 +799,25 @@ function E:_HandleLevelComplete()
     self.totalScore = self.totalScore + gs.score
 
     local prevSave = Settings:LoadSlot(self.activeSlot) or {}
-    local stars = Settings:CopyStars(prevSave.stars)
-    local grade, prevStar = 0, 0
+    local CP = ArcadiaNexus.CampaignProgress
+    local campaign = Settings:Campaign(prevSave, Levels.COUNT)
+    local previousCleared = campaign.clearedLevel
+    local grade, gainedStars = 0, 0
     if not isEndless then
-        prevStar = stars[gs.level] or 0
         grade = Logic:GradeStars(gs)
-        stars[gs.level] = math.max(prevStar, grade)
+        local best
+        best, _, gainedStars = CP.RecordLevel(campaign, gs.level, grade,
+            { levelCount=Levels.COUNT, maxStars=3 })
         gs.lastStars = grade
-        gs.bestStars = stars[gs.level]
+        gs.bestStars = best
     else
         gs.lastStars = 0
         gs.bestStars = 0
     end
 
-    local cleared = math.max(tonumber(prevSave.clearedLevel) or 0, isEndless and (prevSave.clearedLevel or 0) or gs.level)
+    local cleared = campaign.clearedLevel
     local cursor = tonumber(prevSave.level) or 1
-    if not isEndless and gs.level >= (tonumber(prevSave.clearedLevel) or 0) then
+    if not isEndless and gs.level >= previousCleared then
         cursor = gs.level + 1
     end
 
@@ -832,7 +835,7 @@ function E:_HandleLevelComplete()
         totalIce      = gs.stats.iceDestroyed,
         totalTimeWins = (not isEndless and gs.timerActive) and 1 or 0,
         totalCombo5   = (gs.maxCombo >= 5) and 1 or 0,
-        totalStars    = isEndless and 0 or math.max(0, stars[gs.level] - prevStar),
+        totalStars    = gainedStars,
     })
     local totals = Settings:GetStats()
 
@@ -844,7 +847,7 @@ function E:_HandleLevelComplete()
         timerActive  = gs.timerActive,
         powerUps     = self.powerUps.inv,
         progress     = self.powerUps.progress,
-        stars        = stars,
+        stars        = campaign.stars,
         endlessWave     = isEndless and (wave + 1) or (prevSave.endlessWave or 0),
         endlessRunScore = isEndless and runScore or (prevSave.endlessRunScore or 0),
     })

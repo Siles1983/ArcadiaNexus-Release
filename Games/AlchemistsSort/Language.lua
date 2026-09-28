@@ -9,6 +9,7 @@ ArcadiaNexus.RegisterLocale("ALCHEMISTSSORT", "deDE", {
 
     -- HUD
     lbl_level        = "Level",
+    lbl_choose_level = "Level ▼",
     lbl_moves        = "Züge",
     lbl_time         = "Zeit",
 
@@ -19,6 +20,10 @@ ArcadiaNexus.RegisterLocale("ALCHEMISTSSORT", "deDE", {
     btn_hint         = "Tipp",
     btn_add_tube     = "+ Röhre",
     btn_next_level   = "Nächstes Level",
+    btn_level_select = "Levelauswahl",
+    btn_prev_page    = "Zurück",
+    btn_next_page    = "Weiter",
+    btn_resume_level = "Fortsetzen",
     btn_exit         = "Beenden",
     btn_new_game     = "Neues Spiel",
     btn_continue     = "Fortfahren",
@@ -28,7 +33,8 @@ ArcadiaNexus.RegisterLocale("ALCHEMISTSSORT", "deDE", {
     slot_label       = "Slot %d",
     slot_empty       = "— Leer —",
     slot_info        = "Level %d",
-    slot_paused      = "Level %d läuft",
+    slot_info_unlocked = "L%d · frei bis %d · %d Sterne",
+    slot_paused      = "pausiert",
     confirm_overwrite = "Spielstand überschreiben?",
     confirm_overwrite_body = "Slot %d enthält einen Spielstand.",
     confirm_delete   = "Spielstand wirklich löschen?",
@@ -43,6 +49,17 @@ ArcadiaNexus.RegisterLocale("ALCHEMISTSSORT", "deDE", {
     win_moves        = "Züge: %d",
     win_time         = "Zeit: %s",
     win_score        = "Punkte: %d",
+    map_title        = "Level %d–%d",
+    map_locked       = "—",
+    map_progress     = "Frei bis %d · Sterne: %d",
+    level_stars      = "Sterne: %d / 3",
+    result_stars     = "Sterne: %d (Bestwert: %d)",
+    level_unlocked   = "Freigeschaltet bis Level %d",
+    level_page       = "%d / %d",
+    level_best_moves = "%d Züge",
+    level_best_time  = "%s",
+    level_no_best    = "—",
+    level_locked     = "Gesperrt",
 
     -- Bestätigungs-Dialog Reset
     confirm_reset    = "Level neu starten?",
@@ -75,6 +92,9 @@ ArcadiaNexus.RegisterLocale("ALCHEMISTSSORT", "deDE", {
     guide_5 = "Reset: Level neu starten (Timer läuft weiter).",
     guide_6 = "Rückgängig: Letzten Zug zurücknehmen (max. 3x).",
     guide_7 = "+ Röhre: Einmalig eine leere Flasche hinzufügen.",
+    guide_8 = "Sterne: 3 ohne Hilfen; 2 mit Tipp/Rückgängig; 1 mit Zusatzröhre.",
+    guide_9 = "Pro Level bleibt die beste Sternwertung im Speicherplatz erhalten. Reset und Fortsetzen löschen verwendete Hilfen nicht.",
+    guide_10 = "Neue Speicherplätze öffnen die Karte. Bestwerte für Züge und Zeit stehen im Tooltip der Levelkachel.",
 
     box_level_info = "Level-Info",
     level_info_1   = "Level  1– 5:  3 Farben, 5 Röhren",
@@ -93,6 +113,7 @@ ArcadiaNexus.RegisterLocale("ALCHEMISTSSORT", "enUS", {
 
     -- HUD
     lbl_level        = "Level",
+    lbl_choose_level = "Level ▼",
     lbl_moves        = "Moves",
     lbl_time         = "Time",
 
@@ -103,6 +124,10 @@ ArcadiaNexus.RegisterLocale("ALCHEMISTSSORT", "enUS", {
     btn_hint         = "Hint",
     btn_add_tube     = "+ Tube",
     btn_next_level   = "Next Level",
+    btn_level_select = "Choose Level",
+    btn_prev_page    = "Previous",
+    btn_next_page    = "Next",
+    btn_resume_level = "Resume",
     btn_exit         = "Exit",
     btn_new_game     = "New Game",
     btn_continue     = "Continue",
@@ -112,7 +137,8 @@ ArcadiaNexus.RegisterLocale("ALCHEMISTSSORT", "enUS", {
     slot_label       = "Slot %d",
     slot_empty       = "— Empty —",
     slot_info        = "Level %d",
-    slot_paused      = "Level %d in progress",
+    slot_info_unlocked = "L%d · open to %d · %d stars",
+    slot_paused      = "paused",
     confirm_overwrite = "Overwrite save?",
     confirm_overwrite_body = "Slot %d already has a save.",
     confirm_delete   = "Delete this save?",
@@ -127,6 +153,17 @@ ArcadiaNexus.RegisterLocale("ALCHEMISTSSORT", "enUS", {
     win_moves        = "Moves: %d",
     win_time         = "Time: %s",
     win_score        = "Score: %d",
+    map_title        = "Level %d–%d",
+    map_locked       = "—",
+    map_progress     = "Open to %d · Stars: %d",
+    level_stars      = "Stars: %d / 3",
+    result_stars     = "Stars: %d (Best: %d)",
+    level_unlocked   = "Unlocked through level %d",
+    level_page       = "%d / %d",
+    level_best_moves = "%d moves",
+    level_best_time  = "%s",
+    level_no_best    = "—",
+    level_locked     = "Locked",
 
     -- Confirm Reset
     confirm_reset    = "Restart level?",
@@ -159,6 +196,9 @@ ArcadiaNexus.RegisterLocale("ALCHEMISTSSORT", "enUS", {
     guide_5 = "Reset: Restart the level (timer keeps running).",
     guide_6 = "Undo: Undo last move (max. 3 times).",
     guide_7 = "+ Tube: Add one empty bottle (once per level).",
+    guide_8 = "Stars: 3 without aids; 2 with hints/undo; 1 with an extra tube.",
+    guide_9 = "Each save slot keeps your best star rating per level. Reset and resume retain used aids.",
+    guide_10 = "New save slots open the map. Hover over a level to see your best moves and time.",
 
     box_level_info = "Level Info",
     level_info_1   = "Level  1– 5:  3 colors, 5 tubes",

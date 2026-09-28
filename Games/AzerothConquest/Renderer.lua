@@ -50,6 +50,7 @@ local CFG = {
     border_h     = 600,
     border_ofs_x = 0,
     border_ofs_y = 0,
+    border_alpha = 1,
 
     -- Logo-Textur (relativ zu _fieldFrame CENTER)
     logo_w       = 260,
@@ -261,6 +262,7 @@ function R:_CreateBorderFrame()
     local tex = borderFrame:CreateTexture(nil, "OVERLAY", nil, 1)
     tex:SetTexture(AC_ASSETS.border)
     tex:SetAllPoints(borderFrame)
+    tex:SetAlpha(CFG.border_alpha)
 
     self._borderFrame = borderFrame
     self._borderTex   = tex

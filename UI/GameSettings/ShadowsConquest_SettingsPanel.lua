@@ -28,7 +28,6 @@ local function BuildShadowsConquestSettingsPanel(parent)
                 GS.GuideSection(nil, L, { "guide_1", "guide_2", "guide_3", "guide_4" }),
             },
         },
-        rebuild = BuildShadowsConquestSettingsPanel,
     })
 end
 

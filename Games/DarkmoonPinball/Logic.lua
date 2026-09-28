@@ -120,9 +120,11 @@ local function CopyFlipper(src)
         swingSpeed = src.swingSpeed,
         returnSpeed = src.returnSpeed,
         restitution = src.restitution or 0.35,
+        activation = src.activation,
         angle = src.restAngle,
         omega = 0,
         pressed = false,
+        enabled = true,
     }
 end
 
@@ -177,6 +179,8 @@ function Logic:NewState(tableId)
         rampQual = { left = false, right = false },
         targetLit = {},
         mission = nil,
+        completedMissions = {},
+        logicFlags = {},
         missionsDone = 0,
         locks = 0,
         multiball = false,
@@ -478,11 +482,73 @@ local function AddScore(gs, base, qualifyCombo)
     return gained, mul
 end
 
+-- Per-object activation conditions are data only. The first condition types
+-- deliberately cover the existing game state and can be shared by future
+-- kickers, lanes and score devices.
+local function ActivationMet(gs, condition)
+    if not condition then return true end
+    if condition.all then
+        for _, rule in ipairs(condition.all) do if not ActivationMet(gs, rule) then return false end end
+        return true
+    end
+    if condition.any then
+        for _, rule in ipairs(condition.any) do if ActivationMet(gs, rule) then return true end end
+        return false
+    end
+    if condition["not"] then return not ActivationMet(gs, condition["not"]) end
+    local kind = condition.type
+    if not kind or kind == "always" then return true end
+    if kind == "multiball" then
+        if not gs.multiball then return false end
+        local live = 0
+        for _, ball in ipairs(gs.balls or {}) do if ball.active then live = live + 1 end end
+        return live >= (condition.minBalls or 1)
+    end
+    if kind == "mission_active" then
+        return gs.mission and (not condition.missionId or gs.mission.id == condition.missionId)
+    end
+    if kind == "mission_complete" then
+        return gs.completedMissions and gs.completedMissions[condition.missionId] == true
+    end
+    if kind == "lock_count" then return (gs.locks or 0) >= (condition.minimum or 1) end
+    if kind == "combo" then return (gs.combo or 0) >= (condition.minimum or 1) end
+    if kind == "flag" then return gs.logicFlags and gs.logicFlags[condition.flag] == true end
+    return false
+end
+
+function Logic:IsActivationMet(gs, condition)
+    return ActivationMet(gs, condition)
+end
+
+local function DispatchLogicLinks(gs, actions)
+    local links = gs.def.logicLinks
+    if type(links) ~= "table" then return end
+    local flags = gs.logicFlags or {};gs.logicFlags = flags
+    local actionCount = #actions
+    for i = 1, actionCount do
+        local event = actions[i]
+        for _, link in ipairs(links) do
+            local trigger, effect = link.trigger or {}, link.action or {}
+            if event.type == trigger.type and (not trigger.objectId or event.id == trigger.objectId) then
+                local flag = effect.flag
+                if flag and flag ~= "" and (effect.type == "set_flag" or effect.type == "toggle_flag") then
+                    local value = effect.type == "toggle_flag" and not flags[flag] or effect.value ~= false
+                    if flags[flag] ~= value then
+                        flags[flag] = value
+                        actions[#actions + 1] = { type = "logic_flag", id = link.id, flag = flag, value = value }
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function UpdateFlippers(gs, dt)
     for i = 1, #gs.flippers do
         local f = gs.flippers[i]
         local side = f.control or f.side or (string.find(f.id or "", "^left") and "left") or (string.find(f.id or "", "^right") and "right")
-        local pressed = (not gs.tilted)
+        f.enabled = ActivationMet(gs, f.activation)
+        local pressed = f.enabled and (not gs.tilted)
             and ((side == "left" and gs.inputLeft) or (side == "right" and gs.inputRight))
         f.pressed = pressed
         local target = pressed and f.activeAngle or f.restAngle
@@ -721,6 +787,7 @@ local function CompleteMission(gs, actions)
     gs.missionsDone = (gs.missionsDone or 0) + 1
     local id = m.id
     gs.mission = nil
+    gs.completedMissions[id] = true
     local md = MissionDef(gs, id)
     AddScore(gs, (md and md.score) or 0, false)
     local reward = md and md.reward
@@ -793,7 +860,7 @@ local function TrySensors(gs, ball, actions)
     if def.ramps then
         for i = 1, #def.ramps do
             local r = def.ramps[i]
-            if InRect(r, ball) and MarkHit(gs, r.id, 0) then
+            if ActivationMet(gs, r.activation) and InRect(r, ball) and MarkHit(gs, r.id, 0) then
                 AddScore(gs, (def.scoringRules and def.scoringRules.ramp) or 150, true)
                 actions[#actions + 1] = { type = "ramp_hit", id = r.id }
                 local side = r.side or ((r.id == "ramp_l") and "left" or "right")
@@ -839,7 +906,7 @@ local function TrySensors(gs, ball, actions)
             end
         end
     end
-    if def.lock and InRect(def.lock, ball) and MarkHit(gs, "lock", 0) then
+    if def.lock and ActivationMet(gs, def.lock.activation) and InRect(def.lock, ball) and MarkHit(gs, "lock", 0) then
         AddScore(gs, (def.scoringRules and def.scoringRules.lock) or 200, true)
         actions[#actions + 1] = { type = "lock_hit" }
         local mid = (def.lockModule and def.lockModule.missionId) or "arcane_lock"
@@ -858,7 +925,7 @@ local function TrySensors(gs, ball, actions)
         end
     end
     local jpEvery = (def.multiballDefinitions and def.multiballDefinitions.jackpotEvery) or 3
-    if gs.multiball and def.jackpot and InRect(def.jackpot, ball) and MarkHit(gs, "jp", 0) then
+    if gs.multiball and def.jackpot and ActivationMet(gs, def.jackpot.activation) and InRect(def.jackpot, ball) and MarkHit(gs, "jp", 0) then
         gs.jackpots = (gs.jackpots or 0) + 1
         local super = gs.jackpots > 0 and (gs.jackpots % jpEvery == 0)
         local pts = super and (def.superJackpotScore or 10000) or (def.jackpotScore or 2500)
@@ -873,7 +940,7 @@ local function TryOutlane(gs, ball, actions)
     if not lanes then return false end
     for i = 1, #lanes do
         local lane = lanes[i]
-        if InRect(lane, ball) then
+        if ActivationMet(gs, lane.activation) and InRect(lane, ball) then
             local side = lane.side
             if (not gs.tilted) and gs.kickbackArmed[side] and (gs.kickbackT[side] or 0) > 0 then
                 gs.kickbackArmed[side] = false
@@ -907,7 +974,7 @@ local function TryInlane(gs, ball, actions)
     if not lanes then return end
     for i = 1, #lanes do
         local lane = lanes[i]
-        if InRect(lane, ball) and MarkHit(gs, lane.id, 0) then
+        if ActivationMet(gs, lane.activation) and InRect(lane, ball) and MarkHit(gs, lane.id, 0) then
             local side = lane.side
             gs.kickbackArmed[side] = true
             gs.kickbackT[side] = gs.def.kickbackDuration or 8
@@ -993,11 +1060,15 @@ local function ResolveWorld(gs, ball, actions)
         if kickers then
             for i = 1, #kickers do
                 local k = kickers[i]
-                local hit, nx, ny = ResolveCircleSolid(ball, k.x, k.y, k.r, rest, k.kick or 0, maxS)
+                local hit, nx, ny = false, nil, nil
+                if ActivationMet(gs, k.activation) then
+                    hit, nx, ny = ResolveCircleSolid(ball, k.x, k.y, k.r, rest, k.kick or 0, maxS)
+                end
                 if hit then
                     contacts = contacts + 1
                     gs.debug.lastNormalX, gs.debug.lastNormalY = nx, ny
                     gs.debug.lastHitId = k.id
+                    if MarkHit(gs, k.id, 0) then actions[#actions + 1] = { type = "kicker_hit", id = k.id } end
                 end
             end
         end
@@ -1013,11 +1084,12 @@ local function ResolveWorld(gs, ball, actions)
             end
         end
         for i = 1, #gs.flippers do
-            local hit = ResolveCapsule(ball, gs.flippers[i], maxS, gs.debug)
+            local flipper = gs.flippers[i]
+            local hit = flipper.enabled and ResolveCapsule(ball, flipper, maxS, gs.debug)
             if hit then
                 contacts = contacts + 1
-                if MarkHit(gs, gs.flippers[i].id, 0) then
-                    actions[#actions + 1] = { type = "flipper_hit", id = gs.flippers[i].id }
+                if MarkHit(gs, flipper.id, 0) then
+                    actions[#actions + 1] = { type = "flipper_hit", id = flipper.id }
                 end
             end
         end
@@ -1315,6 +1387,7 @@ function Logic:Tick(gs, dt)
         if gs.gameOver then break end
     end
     gs.lastSubsteps = maxSub
+    DispatchLogicLinks(gs, actions)
     return actions
 end
 

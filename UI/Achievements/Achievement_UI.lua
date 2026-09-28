@@ -22,7 +22,6 @@ local _panel       = nil
 local _sf          = nil
 local _sc          = nil
 local _rows        = {}   -- { frame, yOff } pro Zeile
-local _statHeader  = nil
 local _currentGame = nil
 local _emptyHint   = nil
 
@@ -87,32 +86,6 @@ local function BuildScrollFrame()
             _sc:SetWidth(math.max(_sf:GetWidth() - 6, 10))
         end
     end)
-end
-
--- ============================================================
--- Statistik-Header
--- ============================================================
-local function BuildStatsHeader()
-    if not _panel or _statHeader then return end
-    _statHeader = _panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    _statHeader:SetPoint("TOPRIGHT", _panel, "TOPRIGHT", -32, -8)
-    _statHeader:SetTextColor(0.75, 0.70, 0.65)
-end
-
-local function UpdateStatsHeader()
-    if not _statHeader then return end
-    local AM = ArcadiaNexus.AchievementManager
-    if not AM then return end
-    local ok, stats = pcall(function() return AM:GetStats() end)
-    if not ok or not stats then return end
-    local Hloc = H() and H().loc or function(de, en)
-        return (ArcadiaNexus.ActiveLocale == "deDE") and de or en
-    end
-    _statHeader:SetText(
-        Hloc("Erfolge: ", "Achievements: ") ..
-        stats.unlocked .. "/" .. stats.total ..
-        "  |  XP: +" .. stats.xpEarned
-    )
 end
 
 -- ============================================================
@@ -263,6 +236,9 @@ function AUI:Attach(panel)
     BuildScrollFrame()
 
     ArcadiaNexus.Engine:On("ACHIEVEMENT_UNLOCKED", function()
+        if _panel and _panel:IsShown() then AUI:Refresh() end
+    end)
+    ArcadiaNexus.Engine:On("ACHIEVEMENTS_REGISTERED", function()
         if _panel and _panel:IsShown() then AUI:Refresh() end
     end)
 

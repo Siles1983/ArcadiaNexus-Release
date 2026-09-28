@@ -5,10 +5,10 @@
 
     Verantwortlichkeiten:
       - Berechnet XP (RegisterGame.xp x DifficultyMulti x ResultMulti)
-      - Verwaltet Level-Up-Logik mit Max Level 50
+      - Verwaltet Level-Up-Logik mit Max Level 100
       - Wird von GameResultProcessor aufgerufen (nicht direkt auf GAME_RESULT)
       - XP-Kurve: 80 + (level x 12) + (level^1.35)
-      - Titel alle 5 Level (Arcade Initiate -> Arcade Master of the Nexus)
+      - Titel alle 5 Level (Arcade Initiate -> High Master of the Nexus)
       - Emittet XP_UPDATED und ARCADE_LEVEL_UP
 
     Oeffentliche API:
@@ -16,7 +16,12 @@
       XPManager:NormalizeProfile()     -> ArcadiaNexusDB.profile
       XPManager:GetXPRequired(level)   -> number
       XPManager:GetBaseXP(gameId)      -> number  (RegisterGame.xp)
-      XPManager:GetTitle(level)        -> string
+      XPManager:GetTitle(level)        -> string (kanonischer Key)
+      XPManager:GetTitleCatalog()      -> { { level, key }, ... }
+      XPManager:GetLocalizedTitle(level) -> string
+      XPManager:GetLocalizedTitleForKey(key) -> string
+      XPManager:GetNextTitleUnlock(level) -> title, unlockLevel (oder nil)
+      XPManager:GetTitleProgress(profile?) -> table
       XPManager:IsMaxLevel()           -> bool
 ]]
 
@@ -32,7 +37,7 @@ end
 -- Konstanten
 -- ============================================================
 
-local MAX_LEVEL = 50
+local MAX_LEVEL = 100
 
 -- ============================================================
 -- Titel-System (alle 5 Level, ab Level 1)
@@ -50,6 +55,21 @@ local TITLES = {
     [40] = "Arcade Grandmaster",
     [45] = "Arcade Legend",
     [50] = "Arcade Master of the Nexus",
+    [55] = "Nexus Vanguard",
+    [60] = "Arcade Architect",
+    [65] = "Guardian of the Arcade",
+    [70] = "Nexus Trailblazer",
+    [75] = "Master Strategist",
+    [80] = "Arcadian Warlord",
+    [85] = "Nexus Myth",
+    [90] = "Grandmaster of Games",
+    [95] = "Arcade Icon",
+    [100] = "High Master of the Nexus",
+}
+
+local TITLE_UNLOCKS = {
+    1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50,
+    55, 60, 65, 70, 75, 80, 85, 90, 95, 100,
 }
 
 function XPM:GetTitle(level)
@@ -58,6 +78,124 @@ function XPM:GetTitle(level)
         if TITLES[lvl] then title = TITLES[lvl] end
     end
     return title
+end
+
+function XPM:GetTitleCatalog()
+    local list = {}
+    for i = 1, #TITLE_UNLOCKS do
+        local lvl = TITLE_UNLOCKS[i]
+        list[i] = { level = lvl, key = TITLES[lvl] }
+    end
+    return list
+end
+
+function XPM:GetTitleUnlockLevel(level)
+    level = tonumber(level) or 1
+    local unlock = TITLE_UNLOCKS[1]
+    for i = 1, #TITLE_UNLOCKS do
+        local lvl = TITLE_UNLOCKS[i]
+        if lvl <= level then
+            unlock = lvl
+        else
+            break
+        end
+    end
+    return unlock
+end
+
+function XPM:GetUnlockLevelForKey(key)
+    if type(key) ~= "string" or key == "" then return nil end
+    for lvl, title in pairs(TITLES) do
+        if title == key then return lvl end
+    end
+    return nil
+end
+
+function XPM:GetLocalizedTitle(level)
+    local unlock = self:GetTitleUnlockLevel(level)
+    local L = ArcadiaNexus.GetLocaleTable and ArcadiaNexus.GetLocaleTable("UI")
+    local loc = L and L["stats_title_" .. unlock]
+    if type(loc) == "string" and loc ~= "" then
+        return loc
+    end
+    return TITLES[unlock] or TITLES[1]
+end
+
+function XPM:GetLocalizedTitleForKey(key)
+    local unlock = self:GetUnlockLevelForKey(key)
+    if unlock then
+        return self:GetLocalizedTitle(unlock)
+    end
+    return key
+end
+
+function XPM:GetNextTitleUnlock(level)
+    level = tonumber(level) or 1
+    for i = 1, #TITLE_UNLOCKS do
+        local unlockLevel = TITLE_UNLOCKS[i]
+        if unlockLevel > level then
+            return TITLES[unlockLevel], unlockLevel
+        end
+    end
+    return nil, nil
+end
+
+-- Fortschritt im aktuellen Titel-Band (vorheriger Unlock bis zum nächsten).
+-- remaining = XP, die noch fehlen, um den nächsten Titel-Level zu erreichen.
+function XPM:GetTitleProgress(profile)
+    local p = profile
+    if type(p) ~= "table" then
+        p = Profile()
+    end
+    local level = tonumber(p and p.level) or 1
+    local xp = tonumber(p and p.xp) or 0
+    local currentTitle = XPM:GetTitle(level)
+    local nextTitle, nextLevel = XPM:GetNextTitleUnlock(level)
+    if not nextTitle then
+        return {
+            maxed        = true,
+            currentTitle = currentTitle,
+            nextTitle    = nil,
+            nextLevel    = nil,
+            remaining    = 0,
+            earned       = 1,
+            total        = 1,
+            fraction     = 1,
+        }
+    end
+
+    local prevLevel = TITLE_UNLOCKS[1]
+    for i = 1, #TITLE_UNLOCKS do
+        local unlockLevel = TITLE_UNLOCKS[i]
+        if unlockLevel <= level then
+            prevLevel = unlockLevel
+        else
+            break
+        end
+    end
+
+    local total, earned = 0, 0
+    for lvl = prevLevel, nextLevel - 1 do
+        local req = XPM:GetXPRequired(lvl)
+        total = total + req
+        if lvl < level then
+            earned = earned + req
+        elseif lvl == level then
+            earned = earned + math.min(xp, req)
+        end
+    end
+    if total < 1 then total = 1 end
+    local remaining = math.max(0, total - earned)
+    return {
+        maxed        = false,
+        currentTitle = currentTitle,
+        nextTitle    = nextTitle,
+        nextLevel    = nextLevel,
+        remaining    = remaining,
+        earned       = earned,
+        total        = total,
+        fraction     = math.min(1, earned / total),
+    }
 end
 
 -- Basis-XP kommt aus RegisterGame.xp (GameRegistry.GetBaseXP).
@@ -78,8 +216,9 @@ local RESULT_MULTI = {
 -- ============================================================
 -- XP-Kurve: 80 + (level x 12) + floor(level^1.35)
 -- Level  1 ->  93 XP (~10 Spiele)
--- Level 10 -> 246 XP (~27 Spiele)
--- Level 50 -> 2220 XP
+-- Level 10 -> 222 XP
+-- Level 50 -> 876 XP (Aufstieg auf 51)
+-- Level 99 -> 1762 XP (Aufstieg auf 100)
 -- ============================================================
 
 function XPM:GetXPRequired(level)

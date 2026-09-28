@@ -47,7 +47,6 @@ local function BuildAzerothConquestSettingsPanel(parent)
                 },
             },
         },
-        rebuild = BuildAzerothConquestSettingsPanel,
     })
 end
 

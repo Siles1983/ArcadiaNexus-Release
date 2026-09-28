@@ -31,7 +31,6 @@ local function BuildSnakeSettingsPanel(parent)
                 }),
             },
         },
-        rebuild = BuildSnakeSettingsPanel,
     })
 end
 

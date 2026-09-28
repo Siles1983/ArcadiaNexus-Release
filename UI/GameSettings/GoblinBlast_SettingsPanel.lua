@@ -34,7 +34,6 @@ local function BuildGoblinBlastSettingsPanel(parent)
                 }),
             },
         },
-        rebuild = BuildGoblinBlastSettingsPanel,
     })
 end
 

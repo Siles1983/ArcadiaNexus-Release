@@ -44,7 +44,6 @@ local function BuildAzerothJewelsSettingsPanel(parent)
                 R._timerCheckbox:SetChecked(S:Get("timerActive"))
             end
         end,
-        rebuild = BuildAzerothJewelsSettingsPanel,
     })
 end
 

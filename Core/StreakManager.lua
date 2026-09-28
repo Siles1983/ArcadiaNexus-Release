@@ -2,14 +2,11 @@
     ArcadiaNexus – StreakManager
     Core/StreakManager.lua
     Verwaltet Login-Streaks und Meilenstein-Belohnungen.
-    Kommuniziert ausschließlich via Events – kein direkter Modul-Aufruf.
+    Login-Streaks werden beim Login, der Tagesbonus in der Ergebnis-Pipeline verarbeitet.
 ]]
 
 local SM = {}
 ArcadiaNexus.StreakManager = SM
-
--- Muss VOR Init() stehen – Lua local ist erst ab Deklarationszeile sichtbar
-local _firstGameGiven = false
 
 -- Serielle Nummer eines lokalen Kalendertags (Gregorianischer Kalender).
 -- GetServerTime liefert einen stabilen Unix-Zeitstempel; date("*t", ...)
@@ -37,42 +34,61 @@ local function GetCalendarDay(timestamp)
         - 32045
 end
 
+-- Alte Exporte speichern den Bonus-Anspruch noch im zurücksetzbaren Streak.
+-- Der neue Anspruch gehört zur erhaltenen Gold-Bilanz und gilt pro Kalendertag.
+local function MigrateBonusClaim()
+    local db = ArcadiaNexus.StatsStore.GetStreak()
+    local gold = ArcadiaNexus.TavernGoldStore.Get()
+    if db.claimedToday then
+        local today = GetCalendarDay(GetServerTime())
+        local claimedDay = GetCalendarDay(db.lastLogin) or today
+        if today and claimedDay == today then
+            gold.lastFirstGameDay = today
+        end
+    end
+    db.claimedToday = nil
+    return db
+end
+
 -- ============================================================
 -- MEILENSTEINE
 -- ============================================================
 local MILESTONES = {
-    { days=3,   xp=50,  gold=0,   title=nil,                theme=nil           },
-    { days=7,   xp=0,   gold=20,  title=nil,                theme=nil           },
-    { days=14,  xp=0,   gold=50,  title="Stammgast",        theme=nil           },
-    { days=30,  xp=0,   gold=100, title="Nexus-Veteran",    theme=nil           },
-    { days=100, xp=0,   gold=0,   title="Legende des Nexus",theme="golden_nexus"},
+    { days=3,  xp=50, gold=0   },
+    { days=7,  xp=0,  gold=20  },
+    { days=14, xp=0,  gold=50  },
+    { days=30, xp=0,  gold=100 },
 }
 
 -- ============================================================
 -- INIT
 -- ============================================================
 function SM:Init()
-    -- DB sicherstellen (Fallback falls Bootstrap-Migration noch nicht lief)
-    ArcadiaNexus.StatsStore.GetStreak()
+    MigrateBonusClaim()
+end
 
-    -- Erstes Spiel des Tages: +2 Gold (einmalig pro Tag)
-    ArcadiaNexus.Engine:On("GAME_RESULT", function(data)
-        if _firstGameGiven then return end
-        local db = ArcadiaNexus.StatsStore.GetStreak()
-        if not db then return end
-        if db.claimedToday then return end
-        db.claimedToday  = true
-        _firstGameGiven  = true
-        local TG = ArcadiaNexus.TavernGold
-        if TG then TG:Add(2, "first_game") end
-    end)
+function SM:Refresh()
+    local db = MigrateBonusClaim()
+    ArcadiaNexus.Engine:Emit("STREAK_UPDATED", db)
+end
+
+function SM:HandleGameResult(data)
+    if not data or data.recordPlayed == false then return end
+    local today = GetCalendarDay(GetServerTime())
+    if not today then return end
+    local gold = ArcadiaNexus.TavernGoldStore.Get()
+    if gold.lastFirstGameDay == today then return end
+    local TG = ArcadiaNexus.TavernGold
+    if not TG then return end
+    gold.lastFirstGameDay = today
+    TG:Add(2, "first_game")
 end
 
 -- ============================================================
 -- LOGIN-HANDLER — wird von Bootstrap:OnPlayerLogin() aufgerufen
 -- ============================================================
 function SM:OnLogin()
-    local db = ArcadiaNexus.StatsStore.GetStreak()
+    local db = MigrateBonusClaim()
 
     local now        = GetServerTime()
     local currentDay = GetCalendarDay(now)
@@ -84,13 +100,11 @@ function SM:OnLogin()
     elseif dayDiff == 1 then
         -- Direkt folgender Kalendertag: Streak fortführen
         db.current       = (db.current or 0) + 1
-        db.claimedToday  = false
         SM:_CheckMilestone()
     else
         -- Erster Login, übersprungener Tag oder ungültige/future Daten:
         -- eine neue Streak mit dem heutigen Tag beginnen.
         db.current      = 1
-        db.claimedToday = false
     end
 
     db.lastLogin = now
@@ -98,9 +112,6 @@ function SM:OnLogin()
     if (db.current or 0) > (db.best or 0) then
         db.best = db.current
     end
-
-    -- Erstes tägliches Spiel: +2 Gold (falls heute noch nicht erhalten)
-    -- wird vom GAME_RESULT-Listener aus Init() ausgelöst.
 
     ArcadiaNexus.Engine:Emit("STREAK_UPDATED", db)
 end
@@ -118,12 +129,6 @@ function SM:_CheckMilestone()
             if m.gold > 0 then
                 local TG = ArcadiaNexus.TavernGold
                 if TG then TG:Add(m.gold, "streak_milestone") end
-            end
-            if m.title then
-                ArcadiaNexus.Engine:Emit("TITLE_UNLOCKED", { title = m.title })
-            end
-            if m.theme then
-                ArcadiaNexus.Engine:Emit("THEME_UNLOCKED", { theme = m.theme })
             end
         end
     end

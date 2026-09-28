@@ -14,30 +14,7 @@ end
 
 function Match.GroupKeys()
     local MT = Match.Transport
-    if not MT or not MT.LocalPlayerKey then return {} end
-    local me = MT.LocalPlayerKey()
-    local keys, seen = {}, {}
-    local function add(unit)
-        if not unit or not UnitExists or not UnitExists(unit) then return end
-        if UnitIsUnit and UnitIsUnit(unit, "player") then return end
-        local name, realm = UnitFullName(unit)
-        if not name then return end
-        realm = realm or (GetNormalizedRealmName and GetNormalizedRealmName()) or ""
-        realm = tostring(realm):gsub("%s+", "")
-        local key = (realm ~= "") and (name .. "-" .. realm) or name
-        if key ~= me and not seen[key] then
-            seen[key] = true
-            keys[#keys + 1] = key
-        end
-    end
-    if IsInRaid and IsInRaid() then
-        local n = GetNumGroupMembers and GetNumGroupMembers() or 0
-        for i = 1, n do add("raid" .. i) end
-    elseif IsInGroup and IsInGroup() then
-        local n = GetNumSubgroupMembers and GetNumSubgroupMembers() or 4
-        for i = 1, n do add("party" .. i) end
-    end
-    return keys
+    return (MT and MT.GroupMemberKeys and MT.GroupMemberKeys()) or {}
 end
 
 function Match.EnsureGameClient(engine, matchOptsFn)
