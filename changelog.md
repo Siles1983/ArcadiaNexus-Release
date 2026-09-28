@@ -29,7 +29,7 @@
 - Achievement groups registered after addon load now receive normalized icons, retroactive checks, and a refresh of the visible achievement view.
 - Tavern Cards plays the special sound for both WILD and WILD4. Match version detection uses the current `C_AddOns.GetAddOnMetadata` API. Azeroth Conquest has its missing board border.
 - Azeroth Jewels now uses the shared campaign-progress logic while preserving older stars, inventory, Endless progress, and paused levels.
-- Multiplayer roster handling shares one name-normalization path. Removed unused Settings rebuild hooks, dead helpers, and hidden Fighter projectile actors; DungeonDemo is listed among the development games.
+- Multiplayer roster handling shares one name-normalization path. Removed unused Settings rebuild hooks.
 
 ### Deutsch
 
@@ -60,7 +60,7 @@
 - Nach dem Addon-Start registrierte Erfolgsgruppen erhalten normalisierte Icons, eine rückwirkende Prüfung und eine Aktualisierung der sichtbaren Erfolgsansicht.
 - Tavern Cards spielt das Spezialgeräusch für WILD und WILD4. Die Match-Version nutzt die aktuelle API `C_AddOns.GetAddOnMetadata`. Azeroth Conquest besitzt wieder seinen fehlenden Brettrahmen.
 - Azeroth Jewels nutzt die gemeinsame Kampagnenfortschritts-Logik und erhält alte Sterne, Inventar, Endless-Fortschritt und pausierte Level.
-- Die Multiplayer-Gruppenliste verwendet einen gemeinsamen Pfad zur Namensnormalisierung. Ungenutzte Settings-`rebuild`-Einträge, tote Helfer und versteckte Fighter-Projektil-Actors wurden entfernt; DungeonDemo steht nun in der Liste der Entwicklungsspiele.
+- Die Multiplayer-Gruppenliste verwendet einen gemeinsamen Pfad zur Namensnormalisierung. Ungenutzte Settings-`rebuild`-Einträge wurden entfernt.
 
 ---
 
