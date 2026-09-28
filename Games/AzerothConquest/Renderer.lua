@@ -50,7 +50,7 @@ local CFG = {
     border_h     = 600,
     border_ofs_x = 0,
     border_ofs_y = 0,
-    border_alpha = 1,
+    border_alpha = 0,
 
     -- Logo-Textur (relativ zu _fieldFrame CENTER)
     logo_w       = 260,
