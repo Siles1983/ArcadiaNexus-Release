@@ -8,6 +8,16 @@ local ArcadiaNexus = _G.ArcadiaNexus
 
 ArcadiaNexus.RegisterLocale("ARGUSORBDEFENSE", "deDE", {
     game_title        = "Argus Orbit Defense",
+    hud_level = "Level %d/30",
+    pu_shield="Schild", pu_rapid="Schnellfeuer", pu_spread="Streuschuss", pu_bomb="Naaru-Bombe", pu_life="Extraleben",
+    tip_bomb="B: Naaru-Bombe. Zerstört Gegner im Umkreis von 120 Pixeln ohne Meteorsplits.",
+    tip_life="+: Ein Extraleben, höchstens 5 Leben.",
+    legacy_save = "Altfortsetzung",
+    legacy_notice = "Altfortsetzung: Etappe neu, alte Punkte archiviert",
+    tip_shield = "S: Schild. 6 s je Fund; Stapelgrenze 12 s.",
+    tip_rapid = "R: Schnellfeuer. 8 s je Fund; Stapelgrenze 16 s.",
+    tip_spread = "3: Streuschuss. 8 s je Fund; Stapelgrenze 16 s.",
+    tip_lives = "+: Extraleben. Höchstens 5 Leben.",
 
     -- HUD
     lbl_score         = "Punkte",
@@ -86,7 +96,7 @@ ArcadiaNexus.RegisterLocale("ARGUSORBDEFENSE", "deDE", {
     guide_6           = "Meteore teilen sich: Groß -> 2 Mittel -> 2 Klein -> zerstört.",
     guide_7           = "Fel Hunter verfolgen dich – schieß sie zuerst ab!",
     guide_8           = "Power-Ups stapeln sich bis zur doppelten Laufzeit (SHIELD/RAPID/SPREAD). Die Bombe zerstört alle Objekte im Umkreis.",
-    guide_9           = "Power-Up-Farben: Gelb=Schild  Rot=Schnellfeuer  Blau=Streuschuss  Orange=Bombe  Grün=Leben",
+    guide_9           = "Power-Up-Symbole: S=Schild, R=Schnellfeuer, 3=Streuschuss, B=Bombe, +=Leben. Schild stapelt bis 12 s, Waffen bis 16 s; höchstens 5 Leben.",
 
     -- Settings-Boxen
     box_gamemode      = "Spielmodus",
@@ -122,6 +132,16 @@ ArcadiaNexus.RegisterLocale("ARGUSORBDEFENSE", "deDE", {
 
 ArcadiaNexus.RegisterLocale("ARGUSORBDEFENSE", "enUS", {
     game_title        = "Argus Orbit Defense",
+    hud_level = "Level %d/30",
+    pu_shield="Shield", pu_rapid="Rapid fire", pu_spread="Spread shot", pu_bomb="Naaru Bomb", pu_life="Extra life",
+    tip_bomb="B: Naaru Bomb. Destroys enemies within 120 pixels without meteor splits.",
+    tip_life="+: One extra life, maximum 5 lives.",
+    legacy_save = "Legacy continuation",
+    legacy_notice = "Legacy: stage restarted, old points archived",
+    tip_shield = "S: Shield. 6 s per pickup; stacks up to 12 s.",
+    tip_rapid = "R: Rapid fire. 8 s per pickup; stacks up to 16 s.",
+    tip_spread = "3: Spread shot. 8 s per pickup; stacks up to 16 s.",
+    tip_lives = "+: Extra life. Maximum 5 lives.",
 
     -- HUD
     lbl_score         = "Score",
@@ -200,7 +220,7 @@ ArcadiaNexus.RegisterLocale("ARGUSORBDEFENSE", "enUS", {
     guide_6           = "Meteors split: Large -> 2 Medium -> 2 Small -> destroyed.",
     guide_7           = "Fel Hunters track you - shoot them first!",
     guide_8           = "Power-Ups stack up to double duration (SHIELD/RAPID/SPREAD). Bomb destroys all objects in range.",
-    guide_9           = "Power-Up colors: Yellow=Shield  Red=Rapid Fire  Blue=Spread  Orange=Bomb  Green=Life",
+    guide_9           = "Power-Up symbols: S=Shield, R=Rapid, 3=Spread, B=Bomb, +=Life. Shield stacks to 12 s, weapons to 16 s; maximum 5 lives.",
 
     -- Settings-Boxen
     box_gamemode      = "Game Mode",

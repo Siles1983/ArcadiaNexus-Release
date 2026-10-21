@@ -9,12 +9,27 @@ ArcadiaNexus.TicTacToeLogic = {}
 
 local Logic = ArcadiaNexus.TicTacToeLogic
 
+function Logic.IsInteger(n) return type(n)=="number" and n==math.floor(n) and n<math.huge end
+function Logic.NormalizeConfig(config)
+    if type(config)~="table" then return nil end
+    local size,win=config.boardSize or 3,config.winLength or config.boardSize or 3
+    local diff,starter=config.aiDifficulty or "normal",config.firstPlayer or "you"
+    if not Logic.IsInteger(size) or size<3 or size>5 or not Logic.IsInteger(win) or win<3 or win>size
+        or diff~="easy" and diff~="normal" and diff~="hard"
+        or starter~="you" and starter~="ai" and starter~="random" then return nil end
+    return {boardSize=size,winLength=win,aiDifficulty=diff,firstPlayer=starter,mode="hotseat"}
+end
+function Logic.Variant(config)
+    return "solo_"..config.aiDifficulty.."_"..config.boardSize.."_"..config.winLength
+end
+
 -- ==========================================
 -- Board Creation
 -- ==========================================
 
 function Logic.ClampSize(size)
     size = tonumber(size) or 3
+    if not Logic.IsInteger(size) then size=3 end
     if size < 3 then size = 3 end
     if size > 5 then size = 5 end
     return size
@@ -23,6 +38,7 @@ end
 function Logic.ClampWinLength(size, winLength)
     size = Logic.ClampSize(size)
     local w = tonumber(winLength) or size
+    if not Logic.IsInteger(w) then w=size end
     if w < 3 then w = 3 end
     if w > size then w = size end
     return w
@@ -70,6 +86,8 @@ end
 -- ==========================================
 
 function Logic:ApplyMove(board, x, y, player)
+    if not board or not Logic.IsInteger(x) or not Logic.IsInteger(y)
+        or x<1 or y<1 or x>board.size or y>board.size or player~=1 and player~=2 then return false end
     if board.cells[y][x] ~= 0 then
         return false
     end
@@ -281,7 +299,7 @@ function Logic.ApplyMatch(pub, intent, seat)
     if seat ~= (tonumber(pub.turn) or 1) then return false end
     local size = pub.size or Logic.MP_SIZE
     local i = tonumber(intent and intent.i)
-    if not i or i < 1 or i > size * size then return false end
+    if not Logic.IsInteger(i) or i < 1 or i > size * size then return false end
     local cells = pub.cells or string.rep("0", size * size)
     if #cells < size * size then
         cells = cells .. string.rep("0", size * size - #cells)
@@ -421,7 +439,7 @@ function Logic.MatchOpts(engine)
             if engine then engine:OnMatchState(st) end
         end,
         onResult = function(node, resultId)
-            if engine then engine:OnMatchResult(node, resultId) end
+            if engine then return engine:OnMatchResult(node, resultId) end
         end,
         onReject = function(_, f)
             if engine then engine:OnMatchReject(f) end

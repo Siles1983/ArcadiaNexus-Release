@@ -84,10 +84,12 @@ function Stats:GetCategoryLabel(catId)
     return (L and L["cat_" .. tostring(catId)]) or catId or "–"
 end
 
-function Stats:GetTopCategories(limit)
+function Stats:GetTopCategories(limit, ranked)
     limit = limit or 3
     local SM = ArcadiaNexus.ScoreManager
-    local ranked = (SM and SM.GetRankedGames) and SM:GetRankedGames() or {}
+    if ranked == nil then
+        ranked = (SM and SM.GetRankedGames) and SM:GetRankedGames() or {}
+    end
     local GR = ArcadiaNexus.GameRegistry
     local byCat = {}
     for i = 1, #ranked do
@@ -117,9 +119,11 @@ function Stats:GetTopCategories(limit)
     return list
 end
 
-function Stats:GetHighestScoreEver()
-    local SS = ArcadiaNexus.StatsStore
-    local lb = SS and SS.GetLeaderboard()
+function Stats:GetHighestScoreEver(lb)
+    if lb == nil then
+        local SS = ArcadiaNexus.StatsStore
+        lb = SS and SS.GetLeaderboard()
+    end
     if not lb then return 0, nil, nil end
     local best, bestGame, bestDiff = 0, nil, nil
     for gameId, diffs in pairs(lb) do
@@ -478,17 +482,39 @@ function Stats:_BuildBoxes(p)
         content:ClearAllPoints()
         content:SetPoint("TOPLEFT",     box, "TOPLEFT",     UI.PAD, -CONTENT_TOP)
         content:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -UI.PAD, CONTENT_BOTTOM)
+
+        local help = CreateFrame("Button", nil, box)
+        help:SetSize(20, 20)
+        help:SetPoint("TOPRIGHT", box, "TOPRIGHT", -8, -4)
+        local mark = help:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        mark:SetAllPoints(help)
+        mark:SetText("?")
+        mark:SetTextColor(1, 0.82, 0)
+        help:SetScript("OnClick", function()
+            if ArcadiaNexus.Compendium then ArcadiaNexus.Compendium.Open("profile") end
+        end)
+        help:SetScript("OnEnter", function(self)
+            if GameTooltip then
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText((GetLocale and GetLocale() == "deDE") and "Profilhilfe öffnen" or "Open profile help")
+                GameTooltip:Show()
+            end
+        end)
+        help:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
         return box, content
     end
 
     -- 4 Boxen relativ zum zentrierten grid-Frame
-    local _, c1 = MakeBox(grid, L["stats_header_profile"] or "Spieler-Profil",
+    local box1, c1 = MakeBox(grid, L["stats_header_profile"] or "Spieler-Profil",
         0, 0, BOX_W, BOX_H)
     self._box1Content = c1
+    self._tourBoxes = self._tourBoxes or {}
+    self._tourBoxes[1] = box1
 
     local box2, c2 = MakeBox(grid, L["stats_header_games"] or "Spielstatistik",
         BOX_W + GAP, 0, BOX_W, BOX_H)
     self._box2Content = c2
+    self._tourBoxes[2] = box2
     self._box2Frame   = box2
     if UI.CreateWatermarkLogo then
         local wm = UI.CreateWatermarkLogo(box2, {
@@ -508,13 +534,15 @@ function Stats:_BuildBoxes(p)
         end
     end
 
-    local _, c3 = MakeBox(grid, L["stats_header_challenges"] or "Challenges",
+    local box3, c3 = MakeBox(grid, L["stats_header_challenges"] or "Challenges",
         0, BOX_H + GAP, BOX_W, BOX_H)
     self._box3Content = c3
+    self._tourBoxes[3] = box3
 
     local box4, c4 = MakeBox(grid, L["stats_header_titles"] or "Titel",
         BOX_W + GAP, BOX_H + GAP, BOX_W, BOX_H)
     self._box4Content = c4
+    self._tourBoxes[4] = box4
     self._box4Frame   = box4
 
     -- ── Horizontaler Divider (zwischen oberer und unterer Zeile) ──
@@ -822,11 +850,13 @@ function Stats:_Rebuild()
     local wr      = self:GetWinRate()
     local best    = streak.best        or 0
 
-    local hsVal, hsGame, hsDiff   = self:GetHighestScoreEver()
+    -- Nur fuer diesen Aufbau lesen; hoechsten Score wie bisher vor den Ranglisten bestimmen.
+    local lb                      = SS and SS.GetLeaderboard()
+    local hsVal, hsGame, hsDiff   = self:GetHighestScoreEver(lb)
     local achUnlocked, achTotal   = self:GetAchievementCount()
     local SM                      = ArcadiaNexus.ScoreManager
-    local rankedGames             = (SM and SM.GetRankedGames) and SM:GetRankedGames() or {}
-    local topCats                 = self:GetTopCategories(2)
+    local rankedGames             = (SM and SM.GetRankedGames) and SM:GetRankedGames(lb) or {}
+    local topCats                 = self:GetTopCategories(2, rankedGames)
 
     local CM        = ArcadiaNexus.ChallengeManager
     local gotd      = CM and CM.GetGameOfDay and CM:GetGameOfDay()

@@ -595,52 +595,35 @@ function L:DropFanfare(dropCount)
     return nil
 end
 
+-- The preview runs the same projectile/contact code on an isolated board.
+-- Powers stop at first contact too; a normal snap marker is never promised for them.
 function L:AimPreview(state, angle, difficulty)
     local spec = self.AIM[difficulty or "normal"] or self.AIM.normal
-    local x, y = self.SHOOTER_X, self.SHOOTER_Y
-    local vx, vy = math.cos(angle), math.sin(angle)
-    if vy >= 0 then vy = -math.abs(vy) end
-    local len = math.sqrt(vx * vx + vy * vy)
-    if len < 1e-6 then vx, vy = 0, -1 else vx, vy = vx / len, vy / len end
-    local remaining = spec.length
-    local bounced = false
-    local points = { { x, y } }
-    local step = 8
-    local minX, maxX, minY = self:CollisionBounds()
-    while remaining > 0 do
-        x = x + vx * step
-        y = y + vy * step
-        remaining = remaining - step
-        if y <= minY then
-            points[#points + 1] = { x, math.max(minY, y) }
-            break
+    local work = self:NewState({mode=state.mode, difficulty=state.difficulty,
+        grid=state.grid, cols=state.cols, rows=state.rows, seed=state.rngS})
+    work.queue = {state.queue[1], state.queue[2]}
+    work.pendingPower = nil
+    self:Fire(work, angle) -- geometry to the first contact, including for dragonfire
+    local points, distance, bounced = {{self.SHOOTER_X,self.SHOOTER_Y}}, 0, false
+    local step = 8 / self.SHOT_SPEED
+    while distance < spec.length do
+        local ev = self:TickShot(work, math.min(step,(spec.length-distance)/self.SHOT_SPEED))
+        distance = distance + 8
+        points[#points+1] = {work.shot.x,work.shot.y}
+        if ev == "bounce" or ev == "bounce_landed" then
+            if not spec.bounce or bounced then break end
+            bounced = true
         end
-        if x <= minX then
-            x = minX
-            if spec.bounce and not bounced then
-                vx = math.abs(vx)
-                bounced = true
-                points[#points + 1] = { x, y }
-            else
-                points[#points + 1] = { x, y }
-                break
+        if ev == "landed" or ev == "bounce_landed" then
+            local snap
+            if difficulty == "easy" and not state.pendingPower then
+                local r,c = self:SnapCell(work,work.shot.x,work.shot.y,work.shot.hitRow,work.shot.hitCol)
+                if r then local x,y=self:HexToPixel(r,c); snap={x,y,row=r,col=c} end
             end
-        elseif x >= maxX then
-            x = maxX
-            if spec.bounce and not bounced then
-                vx = -math.abs(vx)
-                bounced = true
-                points[#points + 1] = { x, y }
-            else
-                points[#points + 1] = { x, y }
-                break
-            end
-        else
-            points[#points + 1] = { x, y }
+            return points,bounced,snap
         end
-        if y >= self.FIELD_H then break end
     end
-    return points, bounced
+    return points,bounced
 end
 
 local function NormalizeUp(vx, vy, speed)
@@ -735,6 +718,24 @@ function L:_FinishShot(shot, kind, bounced)
 end
 
 function L:TickShot(state, dt)
+    local shot=state.shot
+    if not shot or not shot.active then return "idle" end
+    -- Fixed bounded microsteps preserve contact/snap decisions across frame rates.
+    -- The remainder belongs to the projectile and is included in its snapshot.
+    local step=1/160
+    shot.simRemainder=(shot.simRemainder or 0)+math.max(0,math.min(dt,0.1))
+    local count=math.floor((shot.simRemainder+1e-9)/step)
+    shot.simRemainder=math.max(0,shot.simRemainder-count*step)
+    local bounced=false
+    for _=1,count do
+        local ev=self:_TickShotStep(state,step)
+        if ev=="bounce" or ev=="bounce_landed" then bounced=true end
+        if ev=="landed" or ev=="bounce_landed" then return bounced and "bounce_landed" or "landed" end
+    end
+    return bounced and "bounce" or "flying"
+end
+
+function L:_TickShotStep(state, dt)
     local shot = state.shot
     if not shot or not shot.active then return "idle" end
     shot.life = (shot.life or 0) + dt
@@ -816,6 +817,7 @@ local function GrantPower(self, state)
 end
 
 function L:ResolveLanding(state)
+    if state.won or state.lost then return {win=state.won,loss=state.lost,popped={},dropped={},destroyed={}} end
     local shot = state.shot
     local result = {
         popped = {},
@@ -909,8 +911,9 @@ function L:ResolveLanding(state)
         result.popScore = (popN * self.POP_POINTS + ((destN > 0 and popN == 0) and destN * self.POP_POINTS or 0)) * combo * oc
         result.dropScore = dropN * self.DROP_POINTS * combo * oc
         state.combo = combo + 1
-        if state.combo > (state.stats.maxCombo or 0) then
-            state.stats.maxCombo = state.combo
+        result.combo = combo
+        if combo > (state.stats.maxCombo or 0) then
+            state.stats.maxCombo = combo
         end
         state.successStreak = (state.successStreak or 0) + 1
         if dropN > (state.stats.maxDrop or 0) then
@@ -962,7 +965,7 @@ function L:ResolveLanding(state)
         result.loss = true
     end
 
-    result.combo = state.combo
+    result.combo = result.combo or 1
     shot.active = false
     shot.landed = false
     return result
@@ -1003,8 +1006,21 @@ function L:CloneGrid(grid)
     return g
 end
 
+local function Copy(v)
+    if type(v)~="table" then return v end
+    local out={} for k,x in pairs(v) do out[k]=Copy(x) end return out
+end
+L.SNAPSHOT_VERSION=3
+
 function L:Serialize(state)
+    if not state then return nil end
     return {
+        snapshotVersion = self.SNAPSHOT_VERSION,
+        layoutVersion = 3,
+        runId = state.runId,
+        phase = state.shot and state.shot.active and "FLYING" or "AIMING",
+        shot = Copy(state.shot),
+        aimAngle = state.aimAngle,
         mode           = state.mode,
         difficulty     = state.difficulty,
         levelIndex     = state.levelIndex,
@@ -1037,7 +1053,11 @@ function L:Serialize(state)
 end
 
 function L:ApplySerialized(state, data)
-    if not data then return state end
+    if not data or data.snapshotVersion~=self.SNAPSHOT_VERSION or data.layoutVersion~=3 then return state end
+    state.runId = data.runId
+    state.phase = data.phase
+    state.shot = Copy(data.shot)
+    state.aimAngle = data.aimAngle
     state.grid           = self:CloneGrid(data.grid)
     state.queue          = { data.queue and data.queue[1] or 1, data.queue and data.queue[2] or 1 }
     state.score          = data.score or 0
@@ -1052,7 +1072,7 @@ function L:ApplySerialized(state, data)
     state.timeLeft       = data.timeLeft
     state.successStreak  = data.successStreak or 0
     state.overchargeLeft = data.overchargeLeft or 0
-    state.stats          = data.stats or state.stats
+    state.stats          = Copy(data.stats or state.stats)
     return state
 end
 
@@ -1091,7 +1111,7 @@ function L:NewState(cfg)
         dangerRow      = cfg.dangerRow or self.DANGER_ROW,
         grid           = self:EmptyGrid(cols, rows),
         queue          = { 0, 0 },
-        score          = cfg.score or 0,
+        score          = cfg.mode == "shot" and 0 or (cfg.score or 0),
         combo          = 1,
         energy         = 0,
         pendingPower   = nil,

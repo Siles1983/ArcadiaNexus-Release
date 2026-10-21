@@ -120,6 +120,89 @@ function L.DecodeMoves(text)
     return out
 end
 
+-- Revisions share canonical board/rest-dice states, never ordered leaf arrays.
+local policies = setmetatable({}, {__mode="v"})
+local function restDice(dice, index)
+    local out = {}
+    for i,d in ipairs(dice) do if i~=index then out[#out+1]=d end end
+    return out
+end
+local function searchKey(board,dice)
+    return L.Serialize(board).."/"..table.concat(dice)
+end
+function L.BuildPolicy(s, checkpoint)
+    local key=L.Serialize(s)
+    if policies[key] then return policies[key] end
+    local policy={_policy=true,key=key,nodes=0,edges=0}
+    if s.phase~="move" then return policy end
+    local memo={}
+    local function build(board,dice)
+        local stateKey=searchKey(board,dice)
+        if memo[stateKey] then return memo[stateKey] end
+        if checkpoint then checkpoint() end
+        local node={board=board,edges={},best=0,count=1}
+        memo[stateKey]=node; policy.nodes=policy.nodes+1
+        local seen={}
+        for i,die in ipairs(dice) do if not seen[die] then
+            seen[die]=true
+            for _,move in ipairs(L.SingleMoves(board,s.turn,die)) do
+                local child=build(L.Step(board,s.turn,move),restDice(dice,i))
+                local usage=1+child.best
+                if usage>node.best then node.edges={}; node.best=usage end
+                if usage==node.best then node.edges[#node.edges+1]={move=move,child=child} end
+            end
+        end end
+        if node.best>0 then
+            node.count=0
+            for _,edge in ipairs(node.edges) do node.count=node.count+edge.child.count end
+        end
+        policy.edges=policy.edges+#node.edges
+        return node
+    end
+    local dice={}; for i,d in ipairs(s.dice) do dice[i]=d end; table.sort(dice)
+    policy.root=build(L.Copy(s),dice)
+    if policy.root.best==1 then
+        local high=0
+        for _,edge in ipairs(policy.root.edges) do high=math.max(high,edge.move.die) end
+        local edges,count={},0
+        for _,edge in ipairs(policy.root.edges) do if edge.move.die==high then
+            edges[#edges+1]=edge; count=count+edge.child.count
+        end end
+        policy.root.edges,policy.root.count=edges,count
+    end
+    policies[key]=policy
+    return policy
+end
+
+function L.PolicyNode(policy,prefix)
+    local node=policy.root
+    for _,move in ipairs(prefix) do
+        if not node then return nil end
+        local nextNode
+        for _,edge in ipairs(node.edges) do
+            local m=edge.move
+            if m.from==move.from and m.to==move.to and m.die==move.die then nextNode=edge.child; break end
+        end
+        node=nextNode
+    end
+    return node
+end
+
+local function hasLonger(s, dice, need, memo)
+    if need==0 then return true end
+    if #dice<need then return false end
+    local key=searchKey(s,dice).."/"..need
+    if memo[key]~=nil then return memo[key] end
+    local seen={}
+    for i,die in ipairs(dice) do if not seen[die] then
+        seen[die]=true
+        for _,m in ipairs(L.SingleMoves(s,s.turn,die)) do
+            if hasLonger(L.Step(s,s.turn,m),restDice(dice,i),need-1,memo) then memo[key]=true; return true end
+        end
+    end end
+    memo[key]=false; return false
+end
+
 -- Explore both orders, then enforce maximum dice usage and the higher-die rule.
 -- Prefixes of these complete sequences are the ONLY moves offered to the player.
 function L.LegalTurns(s)
@@ -174,6 +257,13 @@ function L.PrefixMatches(seq, prefix)
 end
 
 function L.NextMoves(turns, prefix)
+    if turns._policy then
+        local node=L.PolicyNode(turns,prefix)
+        local out={}
+        if not node then return out,false end
+        for _,edge in ipairs(node.edges) do out[#out+1]=edge.move end
+        return out,node.best==0
+    end
     local moves, seen, complete = {}, {}, false
     for _, seq in ipairs(turns) do
         if L.PrefixMatches(seq, prefix) then
@@ -213,13 +303,33 @@ function L.Roll(s, a, b)
 end
 
 function L.Commit(s, moves)
-    local encoded, valid = L.EncodeMoves(moves), false
-    for _, seq in ipairs(L.LegalTurns(s)) do
-        if L.EncodeMoves(seq) == encoded then valid = true; break end
+    if s.phase~="move" or type(moves)~="table" or #moves>#s.dice then return false end
+    local nextState,dice=s,{}
+    for i,d in ipairs(s.dice) do dice[i]=d end
+    for _,m in ipairs(moves) do
+        local index
+        for i,d in ipairs(dice) do if d==m.die then index=i; break end end
+        if not index then return false end
+        local valid=false
+        for _,legal in ipairs(L.SingleMoves(nextState,s.turn,m.die)) do
+            if legal.from==m.from and legal.to==m.to then valid=true; break end
+        end
+        if not valid then return false end
+        nextState=L.Step(nextState,s.turn,m); table.remove(dice,index)
     end
-    if not valid then return false end
-    local nextState = s
-    for _, m in ipairs(moves) do nextState = L.Step(nextState, s.turn, m) end
+    if #moves<#s.dice then
+        local cached=policies[L.Serialize(s)]
+        if cached then
+            local node=L.PolicyNode(cached,moves)
+            if not node or node.best~=0 then return false end
+        else
+            local all={}; for i,d in ipairs(s.dice) do all[i]=d end; table.sort(all)
+            if hasLonger(s,all,#moves+1,{}) then return false end
+            if #moves==1 then for _,die in ipairs(s.dice) do
+                if die>moves[1].die and #L.SingleMoves(s,s.turn,die)>0 then return false end
+            end end
+        end
+    end
     local seat = s.turn
     s.points, s.bar, s.off = nextState.points, nextState.bar, nextState.off
     s.revision, s.dice = s.revision + 1, {}

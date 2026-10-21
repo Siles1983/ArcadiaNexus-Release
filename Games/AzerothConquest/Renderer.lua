@@ -1,7 +1,7 @@
 -- ============================================================
 --  ArcadiaNexus
 --  Games/AzerothConquest/Renderer.lua
---  Version: 2.0.0  (Blueprint v3 Typ-2 + Background/Border/Logo)
+--  Version: 2.0.0  (Blueprint v3 Typ-2 + Background/Logo)
 --
 --  Controls: CreateGameControlsBar "narrow"
 --    Seg.1 Dropdown Schwierigkeit
@@ -45,12 +45,6 @@ local CFG = {
     bg_ofs_y     = 25,
     bg_alpha     = 0.9,
 
-    -- Border-Textur (relativ zu _fieldFrame CENTER)
-    border_w     = 800,
-    border_h     = 600,
-    border_ofs_x = 0,
-    border_ofs_y = 0,
-    border_alpha = 0,
 
     -- Logo-Textur (relativ zu _fieldFrame CENTER)
     logo_w       = 260,
@@ -88,17 +82,28 @@ local CFG = {
 
     -- Placement-Hint (relativ zu _fieldFrame TOP CENTER)
     phint_ofs_x  = 0,
-    phint_ofs_y  = -400,
-    phint_w      = 340,
-    phint_h      = 28,
+    phint_ofs_y  = -360,
+    phint_w      = 560,
+    phint_h      = 48,
     phint_alpha  = 0.75,
 
     -- Battle-Hint "Klicke auf das Gegnerfeld..." (relativ zu _fieldFrame TOP CENTER)
     bhint_ofs_x  = 0,
     bhint_ofs_y  = -400,
-    bhint_w      = 340,
-    bhint_h      = 28,
+    bhint_w      = 560,
+    bhint_h      = 54,
     bhint_alpha  = 0.75,
+    placement_actions_w = 560,
+    placement_actions_h = 30,
+    placement_actions_y = -420,
+    placement_action_gap = 180,
+    placement_btn_w = 164,
+    placement_btn_h = 28,
+    fleet_w = 270,
+    fleet_h = 52,
+    fleet_player_x = 30,
+    fleet_enemy_x = 400,
+    fleet_y = -342,
 
     -- Popup (GameOver) – Nonogram-Standard
     ov_w         = 360,
@@ -117,7 +122,6 @@ local CFG = {
 -- ============================================================
 local AC_ASSETS = {
     bg     = "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothConquest\\assets\\background\\bg_ac",
-    border = "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothConquest\\assets\\border\\border_ac",
     logo   = "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothConquest\\assets\\logo\\logo_ac",
     -- Treffer / Miss Marker
     hit    = "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothConquest\\assets\\tiles\\hit",
@@ -152,9 +156,7 @@ local SHIP_TILES = {
 R.frame          = nil
 R.state          = "IDLE"
 R._fieldFrame    = nil
-R._borderFrame   = nil
 R._bgTex         = nil
-R._borderTex     = nil
 R._logoTex       = nil
 R._controlsFrame = nil
 R._startBtn      = nil
@@ -179,11 +181,11 @@ function R:Init()
     self:_CreateMainFrame()
     self:_CreateFieldFrame()
     self:_CreateBackground()
-    self:_CreateBorderFrame()
     self:_CreateLogo()
     self:_CreateControls()
     self:_CreatePlacementHint()
     self:_CreateBattleHint()
+    self:_CreatePlacementControls()
     self:_CreateKeyFrame()
     self:EnterIdleState()
 
@@ -194,6 +196,9 @@ function R:Init()
     Engine:On("AC_SHOT_FIRED",        function(state)  R:OnShotFired(state)        end)
     Engine:On("AC_GAME_OVER",         function(result) R:OnGameOver(result)        end)
     Engine:On("AC_GAME_STOPPED",      function()       R:EnterIdleState()          end)
+    Engine:On("AC_INVALID_SAVE", function() end)
+    Engine:On("AC_PLACEMENT_INVALID", function() R:ShowPlacementError("placement_invalid") end)
+    Engine:On("AC_PLACEMENT_FAILED", function() R:ShowPlacementError("placement_failed") end)
 end
 
 -- ============================================================
@@ -250,25 +255,6 @@ function R:_CreateBackground()
 end
 
 -- ============================================================
--- BORDER FRAME
--- ============================================================
-function R:_CreateBorderFrame()
-    local ff          = self._fieldFrame
-    local borderFrame = CreateFrame("Frame", nil, self._canvas)
-    borderFrame:SetSize(CFG.border_w, CFG.border_h)
-    borderFrame:SetPoint("CENTER", ff, "CENTER", CFG.border_ofs_x, CFG.border_ofs_y)
-    borderFrame:SetFrameLevel(ff:GetFrameLevel() + 10)
-
-    local tex = borderFrame:CreateTexture(nil, "OVERLAY", nil, 1)
-    tex:SetTexture(AC_ASSETS.border)
-    tex:SetAllPoints(borderFrame)
-    tex:SetAlpha(CFG.border_alpha)
-
-    self._borderFrame = borderFrame
-    self._borderTex   = tex
-end
-
--- ============================================================
 -- LOGO
 -- ============================================================
 function R:_CreateLogo()
@@ -281,7 +267,8 @@ function R:_CreateLogo()
 end
 
 -- ============================================================
--- CONTROLS – CreateGameControlsBar "narrow"
+-- CONTROLS – 3 Segmente (narrow): Schwierigkeit | Start | Weiterspielen / Zufällig
+-- Segment 3 teilen sich beide Buttons, zentriert auf X, nie gleichzeitig sichtbar.
 -- ============================================================
 function R:_CreateControls()
     local L  = ArcadiaNexus.GetLocaleTable("AZEROTHCONQUEST")
@@ -301,7 +288,7 @@ function R:_CreateControls()
     local ddAnchor = CreateFrame("Frame", nil, cf)
     ddAnchor:SetSize(CFG.dd_w, CFG.btn_h)
     ddAnchor:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
-    UI.CreateSimpleDropdown(ddAnchor, 0, 0, CFG.dd_w, "", DIFFS,
+    self._diffDropdown = UI.CreateSimpleDropdown(ddAnchor, 0, 0, CFG.dd_w, "", DIFFS,
         function()
             return S and S:Get("aiDifficulty") or "easy"
         end,
@@ -318,19 +305,28 @@ function R:_CreateControls()
     startBtn:SetScript("OnClick", function()
         local Eng = ArcadiaNexus.AC_Engine
         if not Eng then return end
-        if R.state == "IDLE" then
-            local diff = S and S:Get("aiDifficulty") or "easy"
-            Eng:StartGame({ size = 10, aiDifficulty = diff })
-        else
+        if Eng.activeGame and R.state ~= "IDLE" and R.state ~= "GAMEOVER" then
             Eng:StopGame()
+        else
+            if Eng.activeGame then Eng:StopGame() end
+            Eng:StartGame({ mode = "new" })
         end
+        R:_RefreshContinueButton()
     end)
     -- Initial deaktiviert bis Schwierigkeit gewaehlt
     local hasDiff = S and S:Get("aiDifficulty") ~= nil
     if not hasDiff then startBtn:Disable() end
     self._startBtn = startBtn
 
-    -- Segment 3: Zufaellig-platzieren Button (initial versteckt)
+    local continueBtn = UI.CreateArcadiaButton(cf, L["btn_resume"] or "Weiterspielen", CFG.btn_w, CFG.btn_h)
+    continueBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[3], bar.y.button)
+    continueBtn:SetScript("OnClick", function()
+        R:ContinueGame()
+    end)
+    self._continueBtn = continueBtn
+    self:_RefreshContinueButton()
+
+    -- Segment 3: Zufällig platzieren (gleiche X-Mitte wie Weiterspielen, initial versteckt)
     local randomBtn = UI.CreateArcadiaButton(cf, L["btn_random"] or "Zufällig", CFG.btn_w, CFG.btn_h)
     randomBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[3], bar.y.button)
     randomBtn:SetScript("OnClick", function()
@@ -410,7 +406,9 @@ function R:_CreateKeyFrame()
     kf:EnableKeyboard(false)
     kf:SetPropagateKeyboardInput(false)
     kf:SetScript("OnKeyDown", function(_, key)
-        if key == "R" or key == "r" then
+        local E = ArcadiaNexus.AC_Engine
+        local focused = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+        if not focused and E.state == "PLACEMENT" and (key == "R" or key == "r") then
             kf:SetPropagateKeyboardInput(false)
             ArcadiaNexus.AC_Engine:ToggleOrientation()
             if R.hoverR and R.hoverC then
@@ -467,7 +465,7 @@ local function CreateCellPool()
                             and ArcadiaNexus.AC_Engine.activeGame:GetBoardState()
                         if st then R:UpdateGhost(st) end
                     end
-                else
+                elseif button == "LeftButton" then
                     R:OnCellClick(self._acSide, self._acRow, self._acCol)
                 end
             end)
@@ -482,6 +480,7 @@ local function CreateCellPool()
             end)
             tf:SetScript("OnLeave", function(self)
                 if self._acSide == 1 and R.state == "PLACEMENT" then
+                    R.hoverR, R.hoverC = nil, nil
                     R:ClearGhost()
                 end
             end)
@@ -936,6 +935,10 @@ function R:UpdatePlacementHint(state)
     else
         self._placementHintFS:SetText(LP["placement_done"])
     end
+    local orientation = state.placementHoriz and LP.orientation_horizontal or LP.orientation_vertical
+    self._placementHintFS:SetText(self._placementHintFS:GetText() .. "\n" .. orientation .. " · " .. state.shipsPlaced .. "/" .. state.totalShips)
+    if self._battleBtn then if state.shipsPlaced == state.totalShips then self._battleBtn:Enable() else self._battleBtn:Disable() end end
+    if self._undoBtn then if state.shipsPlaced > 0 then self._undoBtn:Enable() else self._undoBtn:Disable() end end
     self._placementHintFrame:Show()
 end
 
@@ -952,6 +955,9 @@ function R:EnterIdleState()
     if self._placementHintFrame then self._placementHintFrame:Hide() end
     if self._battleHintFrame   then self._battleHintFrame:Hide()   end
     if self._randomBtn then self._randomBtn:Hide() end
+    if self._placementControls then self._placementControls:Hide() end
+    if self._fleetFrames then for _,f in ipairs(self._fleetFrames) do f:Hide() end end
+    self:RefreshConfigLock()
     if self._logoTex   then self._logoTex:Show()   end
 
     if self._startBtn then
@@ -965,13 +971,15 @@ function R:EnterIdleState()
             self._startBtn:Disable()
         end
     end
+    self:_RefreshContinueButton()
 end
 
 -- ============================================================
 -- EVENT-HANDLER
 -- ============================================================
 function R:OnGameStarted(state)
-    self.state = "PLACEMENT"
+    self.state = state.phase
+    if self._fleetFrames then for _,f in ipairs(self._fleetFrames) do f:Hide() end end
     if self._logoTex        then self._logoTex:Hide()         end
     if self._fieldFrame and ArcadiaNexus.UI then
         ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
@@ -980,16 +988,19 @@ function R:OnGameStarted(state)
 
     self:BuildGrids(state.size)
     self:RenderPlayerBoard(state)
+    self:RenderAiBoard(state)
+    self:RefreshConfigLock()
 
     if self._startBtn then
         local L = ArcadiaNexus.GetLocaleTable("AZEROTHCONQUEST")
         self._startBtn:SetLabel(L["btn_exit"] or "Beenden")
         self._startBtn:Enable()
     end
-    if self._randomBtn  then self._randomBtn:Show()         end
+    self:_RefreshContinueButton()
+    if self._placementControls then self._placementControls:Show() end
     if self.keyFrame    then self.keyFrame:EnableKeyboard(true) end
 
-    self:UpdatePlacementHint(state)
+    if state.phase == "BATTLE" then self:OnBattleStarted(state) else self:UpdatePlacementHint(state) end
 end
 
 function R:OnPlacementUpdated(state)
@@ -1000,20 +1011,25 @@ end
 
 function R:OnBattleStarted(state)
     self.state = "BATTLE"
-    if self._randomBtn then self._randomBtn:Hide() end
+    self:_RefreshContinueButton()
     if self._placementHintFrame then self._placementHintFrame:Hide() end
+    if self._placementControls then self._placementControls:Hide() end
+    if self.keyFrame then self.keyFrame:EnableKeyboard(false) end
+    self.hoverR, self.hoverC = nil, nil
+    self:ClearGhost()
 
     self:RenderPlayerBoard(state)
     self:RenderAiBoard(state)
 
     if not self._battleHintFS or not self._battleHintFrame then return end
-    self._battleHintFS:SetText(ArcadiaNexus.GetLocaleTable("AZEROTHCONQUEST")["hint_battle"])
+    self:UpdateBattleStatus(state)
     self._battleHintFrame:Show()
 end
 
 function R:OnShotFired(state)
     self:RenderPlayerBoard(state)
     self:RenderAiBoard(state)
+    self:UpdateBattleStatus(state)
 
     if state.lastAiShot then
         local s  = state.lastAiShot
@@ -1025,7 +1041,7 @@ function R:OnShotFired(state)
     end
 end
 
-function R:OnGameOver(result)
+function R:OnGameOver(data)
     self.state = "GAMEOVER"
 
     local game = ArcadiaNexus.AC_Engine.activeGame
@@ -1049,29 +1065,39 @@ function R:OnGameOver(result)
     end
 
     if self.keyFrame then self.keyFrame:EnableKeyboard(false) end
+    self:RefreshConfigLock()
     if self._startBtn then
         local L = ArcadiaNexus.GetLocaleTable("AZEROTHCONQUEST")
         self._startBtn:SetLabel(L["btn_start"] or "Spiel starten")
     end
+    self:_RefreshContinueButton()
 
     if not self._fieldFrame then return end
     local UI     = ArcadiaNexus.UI
     local L      = ArcadiaNexus.GetLocaleTable("AZEROTHCONQUEST")
     local parent = self._fieldFrame
-    local won    = result == "WIN"
+    local won    = data.result == "WIN"
+    local finalGame = game
 
     UI.ShowArcadeResult(parent, {
         title      = won and L["result_win"] or L["result_loss"],
         titleColor = won and {1, 0.84, 0} or {1, 0.3, 0.3},
         subtitle   = won and L["result_win_sub"] or L["result_loss_sub"],
         gameId     = "AZEROTHCONQUEST",
+        difficulty = data.difficulty,
+        hideHighscore = true,
+        newHighscore = false,
+        xp = data.awardedXP or 0,
+        gold = data.awardedGold or 0,
+        lines = {string.format(L.result_stats, data.stats.shotsTotal, data.stats.misses, data.stats.hitRate), L["diff_" .. data.difficulty]},
+        isCurrent = function() return ArcadiaNexus.AC_Engine.activeGame == finalGame and ArcadiaNexus.AC_Engine.state == "GAMEOVER" end,
         result     = won and "WIN" or "LOSS",
         L          = L,
         onRetry    = function()
             local Eng = ArcadiaNexus.AC_Engine
-            local S   = ArcadiaNexus.AC_Settings
-            if Eng and S then
-                Eng:StartGame({ size = 10, aiDifficulty = S:Get("aiDifficulty") or "easy" })
+            if Eng then
+                Eng:StopGame()
+                Eng:StartGame({ mode = "new", aiDifficulty = data.difficulty })
             end
         end,
         onExit     = function()
@@ -1093,6 +1119,107 @@ function R:OnCellClick(side, r, c)
 end
 
 -- ============================================================
+-- Reused placement actions and public shot/fleet summaries.
+function R:RefreshConfigLock()
+    if self._diffDropdown then
+        self._diffDropdown:SetEnabled(not ArcadiaNexus.AC_Engine:IsConfigLocked())
+        self._diffDropdown:RefreshDisplay()
+    end
+end
+
+function R:_CreatePlacementControls()
+    local UI, L = ArcadiaNexus.UI, ArcadiaNexus.GetLocaleTable("AZEROTHCONQUEST")
+    local holder = CreateFrame("Frame", nil, self._fieldFrame)
+    holder:SetSize(CFG.placement_actions_w, CFG.placement_actions_h)
+    holder:SetPoint("TOP", self._fieldFrame, "TOP", 0, CFG.placement_actions_y)
+    local actions = {
+        {key="btn_rotate", x=-CFG.placement_action_gap, method="ToggleOrientation"},
+        {key="btn_undo", x=0, method="UndoPlacement"},
+        {key="btn_battle", x=CFG.placement_action_gap, method="StartBattle"},
+    }
+    for _,action in ipairs(actions) do
+        local method = action.method
+        local btn = UI.CreateArcadiaButton(holder, L[action.key], CFG.placement_btn_w, CFG.placement_btn_h)
+        btn:SetPoint("CENTER", holder, "CENTER", action.x, 0)
+        btn:SetScript("OnClick", function() ArcadiaNexus.AC_Engine[method](ArcadiaNexus.AC_Engine) end)
+        if method == "StartBattle" then self._battleBtn = btn end
+        if method == "UndoPlacement" then self._undoBtn = btn end
+    end
+    holder:Hide(); self._placementControls = holder
+    self._fleetFrames, self._fleetTexts = {}, {}
+    for side=1,2 do
+        local f,fs = UI.CreateHudStatBox(self._fieldFrame, {
+            w=CFG.fleet_w, h=CFG.fleet_h, point="TOPLEFT", relativePoint="TOPLEFT",
+            x=side==1 and CFG.fleet_player_x or CFG.fleet_enemy_x, y=CFG.fleet_y,
+            shown=false, font="GameFontNormalSmall", text="",
+        })
+        self._fleetFrames[side], self._fleetTexts[side] = f, fs
+    end
+end
+
+function R:ShowPlacementError(key)
+    if self._placementHintFS then self._placementHintFS:SetText(ArcadiaNexus.GetLocaleTable("AZEROTHCONQUEST")[key]) end
+end
+
+function R:UpdateBattleStatus(state)
+    local L = ArcadiaNexus.GetLocaleTable("AZEROTHCONQUEST")
+    local function shotText(shot)
+        if not shot then return "—" end
+        return string.format("%s%d: %s", string.char(64 + shot.c), shot.r, L["shot_" .. shot.result])
+    end
+    if self._battleHintFS then
+        local phase = state.gameOver and L["result_" .. (state.result=="WIN" and "win" or "loss")]
+            or state.turnPhase=="AI_PENDING" and L.hint_pending or L.hint_battle
+        self._battleHintFS:SetText(string.format(L.shot_summary, shotText(state.lastShot), shotText(state.lastAiShot)) .. "\n" .. phase)
+        self._battleHintFrame:Show()
+    end
+    for side=1,2 do
+        local board = side==1 and state.playerBoard or state.aiBoard
+        local groups = {{5,"fleet_fortress"},{4,"fleet_galleon"},{3,"fleet_zeppelin"},{2,"fleet_gunboat"}}
+        local parts = {}
+        for _,group in ipairs(groups) do
+            local remaining,total = 0,0
+            for _,ship in ipairs(board.ships) do
+                if ship.length==group[1] then total=total+1; if not ship.sunk then remaining=remaining+1 end end
+            end
+            parts[#parts+1] = string.format("%s %d/%d", L[group[2]], remaining,total)
+        end
+        if self._fleetTexts then
+            self._fleetTexts[side]:SetText(L.fleet_remaining .. "\n" .. parts[1] .. " · " .. parts[2] .. "\n" .. parts[3] .. " · " .. parts[4])
+            self._fleetFrames[side]:Show()
+        end
+    end
+end
+
+function R:_RefreshContinueButton()
+    local btn = self._continueBtn
+    local randomBtn = self._randomBtn
+    local placing = self.state == "PLACEMENT"
+    if randomBtn then
+        if placing then randomBtn:Show() else randomBtn:Hide() end
+    end
+    if not btn then return end
+    local E = ArcadiaNexus.AC_Engine
+    local can = E and not E.activeGame and E:CanContinue(ArcadiaNexus.AC_Settings:LoadSave())
+    if can then btn:Enable() else btn:Disable() end
+    if placing then btn:Hide() else btn:Show() end
+end
+
+function R:ContinueGame()
+    local E = ArcadiaNexus.AC_Engine
+    if not E or E.activeGame then return end
+    if not E:CanContinue(ArcadiaNexus.AC_Settings:LoadSave()) then return end
+    if self._fieldFrame and ArcadiaNexus.UI then
+        ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
+    end
+    E:StartGame({ mode = "continue" })
+    self:_RefreshContinueButton()
+end
+
+function R:RequestExit()
+    ArcadiaNexus.AC_Engine:StopGame()
+end
+
 -- REGISTRIERUNG (Datei-Ebene)
 -- ============================================================
 -- [GAMEHUB_REGISTERED]

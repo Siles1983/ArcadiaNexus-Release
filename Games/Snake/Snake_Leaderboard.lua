@@ -13,8 +13,8 @@ ArcadiaNexus.RegisterLeaderboard({
     sections = {
         S.TopScores(3),
         S.StatsPlayed(),
-        S.StatBox("lb_fruits_eaten", {
-            { fromStats = "fruitsEaten", labelKey = "lb_fruits_eaten", valueColor = "gold" },
+        S.StatBox("lb_snake_food_record", {
+            { fromStats = "fruitsEaten", labelKey = "lb_snake_food_record", valueColor = "gold" },
         }),
     },
 })

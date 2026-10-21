@@ -143,23 +143,7 @@ function AUI:ShowGame(gameId)
     local achData = ArcadiaNexus.AchievementData
     if not achData then return end
 
-    local groups = {}
-    for _, group in ipairs(achData) do
-        if group.gameId == gameId then
-            groups[#groups + 1] = group
-        end
-    end
-
-    -- Kein Treffer per gameId → als category-Schlüssel interpretieren
-    -- (z.B. "DENKSPIELE", "ARCADE" = Spielkategorie mit mehreren Spielen)
-    if #groups == 0 then
-        for _, group in ipairs(achData) do
-            local groupCat = group.category or group.gameId
-            if groupCat == gameId then
-                groups[#groups + 1] = group
-            end
-        end
-    end
+    local groups=ArcadiaNexus.AchievementManager:GetDisplayGroups(gameId)
 
     local W = _sc:GetWidth() or 0
     if W < 10 then
@@ -168,7 +152,7 @@ function AUI:ShowGame(gameId)
     end
 
     if #groups == 0 then
-        ShowEmptyHint(_sc, H().loc("Keine Erfolge für dieses Spiel.", "No achievements for this game."))
+        ShowEmptyHint(_sc,gameId=="HELDENTATEN" and ArcadiaNexus.GetLocaleTable("UI").ach_feats_empty or H().loc("Keine Erfolge für dieses Spiel.", "No achievements for this game."))
         _sc:SetHeight(80)
         C_Timer.After(0, UpdateScrollbar)
         return

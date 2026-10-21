@@ -3,7 +3,7 @@
 
     Stable facades for external DevTools (ArcadiaNexusEditors).
     Games/runtime stay in Arcadia; editors call only these entry points
-    (plus public TD_* / catalog fields documented in docs/DevTools_API.md).
+    (plus public TD_* / catalog fields documented in docs/Core/DevTools_API.md).
 ]]
 
 local ArcadiaNexus = _G.ArcadiaNexus
@@ -181,7 +181,8 @@ end
 function DP.Pinball.GetTable(tableId)
     local Logic = ArcadiaNexus.DMP_Logic
     if Logic and Logic.GetTable then
-        return Logic:GetTable(tableId)
+        local def=Logic:GetTable(tableId)
+        if def and (not tableId or def.id==tableId) then return def end
     end
     return nil
 end
@@ -203,6 +204,8 @@ function DP.Pinball.ApplyDraft(tableId, draft)
     local live = DP.Pinball.GetTable(tableId)
     if not live or type(draft) ~= "table" then return false end
     ClearAndCopy(live, draft)
+    local engine=ArcadiaNexus.DMP_Engine
+    if engine and engine.gameState and engine.gameState.def==live then engine.gameState.devRun=true end
     return true
 end
 
@@ -231,7 +234,10 @@ function DP.Pinball.StartLiveTest(opts)
 
     local liveDef = DP.Pinball.GetTable(tableId)
     if not liveDef then return false, "unknown_table" end
+    local TR=ArcadiaNexus.DMP_TableRegistry
+    if draft.id~=tableId or not TR or not TR.Validate(draft) then return false,"bad_draft" end
 
+    if engine.state~="IDLE" then engine:StopGame() end
     local settings = ArcadiaNexus.DMP_Settings
     pinballLive.previousTableId = settings and settings.Get and settings:Get("tableId") or tableId
     pinballLive.backup = DeepCopy(liveDef)
@@ -254,7 +260,10 @@ function DP.Pinball.StartLiveTest(opts)
     if GR.ShowContainer then
         GR.ShowContainer(DP.Pinball.GAME_ID)
     end
-    engine:StartGame()
+    if not engine:StartGame() then
+        DP.Pinball.EndLiveTest()
+        return false,"start_failed"
+    end
     return true
 end
 

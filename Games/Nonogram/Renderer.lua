@@ -29,7 +29,8 @@ local CFG = {
     board_size   = 310,--Grid size
     board_hold_w = 600,
     board_hold_h = 560,
-    board_ofs_y  = -180,
+    board_ofs_x  = 0,
+    board_ofs_y  = 0,
     gold_pad_left   = 90,
     gold_pad_top    = 90,
     gold_pad_right  = 6,
@@ -39,33 +40,35 @@ local CFG = {
     hud_puzzle_w     = 200,
     hud_puzzle_h     = 28,
     hud_puzzle_x     = -120,
-    hud_puzzle_y     = 225,
+    hud_puzzle_y     = 200,
     hud_puzzle_alpha = 0.75,
     hud_mode_w       = 160,
     hud_mode_h       = 28,
     hud_mode_x       = 95,
-    hud_mode_y       = 225,
+    hud_mode_y       = 200,
     hud_mode_alpha   = 0.75,
-    hud_errors_w     = 120,
+    hud_errors_w     = 160,
     hud_errors_h     = 28,
-    hud_errors_x     = 255,
-    hud_errors_y     = -170,
+    hud_errors_x     = 0,
+    hud_errors_y     = 0,
     hud_errors_alpha = 0.75,
-    hud_timer_w      = 200,
+    hud_timer_w      = 160,
     hud_timer_h      = 28,
-    hud_timer_x      = -120,
-    hud_timer_y      = 195,
+    hud_timer_x      = 0,
+    hud_timer_y      = 0,
     hud_timer_alpha  = 0.75,
     hud_score_w      = 160,
     hud_score_h      = 28,
     hud_score_x      = 95,
     hud_score_y      = 195,
     hud_score_alpha  = 0.75,
-    hud_input_w      = 120,
+    hud_input_w      = 160,
     hud_input_h      = 28,
-    hud_input_x      = 255,
-    hud_input_y      = -200,
+    hud_input_x      = 0,
+    hud_input_y      = 0,
     hud_input_alpha  = 0.75,
+    hud_row_gap      = 10,
+    hud_row_ofs_y    = -8,
     ov_w         = 320,
     ov_h         = 200,
     ov_ofs_x     = 0,
@@ -232,9 +235,13 @@ function R:_CreateMainFrame()
     _G.ArcadiaNexus._nonContainer = f
 
     f:EnableKeyboard(false)
-    f:SetScript("OnKeyDown", function(_, key)
-        local E = ArcadiaNexus.NON_Engine
-        if not E or E.state ~= "PLAYING" then return end
+    f:SetScript("OnKeyDown", function(frame, key)
+        local E=ArcadiaNexus.NON_Engine
+        if not E or E.state~="PLAYING" and E.state~="TUTORIAL" then frame:SetPropagateKeyboardInput(true); return end
+        local focus=GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+        if focus and focus~=frame then frame:SetPropagateKeyboardInput(true); return end
+        local recognized=key=="UP" or key=="DOWN" or key=="LEFT" or key=="RIGHT" or key=="SPACE" or key=="M" or key=="TAB"
+        frame:SetPropagateKeyboardInput(not recognized)
         if     key == "UP"    then E:MoveCursor(-1,  0)
         elseif key == "DOWN"  then E:MoveCursor( 1,  0)
         elseif key == "LEFT"  then E:MoveCursor( 0, -1)
@@ -246,9 +253,11 @@ function R:_CreateMainFrame()
     end)
 
     f:SetScript("OnHide", function()
+        local E=ArcadiaNexus.NON_Engine
         ArcadiaNexus.GameSession:HandleRendererHide("NONOGRAM", ArcadiaNexus.NON_Engine, function(E)
-            E:StopGame()
+            E:SaveAndPause()
         end)
+        if not E._sessionId and E.state~="IDLE" then E:StopGame() end
         R:EnterIdleState()
     end)
 end
@@ -311,7 +320,7 @@ function R:_CreateBoardArea()
     if self._boardHolder then return end
     local holder = CreateFrame("Frame", nil, self._fieldFrame)
     holder:SetSize(CFG.board_hold_w, CFG.board_hold_h)
-    holder:SetPoint("TOP", self._fieldFrame, "TOP", 0, CFG.board_ofs_y)
+    holder:SetPoint("CENTER", self._canvas, "CENTER", CFG.board_ofs_x or 0, CFG.board_ofs_y or 0)
     self._boardHolder = holder
     holder:Hide()
 
@@ -409,10 +418,11 @@ function R:_CreateControls()
         { label = L["diff_normal"] or "Normal",  key = "normal" },
         { label = L["diff_hard"]   or "Schwer",  key = "hard"   },
     }
-    UI.CreateSimpleDropdown(ddAnchor, 0, 0, CFG.dd_w, "",
+    self._diffDropdown=UI.CreateSimpleDropdown(ddAnchor, 0, 0, CFG.dd_w, "",
         diffOptions,
         function()
-            return S and S:Get("difficulty") or "easy"
+            local gs=ArcadiaNexus.NON_Engine._gameState
+            return gs and gs.difficulty or S and S:Get("difficulty") or "easy"
         end,
         function(val)
             if S then S:Set("difficulty", val) end
@@ -423,40 +433,15 @@ function R:_CreateControls()
     local startBtn = UI.CreateArcadiaButton(cf, L["btn_start"] or "Spiel starten", CFG.btn_w, CFG.btn_h)
     startBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
     startBtn:SetScript("OnClick", function()
-        local E = ArcadiaNexus.NON_Engine
-        if not E then return end
-        if E.state == "PLAYING" or E.state == "WIN" or E.state == "GAMEOVER" then
-            E:StopGame()
-            R:EnterIdleState()
-        else
-            local diff = S and S:Get("difficulty") or "easy"
-            local mode = S and S:Get("defaultMode") or "free"
-            if R._strictChk and R._strictChk:GetChecked() then
-                mode = "strict"
-            end
-            E:StartGame(diff, mode)
-        end
+        local E=ArcadiaNexus.NON_Engine
+        if E.state=="IDLE" or E.state=="SLOT_MENU" then E:ShowSlots() else E:SaveAndPause() end
     end)
     self._startBtn = startBtn
 
     -- Segment 3: Weiterspielen/Neues Puzzle Toggle-Button (x = +170)
     local resumeBtn = UI.CreateArcadiaButton(cf, L["btn_resume"] or "Weiterspielen", CFG.btn_w, CFG.btn_h)
     resumeBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[3], bar.y.button)
-    resumeBtn:SetScript("OnClick", function()
-        local E = ArcadiaNexus.NON_Engine
-        if not E then return end
-        if E.state == "PLAYING" then
-            -- Neues Puzzle (gleiche Diff/Mode)
-            local gs  = E._gameState
-            local diff = gs and gs.difficulty or (S and S:Get("difficulty") or "easy")
-            local mode = gs and gs.mode       or (S and S:Get("defaultMode") or "free")
-            E:StartGame(diff, mode)
-        elseif E.state == "WIN" or E.state == "GAMEOVER" then
-            local diff = S and S:Get("difficulty") or "easy"
-            local mode = S and S:Get("defaultMode") or "free"
-            E:StartGame(diff, mode)
-        end
-    end)
+    resumeBtn:SetScript("OnClick", function() ArcadiaNexus.NON_Engine:StartTutorial() end)
     resumeBtn:Hide()
     self._resumeBtn = resumeBtn
 
@@ -477,29 +462,12 @@ end
 -- TOGGLE-BUTTON LABELS
 -- ============================================================
 function R:_UpdateControlLabels()
-    local L = ArcadiaNexus.GetLocaleTable("NONOGRAM")
-    local E = ArcadiaNexus.NON_Engine
-    if not E then return end
-
-    if self._startBtn then
-        if E.state == "PLAYING" or E.state == "WIN" or E.state == "GAMEOVER" then
-            self._startBtn:SetLabel(L["btn_stop"] or "Beenden")
-        else
-            self._startBtn:SetLabel(L["btn_start"] or "Spiel starten")
-        end
-    end
-
-    if self._resumeBtn then
-        if E.state == "PLAYING" then
-            self._resumeBtn:SetLabel(L["btn_new_puzzle"] or "Neues Puzzle")
-            self._resumeBtn:Show()
-        elseif E.state == "WIN" or E.state == "GAMEOVER" then
-            self._resumeBtn:SetLabel(L["btn_resume"] or "Weiterspielen")
-            self._resumeBtn:Show()
-        else
-            self._resumeBtn:Hide()
-        end
-    end
+    local loc=ArcadiaNexus.GetLocaleTable("NONOGRAM"); local E=ArcadiaNexus.NON_Engine
+    local locked=E:IsConfigLocked()
+    if self._startBtn then self._startBtn:SetLabel(locked and loc.btn_stop or loc.btn_start) end
+    if self._resumeBtn then self._resumeBtn:SetLabel(loc.btn_learn); self._resumeBtn:SetEnabled(E.state~="RESULT_PENDING"); self._resumeBtn:Show() end
+    if self._diffDropdown then self._diffDropdown:SetEnabled(not locked); self._diffDropdown:RefreshDisplay() end
+    if self._strictChk then self._strictChk:SetEnabled(not locked); local gs=E._gameState; self._strictChk:SetChecked((gs and gs.mode or ArcadiaNexus.NON_Settings:Get("defaultMode"))=="strict") end
 end
 
 -- ============================================================
@@ -541,16 +509,18 @@ function R:BuildBoard(gs)
             cell._gridC = c
             cell:SetScript("OnMouseDown", function(s, btn)
                 if btn == "LeftButton" then
-                    ArcadiaNexus.NON_Engine:HandleClick(s._gridR, s._gridC, "FILL")
+                    ArcadiaNexus.NON_Engine:HandleClick(s._gridR, s._gridC, "PRIMARY")
                 elseif btn == "RightButton" then
                     ArcadiaNexus.NON_Engine:HandleClick(s._gridR, s._gridC, "MARK")
                 end
             end)
             cell:SetScript("OnEnter", function(s)
-                s:SetBackdropBorderColor(CLR_GOLD[1], CLR_GOLD[2], CLR_GOLD[3], 0.6)
+                local E=ArcadiaNexus.NON_Engine
+                if E.state=="PLAYING" or E.state=="TUTORIAL" then E._gameState.cursorR=s._gridR; E._gameState.cursorC=s._gridC; R:UpdateCursor(E._gameState) end
+                R:ShowClueTooltip(s)
             end)
             cell:SetScript("OnLeave", function(s)
-                s:SetBackdropBorderColor(0.30, 0.30, 0.35, 0.80)
+                GameTooltip:Hide()
             end)
             cell:Enable()
             cell:Show()
@@ -613,6 +583,7 @@ function R:BuildBoard(gs)
     end
 
     holder:Show()
+    self:_LayoutBlock(gs,cellSz,gap)
     self:UpdateBoard(gs)
 
     local gridPx = size * cellSz + (size - 1) * gap
@@ -621,11 +592,11 @@ function R:BuildBoard(gs)
     if first and ga then
         ga:ClearAllPoints()
         ga:SetSize(
-            gridPx + CFG.gold_pad_left + CFG.gold_pad_right,
-            gridPx + CFG.gold_pad_top + CFG.gold_pad_bottom)
+            gridPx + self._hintLeft + CFG.gold_pad_right,
+            gridPx + self._hintTop + CFG.gold_pad_bottom)
         ga:SetPoint("TOPLEFT", first, "TOPLEFT",
-            -CFG.gold_pad_left + (CFG.gold_ofs_x or 0),
-            CFG.gold_pad_top + (CFG.gold_ofs_y or 0))
+            -self._hintLeft + (CFG.gold_ofs_x or 0),
+            self._hintTop + (CFG.gold_ofs_y or 0))
         ga:Show()
         local UI = ArcadiaNexus.UI
         if self._goldGrid and UI and UI.FitGoldGridFrame then
@@ -711,6 +682,7 @@ function R:UpdateCursor(gs)
     self._cursorFrame:ClearAllPoints()
     self._cursorFrame:SetPoint("CENTER", cellData.frame, "CENTER", 0, 0)
     self._cursorFrame:Show()
+    self:_HighlightLines(gs)
 end
 
 -- ============================================================
@@ -723,18 +695,20 @@ function R:UpdateHUD(gs)
     if self.timerFS then
         self.timerFS:SetText(string.format("%s: %s",
             L["lbl_timer"] or "Zeit",
-            ArcadiaNexus.Format.SecondsMMSS(gs.timeLeft or 0)))
+            ArcadiaNexus.Format.SecondsMMSS(math.floor((gs.elapsedMs or 0)/1000))))
     end
 
-    if self.scoreFS then
-        local Logic = ArcadiaNexus.NON_Logic
-        local previewScore = Logic and Logic:CalcScore(gs) or 0
-        self.scoreFS:SetText(string.format("%s: %d", L["lbl_score"] or "Punkte", previewScore))
-    end
-
+    if self._scoreBox then self._scoreBox:Hide() end
     if self.puzzleFS then
         self.puzzleFS:SetText(string.format("%s: %d | %s",
-            L["lbl_puzzle"] or "Puzzle", gs.puzzleIndex, gs.puzzleName or ""))
+            L["lbl_puzzle"] or "Puzzle", gs.puzzleIndex, rawget(L, "puzzle_name_" .. (gs.puzzleName or "")) or gs.puzzleName or ""))
+        if ArcadiaNexus.NON_Engine.state=="TUTORIAL" then self.puzzleFS:SetText(L.btn_learn) end
+        if self._puzzleBox and self._modeBox then
+            local w=math.min(396,math.max(CFG.hud_puzzle_w,math.ceil(self.puzzleFS:GetStringWidth())+12))
+            local total=w+CFG.hud_mode_w+12
+            self._puzzleBox:SetWidth(w); self._puzzleBox:ClearAllPoints(); self._puzzleBox:SetPoint("CENTER",self._canvas,"CENTER",-total/2+w/2,CFG.hud_puzzle_y)
+            self._modeBox:ClearAllPoints(); self._modeBox:SetPoint("CENTER",self._canvas,"CENTER",total/2-CFG.hud_mode_w/2,CFG.hud_mode_y)
+        end
     end
 
     if self.modeFS then
@@ -746,20 +720,13 @@ function R:UpdateHUD(gs)
 
     if self.errorsFS then
         if gs.mode == "strict" then
-            local hearts = ""
-            for i = 1, gs.errorLimit do
-                if i <= (gs.errorLimit - gs.errors) then
-                    hearts = hearts .. "H "
-                else
-                    hearts = hearts .. "o "
-                end
-            end
-            self.errorsFS:SetText(hearts)
+            self.errorsFS:SetText(string.format("%s: %d",L["lbl_errors"],gs.errorLimit-gs.errors))
             if self._errorsBox then self._errorsBox:Show() else self.errorsFS:Show() end
         else
             if self._errorsBox then self._errorsBox:Hide() else self.errorsFS:Hide() end
         end
     end
+    self:_PlaceHudRow(gs)
 end
 
 function R:UpdateInputModeLabel(gs)
@@ -782,6 +749,8 @@ function R:EnterIdleState()
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     if self._logo   then self._logo:Show()   end
 
+    if self._slotMenu then self._slotMenu:Hide() end
+    if self._tutorialHelp then self._tutorialHelp:Hide() end
     local S = ArcadiaNexus.NON_Settings
     if self._strictChk and S then
         self._strictChk:SetChecked(S:Get("defaultMode") == "strict")
@@ -804,70 +773,178 @@ function R:ShowPlaying(gs)
     self:_UpdateControlLabels()
 end
 
-function R:ShowWin(gs)
-    self.state = "WIN"
-    local field = self._fieldFrame
-    if not field then return end
-    local L  = ArcadiaNexus.GetLocaleTable("NONOGRAM")
-    local UI = ArcadiaNexus.UI
-    if self.frame then self.frame:EnableKeyboard(false) end
-    self:_UpdateControlLabels()
-    UI.ShowArcadeResult(field, {
-        title      = L["state_win"] or "Gelöst!",
-        titleColor = { 0, 1, 0 },
-        score      = gs.finalScore or 0,
-        gameId     = "NONOGRAM",
-        difficulty = gs.difficulty,
-        result     = "WIN",
-        L          = L,
-        onRetry    = function()
-            local E = ArcadiaNexus.NON_Engine
-            local S = ArcadiaNexus.NON_Settings
-            local diff = S and S:Get("difficulty") or "easy"
-            local mode = S and S:Get("defaultMode") or "free"
-            if E then E:StartGame(diff, mode) end
-        end,
-        onExit = function()
-            local E = ArcadiaNexus.NON_Engine
-            if E then E:StopGame() end
-        end,
-    })
-end
-
-function R:ShowGameOver(gs, reason)
-    self.state = "GAMEOVER"
-    local field = self._fieldFrame
-    if not field then return end
-    local L  = ArcadiaNexus.GetLocaleTable("NONOGRAM")
-    local UI = ArcadiaNexus.UI
-    if self.frame then self.frame:EnableKeyboard(false) end
-    self:_UpdateControlLabels()
-    UI.ShowArcadeResult(field, {
-        title      = L["state_gameover"] or "Keine Fehler mehr!",
-        titleColor = { 1, 0.13, 0.13 },
-        subtitle   = L["mode_select_title"] or "Weiter spielen?",
-        gameId     = "NONOGRAM",
-        difficulty = gs and gs.difficulty,
-        result     = "LOSS",
-        L          = L,
-        onRetry    = function()
-            local E = ArcadiaNexus.NON_Engine
-            local S = ArcadiaNexus.NON_Settings
-            local diff = S and S:Get("difficulty") or "easy"
-            local mode = S and S:Get("defaultMode") or "free"
-            if E then E:StartGame(diff, mode) end
-        end,
-        onExit = function()
-            local E = ArcadiaNexus.NON_Engine
-            if E then E:StopGame() end
-        end,
-    })
-end
-
 -- ============================================================
 -- HILFSFUNKTIONEN
 -- ============================================================
 function R:_HidePlayingElements()
     self:_SetHudShown(false)
     if self.frame       then self.frame:EnableKeyboard(false) end
+end
+-- Grid+clues centered on the holder; HUD row sits under the measured block.
+function R:_LayoutBlock(gs, cellSz, gap)
+    local left, top = 0, 0
+    for _, fs in ipairs(self._rowClueFS) do left = math.max(left, fs:GetStringWidth()) end
+    for _, fs in ipairs(self._colClueFS) do top = math.max(top, fs:GetStringHeight()) end
+    left = math.ceil(left) + 8
+    top = math.ceil(top) + 8
+    self._hintLeft, self._hintTop = left, top
+    local grid = gs.gridSize * cellSz + (gs.gridSize - 1) * gap
+    local blockW, blockH = grid + left, grid + top
+    local firstX = -blockW / 2 + left
+    local firstY = blockH / 2 - top
+    for r = 1, gs.gridSize do
+        for c = 1, gs.gridSize do
+            local f = self._cells[r][c].frame
+            f:ClearAllPoints()
+            f:SetPoint("TOPLEFT", self._boardHolder, "CENTER",
+                firstX + (c - 1) * (cellSz + gap),
+                firstY - (r - 1) * (cellSz + gap))
+        end
+    end
+    if not self._quietBlock then
+        self._quietBlock = self._boardHolder:CreateTexture(nil, "BACKGROUND")
+        self._quietBlock:SetColorTexture(0, 0, 0, 0.72)
+    end
+    self._quietBlock:ClearAllPoints()
+    self._quietBlock:SetPoint("TOPLEFT", self._cells[1][1].frame, "TOPLEFT", -left, top)
+    self._quietBlock:SetSize(blockW + 6, blockH + 6)
+    self._quietBlock:Show()
+    self._separators = self._separators or {}
+    for _, t in ipairs(self._separators) do t:Hide() end
+    local count = 0
+    for i = 5, gs.gridSize - 1, 5 do
+        for axis = 1, 2 do
+            count = count + 1
+            local t = self._separators[count]
+            if not t then
+                t = self._boardHolder:CreateTexture(nil, "OVERLAY")
+                t:SetColorTexture(0.85, 0.68, 0.2, 0.9)
+                self._separators[count] = t
+            end
+            t:ClearAllPoints()
+            if axis == 1 then
+                t:SetPoint("TOPLEFT", self._cells[1][i].frame, "TOPRIGHT", 1, 0)
+                t:SetSize(1, grid)
+            else
+                t:SetPoint("TOPLEFT", self._cells[i][1].frame, "BOTTOMLEFT", 0, -1)
+                t:SetSize(grid, 1)
+            end
+            t:Show()
+        end
+    end
+    self._layout = {
+        left = left, top = top, grid = grid,
+        width = blockW + 6, height = blockH + 6,
+        firstY = firstY, bottomY = firstY - grid,
+    }
+    self:_PlaceHudRow(gs)
+end
+
+function R:_PlaceHudRow(gs)
+    local timer, errors, input = self._timerBox, self._errorsBox, self._inputBox
+    if not timer or not input then return end
+    local anchor = self._quietBlock or self._boardHolder
+    local gap = CFG.hud_row_gap or 10
+    local ofsY = CFG.hud_row_ofs_y or -8
+    local items = {
+        { box = timer, w = CFG.hud_timer_w, h = CFG.hud_timer_h, x = CFG.hud_timer_x, y = CFG.hud_timer_y },
+    }
+    if errors and (not gs or gs.mode == "strict") then
+        items[#items + 1] = {
+            box = errors, w = CFG.hud_errors_w, h = CFG.hud_errors_h,
+            x = CFG.hud_errors_x, y = CFG.hud_errors_y,
+        }
+    end
+    items[#items + 1] = {
+        box = input, w = CFG.hud_input_w, h = CFG.hud_input_h,
+        x = CFG.hud_input_x, y = CFG.hud_input_y,
+    }
+    local total = 0
+    for i = 1, #items do
+        total = total + items[i].w
+        if i > 1 then total = total + gap end
+    end
+    local x = -total / 2
+    for i = 1, #items do
+        local it = items[i]
+        it.box:ClearAllPoints()
+        it.box:SetSize(it.w, it.h)
+        it.box:SetPoint("TOP", anchor, "BOTTOM", x + it.w / 2 + (it.x or 0), ofsY + (it.y or 0))
+        x = x + it.w + gap
+    end
+end
+function R:_HighlightLines(gs)
+    for r,row in ipairs(self._cells) do for c,data in ipairs(row) do
+        if r==gs.cursorR or c==gs.cursorC then data.frame:SetBackdropBorderColor(1,.8,.25,.95)
+        else data.frame:SetBackdropBorderColor(.30,.30,.35,.8) end
+    end end
+    self._lineFocus=self._lineFocus or {}
+    for axis=1,2 do
+        local t=self._lineFocus[axis]
+        if not t then t=self._boardHolder:CreateTexture(nil,'BACKGROUND'); t:SetColorTexture(.8,.65,.2,.20); self._lineFocus[axis]=t end
+        t:ClearAllPoints()
+        if axis==1 then t:SetPoint('TOPLEFT',self._cells[gs.cursorR][1].frame,'TOPLEFT',-self._hintLeft,0); t:SetSize(self._layout.grid+self._hintLeft,self._cells[1][1].frame:GetHeight())
+        else t:SetPoint('TOPLEFT',self._cells[1][gs.cursorC].frame,'TOPLEFT',0,self._hintTop); t:SetSize(self._cells[1][1].frame:GetWidth(),self._layout.grid+self._hintTop) end t:Show()
+    end
+end
+function R:ShowClueTooltip(cell)
+    local gs=ArcadiaNexus.NON_Engine._gameState; if not gs then return end
+    local loc=ArcadiaNexus.GetLocaleTable('NONOGRAM')
+    GameTooltip:SetOwner(cell,'ANCHOR_RIGHT'); GameTooltip:SetText(loc.clue_title)
+    GameTooltip:AddLine(loc.clue_row..': '..table.concat(gs.rowClues[cell._gridR],' '),1,1,1,true)
+    GameTooltip:AddLine(loc.clue_col..': '..table.concat(gs.colClues[cell._gridC],' '),1,1,1,true); GameTooltip:Show()
+end
+function R:ShowSlotMenu()
+    local A=ArcadiaNexus; local S=A.NON_Settings; local loc=A.GetLocaleTable('NONOGRAM')
+    if self._logo then self._logo:Hide() end
+    if not self._slotMenu then self._slotMenu=A.UI.CreateSaveSlotMenu({parent=self._canvas,maxSlots=3,L=loc,
+        loadSlot=function(slot)
+            local raw=S:LoadSlot(slot); if not raw then return end
+            if type(raw)~='table' then return {invalid=true} end local copy=A.NON_Logic:Copy(raw)
+            if not A.NON_Logic:Int(copy.timestamp,2147483647) then copy.timestamp=nil end return copy
+        end,
+        deleteSlot=function(slot) S:DeleteSlot(slot) end,
+        isPaused=function(save) return not save.completed end,canContinue=function(save) return not save.completed end,
+        formatInfo=function(save)
+            local gs=save.gameState
+            if type(gs)~='table' or not A.NON_Logic.DiffConfig[gs.difficulty] or gs.mode~='free' and gs.mode~='strict' then return loc.msg_invalid_save end
+            return loc['diff_'..gs.difficulty]..' / '..loc['mode_'..gs.mode]
+        end,
+        formatPaused=function(save) local gs=save.gameState; return type(gs)=='table' and A.NON_Logic:Int(gs.elapsedMs) and A.Format.SecondsMMSS(math.floor(gs.elapsedMs/1000)) or loc.msg_invalid_save end,
+        onNewGame=function(slot) A.NON_Engine:StartGame({slot=slot,action='new'}) end,
+        onContinue=function(slot) A.NON_Engine:StartGame({slot=slot,action='continue'}) end,
+        onCancel=function() A.NON_Engine:StopGame() end}) end
+    self._slotMenu:Show()
+end
+function R:HideSlotMenu() if self._slotMenu then self._slotMenu:Hide() end if self._feedback then self._feedback:Hide() end end
+function R:ShowFeedback(key)
+    if not self._feedback then self._feedback=self._canvas:CreateFontString(nil,'OVERLAY','GameFontNormal'); self._feedback:SetPoint('TOP',self._canvas,'TOP',0,-50); self._feedback:SetSize(520,48) end
+    self._feedback:SetText(ArcadiaNexus.GetLocaleTable('NONOGRAM')[key]); self._feedback:Show()
+end
+function R:ShowTutorial()
+    if not self._tutorialHelp then self._tutorialHelp=self._canvas:CreateFontString(nil,'OVERLAY','GameFontNormalSmall'); self._tutorialHelp:SetPoint('BOTTOM',self._canvas,'BOTTOM',0,70); self._tutorialHelp:SetSize(550,74) end
+    self._tutorialHelp:SetText(ArcadiaNexus.GetLocaleTable('NONOGRAM').tutorial_text); self._tutorialHelp:Show()
+end
+function R:ShowTutorialDone()
+    local A=ArcadiaNexus; local loc=A.GetLocaleTable('NONOGRAM'); local E=A.NON_Engine
+    self:_UpdateControlLabels(); if self.frame then self.frame:EnableKeyboard(false) end
+    A.UI.ShowArcadeResult(self._fieldFrame,{title=loc.tutorial_done,subtitle=loc.tutorial_unrated,result='WIN',xp=0,hideHighscore=true,L=loc,
+        onRetry=function() E:StartTutorial() end,onExit=function() E:StopGame() end,isCurrent=function() return E.state=='TUTORIAL_DONE' end})
+end
+function R:ShowPending(data)
+    local A=ArcadiaNexus; local loc=A.GetLocaleTable('NONOGRAM'); local E=A.NON_Engine
+    self:_UpdateControlLabels(); if self.frame then self.frame:EnableKeyboard(false) end
+    A.UI.ShowArcadeResult(self._fieldFrame,{title=loc.msg_pending,result='LOSS',xp=0,hideHighscore=true,L=loc,
+        onRetry=function() E:RetryResult() end,onExit=function() E:StopGame() end,isCurrent=function() return E._runId==data.runId and E.state=='RESULT_PENDING' end})
+end
+function R:ShowResult(data)
+    local A=ArcadiaNexus; local loc=A.GetLocaleTable('NONOGRAM'); local E=A.NON_Engine
+    self.state=E.state; self:_UpdateControlLabels(); if self.frame then self.frame:EnableKeyboard(false) end
+    local lines={loc['mode_'..data.stats.mode],string.format(loc.result_time,A.Format.SecondsMMSS(math.floor(data.stats.elapsedMs/1000)))}
+    local best=A.NON_Settings:GetBest(data.gameState.puzzleId,data.stats.mode)
+    if best then lines[#lines+1]=string.format(loc.result_best,A.Format.SecondsMMSS(math.floor(best.elapsedMs/1000))) end
+    A.UI.ShowArcadeResult(self._fieldFrame,{gameId='NONOGRAM',difficulty=data.difficulty,result=data.result,score=data.score,xp=data.awardedXP,
+        gold=data.awardedGold,newHighscore=data.newHighscore,lines=lines,L=loc,
+        isCurrent=function() return E._runId==data.runId and (E.state=='WIN' or E.state=='GAMEOVER') end,
+        buttons={{label=loc.btn_retry,onClick=function() E:RetryPuzzle() end},{label=loc.btn_next,onClick=function() E:RetryPuzzle(true) end},{label=loc.btn_stop,onClick=function() E:StopGame() end}}})
 end

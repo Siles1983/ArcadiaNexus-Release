@@ -34,6 +34,8 @@ S.Defaults = {
 
     -- Sound
     soundEnabled = true,
+    soundOnDrop  = true,
+    soundOnPop   = true,
     soundOnWin   = true,
     soundOnLoss  = true,
     soundOnDraw  = true,
@@ -125,13 +127,16 @@ function S:_EnforceRules(changedKey)
 
     -- Sounds: Master aus → alle Einzel-Sounds aus
     if changedKey == "soundEnabled" and db["soundEnabled"] == false then
+        db["soundOnDrop"] = false
+        db["soundOnPop"]  = false
         db["soundOnWin"]  = false
         db["soundOnLoss"] = false
         db["soundOnDraw"] = false
     end
 
     -- Einzel-Sound ein → Master muss an sein
-    if (changedKey == "soundOnWin" or changedKey == "soundOnLoss" or changedKey == "soundOnDraw")
+    if (changedKey == "soundOnDrop" or changedKey == "soundOnPop"
+        or changedKey == "soundOnWin" or changedKey == "soundOnLoss" or changedKey == "soundOnDraw")
         and db[changedKey] == true then
         db["soundEnabled"] = true
     end

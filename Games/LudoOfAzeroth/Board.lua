@@ -16,7 +16,8 @@ local ArcadiaNexus = _G.ArcadiaNexus
 ArcadiaNexus.LOA_Board = {}
 local B = ArcadiaNexus.LOA_Board
 
--- Legacy Grid-Indizes (nur noch für gridIdx in der Spiellogik / Schlagen)
+-- Legacy Grid-Indizes nur für die erhaltenen Debug-/Assetdaten.
+-- Spielfiguren und Schlagen verwenden globale MAIN-Identitäten 1–40.
 B.MAIN_PATH = {
     45, 46, 47, 48, 49,
     39, 28, 17, 6,
@@ -68,7 +69,7 @@ B.PLAYER_ENTRY_MAIN = {
 B.PLAYER_ENTRY = {}
 for pID = 1, 4 do
     local globalIdx = B.PLAYER_ENTRY_MAIN[pID]
-    B.PLAYER_ENTRY[pID] = B.MAIN_PATH[globalIdx] or globalIdx
+    B.PLAYER_ENTRY[pID] = globalIdx
 end
 
 B.CENTER_FIELD = 61
@@ -83,17 +84,10 @@ function B:GetMainGlobalIdx(colorIdx, relPos)
 end
 
 function B:GetGridIndex(playerID, relPos)
-    if relPos <= 40 then
-        local globalIdx = self:GetMainGlobalIdx(playerID, relPos)
-        return self.MAIN_PATH[globalIdx]
-    end
-    local homeIdx  = relPos - 40
-    local homePath = self.HOME_PATH[playerID]
-    if homePath and homePath[homeIdx] then
-        return homePath[homeIdx]
-    end
-    return nil
+    if relPos>=1 and relPos<=40 then return self:GetMainGlobalIdx(playerID,relPos) end
+    if relPos>=41 and relPos<=44 then return 100+playerID*10+relPos-40 end
 end
+function B:GetBaseIdentity(color, index) return 200+color*10+index end
 
 function B:IsGameField(gridIdx)
     for _, v in ipairs(self.MAIN_PATH) do

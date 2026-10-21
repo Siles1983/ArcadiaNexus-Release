@@ -65,8 +65,8 @@ function S:SaveSlot(slot, data)
     if not slot or slot < 1 or slot > S.MAX_SLOTS then return end
     local db = GetDB()
     local saves = EnsureSaves(db)
-    saves[slot] = data
-    if data then data.timestamp = data.timestamp or time() end
+    saves[slot] = ArcadiaNexus.BLD_Logic:Copy(data)
+    if data then saves[slot].timestamp=time() end
 end
 
 function S:DeleteSlot(slot)
@@ -83,21 +83,15 @@ function S:ResetSlot(slot)
     self:SaveSlot(slot, { level = 0, score = 0, lines = 0, midGame = nil })
 end
 
-function S:SaveMidGame(slot, midGame)
-    local save = self:LoadSlot(slot)
-    if not save then
-        self:ResetSlot(slot)
-        save = self:LoadSlot(slot)
-    end
-    if not save then return end
-    save.midGame   = midGame
-    if midGame then
-        save.level = midGame.level or save.level
-        save.score = midGame.score or save.score
-        save.lines = midGame.lines or save.lines
-    end
-    save.timestamp = time()
+function S:SaveMidGame(slot,midGame)
+    if not midGame then return end
+    self:SaveSlot(slot,{runId=midGame.runId,level=midGame.level,score=midGame.score,lines=midGame.lines,midGame=midGame})
 end
+function S:SavePending(data)
+    local db=GetDB(); db.pendingResults=db.pendingResults or {}; db.pendingResults[data.runId]=ArcadiaNexus.BLD_Logic:Copy(data)
+end
+function S:GetPending() return GetDB().pendingResults or {} end
+function S:ClearPending(id) local db=GetDB(); if db.pendingResults then db.pendingResults[id]=nil end end
 
 function S:ClearMidGame(slot)
     local save = self:LoadSlot(slot)

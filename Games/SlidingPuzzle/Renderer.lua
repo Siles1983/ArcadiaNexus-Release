@@ -55,7 +55,9 @@ local CFG = {
     hud_h        = 44,
     hud_gap      = -48,   -- Y-Abstand zwischen Moves- und Time-Box
 
-    -- Mischen-Button (TOPLEFT relativ zu self.frame)
+    preview_w=160, preview_header=24, preview_min=96, preview_grip=18,
+    preview_chrome_inset=5, slide_duration=0.16,
+    -- Preview button (TOPLEFT relative to canvas)
     shuffle_ofs_x = 0,
     shuffle_ofs_y = -210,
     shuffle_w     = 75,
@@ -85,6 +87,9 @@ local function CreateTilePool()
             tex:SetPoint("TOPLEFT",     f, "TOPLEFT",     1, -1)
             tex:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1,  1)
             f._tex = tex
+            f._number=f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+            f._number:SetPoint("TOPLEFT",f,"TOPLEFT",4,-4)
+            f._number:SetTextColor(1,0.88,0.55)
             f:RegisterForClicks("LeftButtonUp")
             return f
         end,
@@ -141,30 +146,10 @@ R._revealFrame  = nil
 R._previewFrame = nil
 R._previewTex   = nil
 R._animPos      = {}
-R._animGen      = 0
 
 -- ── Hilfsfunktion: Fade ───────────────────────────────────────
 
-local function FadeFrame(frame, fromAlpha, toAlpha, duration, onDone, isValid)
-    if type(duration) ~= "number" or duration <= 0 then duration = 0.01 end
-    local elapsed = 0
-    frame:SetAlpha(fromAlpha)
-    frame:SetScript("OnUpdate", function(self, dt)
-        if isValid and not isValid() then
-            self:SetScript("OnUpdate", nil)
-            return
-        end
-        if type(dt) ~= "number" then dt = 0 end
-        elapsed = elapsed + dt
-        local t = math.min(elapsed / duration, 1)
-        self:SetAlpha(fromAlpha + (toAlpha - fromAlpha) * t)
-        if t >= 1 then
-            self:SetScript("OnUpdate", nil)
-            if isValid and not isValid() then return end
-            if onDone then onDone() end
-        end
-    end)
-end
+local presentation=ArcadiaNexus.GameLoop.Create("ArcadiaNexus_Mosaic_Presentation")
 
 -- ── Image-Pfad aus Index ──────────────────────────────────────
 
@@ -205,9 +190,13 @@ function R:CreateMainFrame()
     _G.ArcadiaNexus._slpContainer = f
 
     f:SetScript("OnHide", function()
+        local E=ArcadiaNexus.SLP_Engine
+        if not E._sessionId and (E.state=="WIN" or E.state=="RESULT_PENDING") then E:StopGame() end
+        if E.state=="SLOT_MENU" then E:StopGame() end
+        R:CancelPresentation()
         ArcadiaNexus.GameSession:HandleRendererHide("MOSAICOFAZEROTH", ArcadiaNexus.SLP_Engine, function(E)
             if E.state ~= "IDLE" then
-                E:StopGame()
+                E:SaveAndPause()
             end
         end)
     end)
@@ -282,50 +271,14 @@ end
 
 -- ── HUD-Boxen ─────────────────────────────────────────────────
 
-local function MakeInfoBox(parent, x, y, w, h, title)
-    local box = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    box:SetSize(w, h)
-    box:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    box:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-        insets   = { left=1, right=1, top=1, bottom=1 },
-    })
-    box:SetBackdropColor(0.05, 0.05, 0.05, 0.85)
-    box:SetBackdropBorderColor(0.35, 0.30, 0.20, 0.9)
-
-    local lbl = box:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    lbl:SetPoint("TOPLEFT", box, "TOPLEFT", 4, -3)
-    lbl:SetTextColor(0.7, 0.65, 0.45)
-    lbl:SetText(title)
-
-    local val = box:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    val:SetPoint("CENTER", box, "CENTER", 0, -4)
-    val:SetText("0")
-
-    return box, val
-end
-
 function R:_CreateHUD()
-    local f = self._canvas
-    local L = ArcadiaNexus.GetLocaleTable("MOSAICOFAZEROTH")
-
-    local movesBox, movesVal = MakeInfoBox(f,
-        CFG.hud_ofs_x, CFG.hud_ofs_y,
-        CFG.hud_w, CFG.hud_h,
-        L and L.lbl_moves or "Züge")
-    local timeBox, timeVal = MakeInfoBox(f,
-        CFG.hud_ofs_x, CFG.hud_ofs_y + CFG.hud_gap,
-        CFG.hud_w, CFG.hud_h,
-        L and L.lbl_time or "Zeit")
-
-    self.hud.movesBox = movesBox
-    self.hud.timeBox  = timeBox
-    self.hud.movesVal = movesVal
-    self.hud.timeVal  = timeVal
-    if movesBox then movesBox:Hide() end
-    if timeBox  then timeBox:Hide()  end
+    local L=ArcadiaNexus.GetLocaleTable("MOSAICOFAZEROTH")
+    for _,info in ipairs({{"moves",L.lbl_moves,CFG.hud_ofs_y},{"time",L.lbl_time,CFG.hud_ofs_y+CFG.hud_gap}}) do
+        local f,v=ArcadiaNexus.UI.CreateHudStatBox(self._canvas,{w=CFG.hud_w,h=CFG.hud_h,x=CFG.hud_ofs_x,y=info[3],alpha=.85,shown=false})
+        v:ClearAllPoints(); v:SetPoint("BOTTOM",f,"BOTTOM",0,5)
+        local title=f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); title:SetPoint("TOP",f,"TOP",0,-4); title:SetText(info[2])
+        self.hud[info[1].."Box"]=f; self.hud[info[1].."Val"]=v
+    end
 end
 
 -- ── Controls – 3 Segmente (narrow): DD+DD | Start | Checkbox
@@ -351,6 +304,8 @@ function R:_CreateControls()
         { label = L and L.diff_medium or "Normal",  key = "medium" },
         { label = L and L.diff_hard   or "Schwer",  key = "hard"   },
     }
+    self._diffOptions=diffOptions
+    self._imageOptions=BuildImageOptions()
 
     local pair = CreateFrame("Frame", nil, cf)
     pair:SetSize(dd_w * 2 + dd_gap, btn_h)
@@ -359,18 +314,18 @@ function R:_CreateControls()
     local ddDiffAnchor = CreateFrame("Frame", nil, pair)
     ddDiffAnchor:SetSize(dd_w, btn_h)
     ddDiffAnchor:SetPoint("LEFT", pair, "LEFT", 0, 0)
-    UI.CreateSimpleDropdown(ddDiffAnchor, 0, 0, dd_w, "",
+    self._diffDropdown=UI.CreateSimpleDropdown(ddDiffAnchor, 0, 0, dd_w, "",
         diffOptions,
-        function() return ArcadiaNexus.SLP_Settings:Get("difficulty") end,
+        function() local E=ArcadiaNexus.SLP_Engine; return E:IsConfigLocked() and E._difficulty or ArcadiaNexus.SLP_Settings:Get("difficulty") end,
         function(val) ArcadiaNexus.SLP_Settings:Set("difficulty", val) end
     )
 
     local ddImgAnchor = CreateFrame("Frame", nil, pair)
     ddImgAnchor:SetSize(dd_w, btn_h)
     ddImgAnchor:SetPoint("RIGHT", pair, "RIGHT", 0, 0)
-    UI.CreateSimpleDropdown(ddImgAnchor, 0, 0, dd_w, "",
-        BuildImageOptions(),
-        function() return ArcadiaNexus.SLP_Settings:Get("imageIndex") end,
+    self._imageDropdown=UI.CreateSimpleDropdown(ddImgAnchor, 0, 0, dd_w, "",
+        self._imageOptions,
+        function() local E=ArcadiaNexus.SLP_Engine; return E:IsConfigLocked() and E._imageIdx or ArcadiaNexus.SLP_Settings:Get("imageIndex") end,
         function(val) ArcadiaNexus.SLP_Settings:Set("imageIndex", val) end
     )
 
@@ -379,11 +334,9 @@ function R:_CreateControls()
     startBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
     startBtn:SetScript("OnClick", function()
         local E = ArcadiaNexus.SLP_Engine
-        if E.state == "IDLE" then
-            E:StartGame()
-        else
-            E:StopGame()
-        end
+        if E.state=="IDLE" then E:ShowSlots()
+        elseif E.state=="INTRO" then E:SkipIntro()
+        else E:SaveAndPause() end
     end)
     self._startBtn = startBtn
 
@@ -400,15 +353,19 @@ function R:_CreateControls()
 
     -- Mischen-Button (playfield UI, bleibt am Canvas)
     local shuffleBtn = UI.CreateArcadiaButton(self._canvas,
-        L and L.btn_shuffle or "Mischen", CFG.shuffle_w, CFG.shuffle_h)
+        L and L.btn_preview or "Preview", CFG.shuffle_w, CFG.shuffle_h)
     shuffleBtn:SetPoint("TOPLEFT", self._canvas, "TOPLEFT", CFG.shuffle_ofs_x, CFG.shuffle_ofs_y)
+    shuffleBtn:SetFrameLevel(self._canvas:GetFrameLevel() + 20)
     shuffleBtn:SetScript("OnClick", function()
         local E = ArcadiaNexus.SLP_Engine
-        if E.state == "PLAYING" then
-            E:Reshuffle()
-        end
+        if E.state=="PLAYING" or E.state=="SLIDING" then R:ToggleReference() end
     end)
     self.shuffleBtn = shuffleBtn
+    shuffleBtn:SetScript("OnEnter",function()
+        local loc=ArcadiaNexus.GetLocaleTable("MOSAICOFAZEROTH")
+        ArcadiaNexus.UI.ShowFrameTooltip(shuffleBtn,R._referenceFrame and R._referenceFrame:IsShown() and loc.preview_hide or loc.preview_show,loc.preview_tip)
+    end)
+    shuffleBtn:SetScript("OnLeave",function() ArcadiaNexus.UI.HideFrameTooltip() end)
 end
 
 -- ── Vorschau (Vollbild über dem Grid) ────────────────────────
@@ -432,7 +389,7 @@ function R:ShowPreview(imagePath)
     self._previewTex:SetTexture(imagePath)
     self._previewFrame:SetAlpha(0)
     self._previewFrame:Show()
-    FadeFrame(self._previewFrame, 0, 1, 0.3, nil)
+    self._previewFrame:SetAlpha(1)
     self.gridFrame:Hide()
 end
 
@@ -445,94 +402,255 @@ end
 
 -- ── Split-Animation ───────────────────────────────────────────
 
-function R:PlaySplitAnimation(onDone)
-    self.gridFrame:SetAlpha(0)
-    self.gridFrame:Show()
-    FadeFrame(self._previewFrame, 1, 0, 0.5, function()
-        R:_HidePreview()
-    end)
-    FadeFrame(self.gridFrame, 0, 1, 0.5, function()
-        if onDone then onDone() end
-    end)
-    C_Sound.PlaySound(SOUNDKIT and SOUNDKIT.UI_ACHIEVEMENT_TOAST_SPARK or 1, "Master")
-end
-
--- ── Shuffle-Animation ─────────────────────────────────────────
-
-function R:_GetShuffleDelay()
-    local E = ArcadiaNexus.SLP_Engine
-    local diff = E and E._difficulty or "easy"
-    if diff == "hard"   then return 0.008 end
-    if diff == "medium" then return 0.015 end
-    return 0.025
-end
-
 function R:_GetTileOffset(pos)
-    local cols  = self._cols
-    local gridW = math.floor(GRID_BASE_W * CFG.grid_scale)
-    local gridH = math.floor(GRID_BASE_H * CFG.grid_scale)
-    local tileW = math.floor(gridW / cols)
-    local tileH = math.floor(gridH / cols)
-    local col   = ((pos - 1) % cols)
-    local row   = math.floor((pos - 1) / cols)
-    return col * tileW, -(row * tileH)
+    local size=math.floor(GRID_BASE_W*CFG.grid_scale/self._cols)
+    return ((pos-1)%self._cols)*size,-math.floor((pos-1)/self._cols)*size
 end
-
-function R:_SwapTilePositions(posA, posB)
-    local frameA = self.tileFrames[posA]
-    local frameB = self.tileFrames[posB]
-    if not frameA or not frameB then return end
-    local axOff, ayOff = self:_GetTileOffset(posA)
-    local bxOff, byOff = self:_GetTileOffset(posB)
-    frameA:ClearAllPoints()
-    frameA:SetPoint("TOPLEFT", self.gridFrame, "TOPLEFT", bxOff, byOff)
-    frameB:ClearAllPoints()
-    frameB:SetPoint("TOPLEFT", self.gridFrame, "TOPLEFT", axOff, ayOff)
-    self.tileFrames[posA] = frameB
-    self.tileFrames[posB] = frameA
+function R:_SwapTilePositions(a,b)
+    local fa,fb=self.tileFrames[a],self.tileFrames[b]
+    local ax,ay=self:_GetTileOffset(a); local bx,by=self:_GetTileOffset(b)
+    fa:ClearAllPoints(); fa:SetPoint("TOPLEFT",self.gridFrame,"TOPLEFT",bx,by)
+    fb:ClearAllPoints(); fb:SetPoint("TOPLEFT",self.gridFrame,"TOPLEFT",ax,ay)
+    self.tileFrames[a],self.tileFrames[b]=fb,fa
 end
-
-function R:PlayShuffleAnimation(moveHistory, cols, imageIdx, myGen, onDone)
-    local index = 1
-    local delay = self:_GetShuffleDelay()
-    local total = #moveHistory
-
-    local function Step()
-        if self._animGen ~= myGen then return end
-        if index > total then
-            self:BuildGrid(cols, imageIdx)
-            if onDone then onDone() end
-            return
+function R:StartIntroSequence(cols,img,history,done)
+    self:CancelPresentation()
+    local goal=ArcadiaNexus.SLP_Logic:GoalBoard(cols)
+    self:_PaintBoard(goal); self:ShowPreview(self._imagePath)
+    local elapsed,index,splitSound=0,1,false
+    local run,rev=ArcadiaNexus.SLP_Engine._runId,ArcadiaNexus.SLP_Engine._revision
+    presentation:Start(function(dt)
+        local E=ArcadiaNexus.SLP_Engine
+        if E._runId~=run or E._revision~=rev or E.state~="INTRO" then R:CancelPresentation(); return end
+        elapsed=elapsed+dt
+        if elapsed<1 then return end
+        if not splitSound then E:PlayEffect("soundOnMove",SOUNDKIT and SOUNDKIT.UI_ACHIEVEMENT_TOAST_SPARK); splitSound=true end
+        if elapsed<1.4 then
+            R.gridFrame:Show(); R.gridFrame:SetAlpha((elapsed-1)/.4); R._previewFrame:SetAlpha(1-(elapsed-1)/.4); return
         end
-        local move = moveHistory[index]
-        self:_SwapTilePositions(move.tilePos, move.emptyPos)
-        index = index + 1
-        C_Timer.After(delay, Step)
-    end
+        R.gridFrame:SetAlpha(1)
+        R:_HidePreview(); R.gridFrame:Show()
+        local target=math.min(#history,math.floor((elapsed-1.4)/.75*#history)+1)
+        local work=0
+        while index<=target and work<16 do
+            local m=history[index]; R:_SwapTilePositions(m.tilePos,m.emptyPos); index=index+1; work=work+1
+        end
+        if index>#history then presentation:Stop(); R:RefreshGrid(); if done then done() end end
+    end)
+end
+local PREVIEW_GRIP = "Interface\\AddOns\\ArcadiaNexus\\UI\\Assets\\Icons\\resize"
 
-    Step()
+function R:_PreviewHost()
+    return self.frame or self._canvas
 end
 
-function R:StartIntroSequence(cols, imageIdx, moveHistory, onDone)
-    self._animGen = self._animGen + 1
-    local myGen   = self._animGen
+function R:_PreviewClampFrame()
+    local ui = ArcadiaNexus.UI
+    local refs = ui and ui.GetF and ui.GetF()
+    if refs and refs.content then return refs.content end
+    return self:_PreviewHost()
+end
 
-    self:BuildGrid(cols, imageIdx)
-    self:ShowPreview(self._imagePath)
+function R:_PreviewInnerRect()
+    local host = self:_PreviewClampFrame()
+    if not host or not host.GetLeft then return nil end
+    local l, b, r, t = host:GetLeft(), host:GetBottom(), host:GetRight(), host:GetTop()
+    if not (l and b and r and t) then return nil end
+    local inset = CFG.preview_chrome_inset
+    return l + inset, b + inset, r - inset, t - inset
+end
 
-    C_Timer.After(1.5, function()
-        if self._animGen ~= myGen then return end
-        self:PlaySplitAnimation(function()
-            if self._animGen ~= myGen then return end
-            self:PlayShuffleAnimation(moveHistory, cols, imageIdx, myGen, function()
-                if self._animGen ~= myGen then return end
-                C_Timer.After(0.3, function()
-                    if self._animGen ~= myGen then return end
-                    if onDone then onDone() end
-                end)
-            end)
-        end)
-    end)
+function R:_RaiseReference()
+    local f, parent = self._referenceFrame, self:_PreviewHost()
+    if not f or not parent then return end
+    if f.SetParent then f:SetParent(parent) end
+    local level = (parent:GetFrameLevel() or 1) + 90
+    local ui = ArcadiaNexus.UI
+    local refs = ui and ui.GetF and ui.GetF()
+    local chrome = refs and refs.contentChrome
+    if chrome and chrome.GetFrameLevel then
+        level = math.max(level, (chrome:GetFrameLevel() or 0) + 2)
+    end
+    f:SetFrameLevel(level)
+end
+
+function R:_LayoutReference(imageW)
+    local f = self._referenceFrame
+    if not f then return end
+    local header, grip = CFG.preview_header, CFG.preview_grip
+    f._imageW = imageW
+    f:SetSize(imageW, imageW + header)
+    if f._head then f._head:SetSize(imageW, header) end
+    if f._tex then f._tex:SetSize(imageW, imageW) end
+    if f._grip then f._grip:SetSize(grip, grip) end
+end
+
+function R:_PlaceReference(screenLeft, screenBottom, imageW, keepTopLeft)
+    local f, parent = self._referenceFrame, self:_PreviewHost()
+    if not f or not parent then return end
+    local header = CFG.preview_header
+    imageW = imageW or f._imageW or CFG.preview_w
+    if screenLeft == nil and f.GetLeft then screenLeft = f:GetLeft() end
+    if screenBottom == nil and f.GetBottom then screenBottom = f:GetBottom() end
+    local inner = {self:_PreviewInnerRect()}
+    if inner[1] and screenLeft and screenBottom then
+        local l, b, r, t = inner[1], inner[2], inner[3], inner[4]
+        local maxBox = math.max(CFG.preview_min, math.min(r - l, (t - b) - header))
+        if keepTopLeft then
+            local top = (screenBottom or b) + imageW + header
+            if f._resizeTop then top = f._resizeTop end
+            local maxW = math.max(CFG.preview_min, math.min(maxBox, r - (screenLeft or l), top - b - header))
+            imageW = math.max(CFG.preview_min, math.min(imageW, maxW))
+            screenLeft = screenLeft or l
+            screenBottom = top - imageW - header
+            if screenLeft < l then screenLeft = l end
+        else
+            imageW = math.max(CFG.preview_min, math.min(imageW, maxBox))
+            local h = imageW + header
+            if screenLeft + imageW > r then screenLeft = r - imageW end
+            if screenBottom + h > t then screenBottom = t - h end
+            if screenLeft < l then screenLeft = l end
+            if screenBottom < b then screenBottom = b end
+        end
+    end
+    self:_LayoutReference(imageW)
+    local pl = parent.GetLeft and parent:GetLeft()
+    local pb = parent.GetBottom and parent:GetBottom()
+    f:ClearAllPoints()
+    if screenLeft and screenBottom and pl and pb then
+        f:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", screenLeft - pl, screenBottom - pb)
+    elseif self.gridFrame then
+        f:SetPoint("TOPRIGHT", self.gridFrame, "TOPLEFT", -8, 0)
+    else
+        f:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, -8)
+    end
+end
+
+function R:_EndReferenceInteract()
+    local f = self._referenceFrame
+    if not f then return end
+    f.moving, f.resizing = nil, nil
+    f._dragOffX, f._dragOffY, f._resizeW, f._resizeLeft, f._resizeTop = nil, nil, nil, nil, nil
+    if f.SetScript then f:SetScript("OnUpdate", nil) end
+end
+
+function R:_TickReferenceInteract()
+    local f = self._referenceFrame
+    if not f or not GetCursorPosition then return end
+    local scale = (f.GetEffectiveScale and f:GetEffectiveScale()) or 1
+    if scale == 0 then scale = 1 end
+    local cx, cy = GetCursorPosition()
+    cx, cy = cx / scale, cy / scale
+    if f.moving then
+        self:_PlaceReference(cx - (f._dragOffX or 0), cy - (f._dragOffY or 0), f._imageW)
+    elseif f.resizing then
+        local dw = cx - (f._resizeCursorX or cx)
+        local dh = (f._resizeCursorY or cy) - cy
+        local nextW = (f._resizeW or f._imageW or CFG.preview_w) + math.max(dw, dh)
+        self:_PlaceReference(f._resizeLeft, (f._resizeTop or cy) - (nextW + CFG.preview_header), nextW, true)
+    end
+end
+
+function R:_BeginReferenceMove()
+    local f = self._referenceFrame
+    if not f then return end
+    f.moving, f.resizing = true, nil
+    if GetCursorPosition and f.GetLeft and f.GetBottom then
+        local scale = (f.GetEffectiveScale and f:GetEffectiveScale()) or 1
+        if scale == 0 then scale = 1 end
+        local cx, cy = GetCursorPosition()
+        f._dragOffX = cx / scale - f:GetLeft()
+        f._dragOffY = cy / scale - f:GetBottom()
+    end
+    f:SetScript("OnUpdate", function() R:_TickReferenceInteract() end)
+end
+
+function R:_BeginReferenceResize()
+    local f = self._referenceFrame
+    if not f then return end
+    f.resizing, f.moving = true, nil
+    f._resizeW = f._imageW or CFG.preview_w
+    f._resizeLeft = f.GetLeft and f:GetLeft()
+    f._resizeTop = f.GetTop and f:GetTop()
+    if GetCursorPosition then
+        local scale = (f.GetEffectiveScale and f:GetEffectiveScale()) or 1
+        if scale == 0 then scale = 1 end
+        local cx, cy = GetCursorPosition()
+        f._resizeCursorX, f._resizeCursorY = cx / scale, cy / scale
+    end
+    f:SetScript("OnUpdate", function() R:_TickReferenceInteract() end)
+end
+
+function R:_EnsureReferenceFrame()
+    if self._referenceFrame then return self._referenceFrame end
+    local parent = self:_PreviewHost()
+    if not parent then return nil end
+    local f = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    f:SetBackdrop(TILE_BACKDROP)
+    f:SetBackdropColor(.04, .04, .04, .98)
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    if f.SetClampedToScreen then f:SetClampedToScreen(false) end
+    local head = CreateFrame("Button", nil, f)
+    head:SetPoint("TOPLEFT", f, "TOPLEFT")
+    head:RegisterForDrag("LeftButton")
+    head:SetScript("OnDragStart", function() R:_BeginReferenceMove() end)
+    head:SetScript("OnDragStop", function() R:_EndReferenceInteract(); R:_PlaceReference() end)
+    f._head = head
+    local title = head:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    title:SetPoint("CENTER", head, "CENTER")
+    f._title = title
+    local tex = f:CreateTexture(nil, "ARTWORK")
+    tex:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT")
+    f._tex = tex
+    local grip = CreateFrame("Button", nil, f)
+    grip:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 1, -1)
+    grip:RegisterForDrag("LeftButton")
+    grip:SetScript("OnDragStart", function() R:_BeginReferenceResize() end)
+    grip:SetScript("OnDragStop", function() R:_EndReferenceInteract(); R:_PlaceReference() end)
+    local gtex = grip:CreateTexture(nil, "ARTWORK")
+    gtex:SetAllPoints()
+    gtex:SetTexture(PREVIEW_GRIP)
+    gtex:SetVertexColor(0.90, 0.75, 0.30, 1)
+    grip._tex = gtex
+    f._grip = grip
+    f:SetScript("OnHide", function() R:_EndReferenceInteract() end)
+    self._referenceFrame = f
+    self:_LayoutReference(CFG.preview_w)
+    return f
+end
+
+function R:ToggleReference()
+    if self._referenceFrame and self._referenceFrame:IsShown() then self._referenceFrame:Hide(); return end
+    local f = self:_EnsureReferenceFrame()
+    if not f then return end
+    self:_RaiseReference()
+    local loc = ArcadiaNexus.GetLocaleTable("MOSAICOFAZEROTH")
+    f._title:SetText(loc.preview_drag)
+    f._tex:SetTexture(self._imagePath)
+    f._tex:SetTexCoord(0, 1, 0, 1)
+    if not f._placed then
+        f:ClearAllPoints()
+        if self.gridFrame then
+            f:SetPoint("TOPRIGHT", self.gridFrame, "TOPLEFT", -8, 0)
+        else
+            f:SetPoint("TOPLEFT", self:_PreviewHost(), "TOPLEFT", 8, -8)
+        end
+        f._placed = true
+    end
+    f:Show()
+    if f.GetLeft and f:GetLeft() then self:_PlaceReference() end
+end
+function R:CancelSlide()
+    if self._slideFrame then
+        local f=self._slideFrame; local x,y=self:_GetTileOffset(f._tilePos)
+        f:ClearAllPoints(); f:SetPoint("TOPLEFT",self.gridFrame,"TOPLEFT",x,y); f:SetFrameLevel(self.gridFrame:GetFrameLevel()+1); self._slideFrame=nil
+    end
+end
+function R:CancelPresentation()
+    presentation:Stop(); self:CancelSlide(); self:_HidePreview(); self:_HideReveal()
+    if self.gridFrame then self.gridFrame:SetAlpha(1) end
+    if self._referenceFrame then self._referenceFrame:Hide() end
 end
 
 -- ── Grid aufbauen (Kachel-Buttons) ───────────────────────────
@@ -551,11 +669,13 @@ function R:_ClearTileGrid()
 end
 
 function R:BuildGrid(cols, imageIdx)
+    self:CancelPresentation()
     self:_ClearTileGrid()
 
     -- Reveal-Komponenten verstecken (wiederverwendbar)
     self:_HideReveal()
 
+    self:CancelPresentation()
     self._cols      = cols
     self._imageIdx  = imageIdx
     self._imagePath = GetImagePath(imageIdx)
@@ -596,6 +716,7 @@ function R:BuildGrid(cols, imageIdx)
         end
 
         f._tilePos = pos
+        f._tileID=tileID
         f:SetScript("OnClick", function(self)
             ArcadiaNexus.SLP_Engine:OnTileClicked(self._tilePos)
         end)
@@ -616,6 +737,7 @@ function R:BuildGrid(cols, imageIdx)
         self.tileTex[pos]    = tex
     end
 
+    self:RefreshNumbers()
     local UI = ArcadiaNexus.UI
     if self._goldGrid and UI and UI.FitGoldGridFrame and gf then
         UI.FitGoldGridFrame(self._goldGrid, gf, {
@@ -629,130 +751,112 @@ end
 
 -- ── Kachel verschieben ────────────────────────────────────────
 
-function R:MoveTile(oldTilePos, newEmptyPos)
-    self:RefreshGrid()
+function R:MoveTile(source,target,done,before)
+    presentation:Stop(); self:_PaintBoard(before)
+    local f=self.tileFrames[source]; local sx,sy=self:_GetTileOffset(source); local tx,ty=self:_GetTileOffset(target)
+    f:SetFrameLevel(self.gridFrame:GetFrameLevel()+5)
+    self._slideFrame=f; local elapsed=0; local run,rev=ArcadiaNexus.SLP_Engine._runId,ArcadiaNexus.SLP_Engine._revision
+    presentation:Start(function(dt)
+        local E=ArcadiaNexus.SLP_Engine
+        if E._runId~=run or E._revision~=rev then R:CancelSlide(); presentation:Stop(); return end
+        elapsed=elapsed+dt; local t=math.min(1,elapsed/CFG.slide_duration)
+        f:ClearAllPoints(); f:SetPoint("TOPLEFT",R.gridFrame,"TOPLEFT",sx+(tx-sx)*t,sy+(ty-sy)*t)
+        if t==1 then presentation:Stop(); R:CancelSlide(); R:RefreshGrid(); if done then done() end end
+    end)
 end
-
--- Komplettes Grid neu zeichnen (Board-State → Frames)
-function R:RefreshGrid()
-    local Logic = ArcadiaNexus.SLP_Logic
-    local cols  = self._cols
-    local n     = cols * cols
-
-    for pos = 1, n do
-        local f   = self.tileFrames[pos]
-        local tex = self.tileTex[pos]
-        if not f then break end
-
-        local tileID = Logic.board[pos]
-        if tileID == 0 then
-            f:SetBackdropColor(0, 0, 0, 1)
-            f:SetBackdropBorderColor(0.1, 0.1, 0.1, 1)
-            tex:SetAlpha(0)
-        else
-            f:SetBackdropColor(0.05, 0.05, 0.05, 1)
-            f:SetBackdropBorderColor(0.25, 0.20, 0.12, 0.8)
-            tex:SetAlpha(1)
-            tex:SetTexture(self._imagePath)
-            local l, r, t, b = Logic:GetTexCoord(tileID, cols)
-            tex:SetTexCoord(l, r, t, b)
-        end
+function R:_PaintBoard(board)
+    local L=ArcadiaNexus.SLP_Logic
+    for pos=1,self._cols*self._cols do
+        local f=self.tileFrames[pos]; if not f then return end
+        local id=board[pos]; f._tileID=id; f._tilePos=pos
+        local x,y=self:_GetTileOffset(pos); f:ClearAllPoints(); f:SetPoint("TOPLEFT",self.gridFrame,"TOPLEFT",x,y)
+        f:SetBackdropColor(id==0 and 0 or .05,id==0 and 0 or .05,id==0 and 0 or .05,1)
+        f._tex:SetTexture(self._imagePath); f._tex:SetAlpha(id==0 and 0 or 1)
+        if id~=0 then f._tex:SetTexCoord(L:GetTexCoord(id,self._cols)) end
+    end
+    self:RefreshNumbers()
+end
+function R:RefreshGrid() self:_PaintBoard(ArcadiaNexus.SLP_Logic.board) end
+function R:RefreshNumbers()
+    local show=ArcadiaNexus.SLP_Settings:Get("showNumbers")
+    for _,f in pairs(self.tileFrames) do
+        if f._number then f._number:SetText(f._tileID~=0 and tostring(f._tileID or "") or ""); f._number:SetShown(show and f._tileID~=0) end
     end
 end
 
 -- ── HUD aktualisieren ─────────────────────────────────────────
 
 function R:UpdateHUD()
-    local E = ArcadiaNexus.SLP_Engine
-    local S = ArcadiaNexus.SLP_Settings
-
-    if self.hud.movesVal then
-        self.hud.movesVal:SetText(tostring(E._moveCount or 0))
-    end
-
-    local showHud = E and E.state == "PLAYING"
-    if self.hud.movesBox then self.hud.movesBox:SetShown(showHud) end
-    if self.hud.timeBox  then self.hud.timeBox:SetShown(showHud)  end
-
-    if self.hud.timeVal then
-        local showTimer = S:Get("timerEnabled")
-        if showTimer and E.state == "PLAYING" then
-            local sec = math.floor(E:GetElapsed())
-            self.hud.timeVal:SetText(ArcadiaNexus.Format.SecondsMMSS(sec, false))
-        elseif showTimer then
-            self.hud.timeVal:SetText("--:--")
-        else
-            self.hud.timeVal:SetText("–")
-        end
-    end
-
-    -- Start-Button Label kontextuell
-    local L = ArcadiaNexus.GetLocaleTable("MOSAICOFAZEROTH")
+    local E,S=ArcadiaNexus.SLP_Engine,ArcadiaNexus.SLP_Settings
+    local L=ArcadiaNexus.GetLocaleTable("MOSAICOFAZEROTH")
+    if self._diffOptions then for _,opt in ipairs(self._diffOptions) do opt.label=L["diff_"..opt.key] end end
+    if self._imageOptions then for _,opt in ipairs(self._imageOptions) do opt.label=opt.key==0 and L.img_random or L.img_prefix..opt.key end end
+    local hud=E.state=="PLAYING" or E.state=="SLIDING" or E.state=="WIN" or E.state=="RESULT_PENDING"
+    if self.hud.movesVal then self.hud.movesVal:SetText(tostring(E._moveCount or 0)); self.hud.movesBox:SetShown(hud) end
+    if self.hud.timeVal then self.hud.timeVal:SetText(S:Get("timerEnabled") and ArcadiaNexus.Format.SecondsMMSS(math.floor(E:GetElapsed()),false) or "--"); self.hud.timeBox:SetShown(hud) end
     if self._startBtn then
-        if E.state == "IDLE" then
-            self._startBtn:SetLabel(L and L.btn_start or "Spiel starten")
-        else
-            self._startBtn:SetLabel(L and L.btn_exit or "Beenden")
-        end
+        self._startBtn:SetLabel(E.state=="IDLE" and L.btn_start or E.state=="INTRO" and L.btn_skip or L.btn_exit)
+        self._startBtn:SetEnabled(E.state~="GENERATING")
     end
-
-    -- Mischen-Button nur im PLAYING-State
-    if self.shuffleBtn then
-        self.shuffleBtn:SetShown(E.state == "PLAYING")
-    end
+    if self.shuffleBtn then self.shuffleBtn:SetShown(E.state=="PLAYING" or E.state=="SLIDING") end
+    for _,dd in ipairs({self._diffDropdown,self._imageDropdown}) do dd:SetEnabled(not E:IsConfigLocked()); dd:RefreshDisplay() end
+    if self._timerChk then self._timerChk:SetChecked(S:Get("timerEnabled")) end
+    if self._timerChk and self._timerChk._label then self._timerChk._label:SetText(L.lbl_timer) end
+    if self.shuffleBtn then self.shuffleBtn:SetLabel(L.btn_preview) end
 end
-
--- ── EnterIdleState (Einstiegspunkt via ActivateGame) ─────────
-
 function R:EnterIdleState()
-    -- Laufende Animationen abbrechen
-    self._animGen = self._animGen + 1
-    self:_HidePreview()
-    -- Kacheln ausblenden
-    for _, f in pairs(self.tileFrames) do
-        f:Hide()
-    end
-    self:_HideReveal()
-    if self.gridFrame then self.gridFrame:SetAlpha(1) end
-    if self._fieldFrame and ArcadiaNexus.UI then
-        ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
-    end
-    -- Logo einblenden
+    self:CancelPresentation(); self:HideSlotMenu()
+    if self._feedback then self._feedback:Hide() end
+    for _,f in pairs(self.tileFrames) do f:Hide() end
     if self._logoTex then self._logoTex:Show() end
     if self._goldGrid then self._goldGrid:Hide() end
-    if self.hud.movesBox then self.hud.movesBox:Hide() end
-    if self.hud.timeBox  then self.hud.timeBox:Hide()  end
+    if self._fieldFrame then ArcadiaNexus.UI.HideResultDialog(self._fieldFrame) end
     self:UpdateHUD()
 end
-
--- ── State-Änderungen ──────────────────────────────────────────
-
-function R:OnStateChanged(newState)
+function R:OnStateChanged(state)
+    if state=="IDLE" then self:EnterIdleState(); return end
+    if self._logoTex then self._logoTex:Hide() end
+    if self._feedback then self._feedback:Hide() end
+    local grid=state~="SLOT_MENU" and state~="GENERATING"
+    if self._goldGrid then self._goldGrid:SetShown(grid) end
+    if self.gridFrame then self.gridFrame:SetShown(grid) end
+    for _,f in pairs(self.tileFrames) do f:SetShown(grid) end
     self:UpdateHUD()
-    if newState == "IDLE" then
-        -- Laufende Intro-Animationen abbrechen
-        self._animGen = self._animGen + 1
-        self:_HidePreview()
-        for _, f in pairs(self.tileFrames) do
-            f:Hide()
-        end
-        self:_HideReveal()
-        self.gridFrame:SetAlpha(1)
-        if self._fieldFrame and ArcadiaNexus.UI then
-            ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
-        end
-        -- Logo im IDLE-State einblenden
-        if self._logoTex then self._logoTex:Show() end
-        if self._goldGrid then self._goldGrid:Hide() end
-        if self.hud.movesBox then self.hud.movesBox:Hide() end
-        if self.hud.timeBox  then self.hud.timeBox:Hide()  end
-    elseif newState == "PLAYING" then
-        -- Logo beim Spielstart ausblenden
-        if self._logoTex then self._logoTex:Hide() end
-        if self._goldGrid then self._goldGrid:Show() end
-        if self.hud.movesBox then self.hud.movesBox:Show() end
-        if self.hud.timeBox  then self.hud.timeBox:Show()  end
+end
+function R:ShowSlotMenu()
+    if not self._slotMenu then
+        local S=ArcadiaNexus.SLP_Settings; local loc=ArcadiaNexus.GetLocaleTable("MOSAICOFAZEROTH")
+        self._slotMenu=ArcadiaNexus.UI.CreateSaveSlotMenu({parent=self._canvas,maxSlots=3,L=loc,
+            loadSlot=function(slot)
+                local raw=S:LoadSlot(slot); if not raw then return nil end
+                if type(raw)~="table" then return {invalid=true} end
+                local L=ArcadiaNexus.SLP_Logic; local display=L:Copy(raw)
+                if not L:Int(display.timestamp,2147483647) then display.timestamp=nil end
+                return display
+            end,
+            deleteSlot=function(slot) if not S:GetPending(slot) then S:DeleteSlot(slot) end end,
+            isPaused=function(save) return not save.completed end,
+            canContinue=function(save) return not save.completed end,
+            formatInfo=function(save)
+                local p=save.puzzle; local L=ArcadiaNexus.SLP_Logic
+                return type(p)=="table" and L:Int(p.cols,5) and p.cols>=3 and L:Int(p.imageIndex,19) and p.imageIndex>0
+                    and string.format(loc.slot_info,p.cols,p.cols,p.imageIndex) or loc.msg_invalid_save
+            end,
+            formatPaused=function(save)
+                if not ArcadiaNexus.SLP_Logic:Int(save.moves) then return loc.msg_invalid_save end
+                return string.format(loc.slot_moves,save.moves)
+            end,
+            onNewGame=function(slot) ArcadiaNexus.SLP_Engine:StartGame({slot=slot,mode="new"}) end,
+            onContinue=function(slot) ArcadiaNexus.SLP_Engine:StartGame({slot=slot,mode="continue"}) end,
+            onCancel=function() ArcadiaNexus.SLP_Engine:StopGame() end})
     end
+    if self._logoTex then self._logoTex:Hide() end
+    self._slotMenu:Show()
+end
+function R:HideSlotMenu() if self._slotMenu then self._slotMenu:Hide() end end
+function R:ShowFeedback(key)
+    if not self._feedback then self._feedback=self._canvas:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); self._feedback:SetPoint("TOP",self._canvas,"TOP",0,-50); self._feedback:SetSize(560,40) end
+    self._feedback:SetText(ArcadiaNexus.GetLocaleTable("MOSAICOFAZEROTH")[key]); self._feedback:Show()
 end
 
 -- ── Win-Reveal-Sequenz ────────────────────────────────────────
@@ -801,134 +905,42 @@ function R:_HideReveal()
     end
 end
 
-local function RevealStillValid(renderer, myGen, sid, expectedFrame)
-    if renderer._animGen ~= myGen then return false end
-    local E = ArcadiaNexus.SLP_Engine
-    if not E or E.state ~= "WIN" then return false end
-    if sid and ArcadiaNexus.GameSession and not ArcadiaNexus.GameSession:IsSession(E, sid) then
-        return false
-    end
-    if expectedFrame and expectedFrame._revealGen ~= myGen then return false end
-    return true
-end
-
-function R:StartWinReveal(onDone)
-    self._animGen = self._animGen + 1
-    local myGen = self._animGen
-    local E     = ArcadiaNexus.SLP_Engine
-    local sid   = E and E._sessionId
-
-    local function stillValid(expectedFrame)
-        return RevealStillValid(self, myGen, sid, expectedFrame)
-    end
-
-    local Logic  = ArcadiaNexus.SLP_Logic
-    local cols   = self._cols
-    local n      = cols * cols
-    local lastID = n
-
-    for _, f in pairs(self.tileFrames) do
-        f:EnableMouse(false)
-    end
-
-    local emptyPos = Logic.emptyPos
-    local refFrame = self.tileFrames[emptyPos]
-    if not refFrame then
-        self:_RevealFullImage(onDone, myGen, sid)
-        return
-    end
-
-    local revTile = self:_EnsureRevealTile()
-    revTile._revealGen = myGen
-    revTile:SetParent(self.gridFrame)
-    revTile:SetSize(refFrame:GetWidth(), refFrame:GetHeight())
-    revTile:ClearAllPoints()
-    revTile:SetPoint("TOPLEFT", refFrame, "TOPLEFT", 0, 0)
-    revTile:SetFrameLevel(refFrame:GetFrameLevel() + 5)
-
-    local tex = revTile._tex
-    tex:SetTexture(self._imagePath)
-    local l, r, t, b = Logic:GetTexCoord(lastID, cols)
-    tex:SetTexCoord(l, r, t, b)
-
-    revTile:SetAlpha(0)
-    revTile:Show()
-
-    C_Sound.PlaySound(SOUNDKIT and SOUNDKIT.UI_ACHIEVEMENT_TOAST_SPARK or 1, "Master")
-
-    FadeFrame(revTile, 0, 1, 0.4, function()
-        if not stillValid(revTile) then return end
-        C_Timer.After(0.3, function()
-            if not stillValid(revTile) then return end
-            R:_RevealFullImage(onDone, myGen, sid)
-        end)
-    end, function()
-        return stillValid(revTile)
+function R:StartWinReveal(done)
+    ArcadiaNexus.SLP_Engine:PlayEffect("soundOnWin",SOUNDKIT and SOUNDKIT.UI_ACHIEVEMENT_TOAST_SPARK)
+    presentation:Stop(); if self._referenceFrame then self._referenceFrame:Hide() end
+    local f=self:_EnsureRevealFrame(); f:SetAllPoints(self.gridFrame); f:SetFrameLevel(self.gridFrame:GetFrameLevel()+10)
+    f._tex:SetTexture(self._imagePath); f._tex:SetTexCoord(0,1,0,1); f:SetAlpha(0); f:Show()
+    local elapsed=0; local run=ArcadiaNexus.SLP_Engine._runId
+    presentation:Start(function(dt)
+        local E=ArcadiaNexus.SLP_Engine
+        if E._runId~=run or E._revision~=rev or E.state~="WIN" then R:CancelPresentation(); return end
+        elapsed=elapsed+dt; f:SetAlpha(math.min(1,elapsed/.9))
+        if elapsed>=.9 then presentation:Stop(); if done then done() end end
     end)
 end
-
-function R:_RevealFullImage(onDone, myGen, sid)
-    myGen = myGen or self._animGen
-    local function stillValid(expectedFrame)
-        return RevealStillValid(self, myGen, sid, expectedFrame)
+function R:ShowWinResult(data)
+    local L=ArcadiaNexus.GetLocaleTable("MOSAICOFAZEROTH"); local run=data.runId
+    local lines={string.format(L.win_moves,data.stats.moves),string.format(L.win_time,ArcadiaNexus.Format.SecondsMMSS(data.stats.time,false)),L.records_independent}
+    local S=ArcadiaNexus.SLP_Settings; local best=S:GetPuzzleBest(data.puzzle.puzzleId)
+    if best then
+        lines[#lines+1]=string.format(L.puzzle_best_moves,best.moves)
+        lines[#lines+1]=string.format(L.puzzle_best_time,ArcadiaNexus.Format.SecondsMMSS(best.elapsedMs/1000,false))
     end
-    if not stillValid() then return end
-
-    local gf = self.gridFrame
-    if not gf then
-        return
-    end
-
-    local reveal = self:_EnsureRevealFrame()
-    reveal._revealGen = myGen
-    reveal:SetParent(gf)
-    reveal:ClearAllPoints()
-    reveal:SetAllPoints(gf)
-    reveal:SetFrameLevel(gf:GetFrameLevel() + 10)
-    reveal:SetAlpha(0)
-    reveal:EnableMouse(false)
-
-    local tex = reveal._tex
-    tex:SetTexture(self._imagePath)
-    tex:SetTexCoord(0, 1, 0, 1)
-
-    reveal:Show()
-
-    FadeFrame(reveal, 0, 1, 0.5, function()
-        if not stillValid(reveal) then return end
-        if onDone then onDone() end
-    end, function()
-        return stillValid(reveal)
-    end)
+    local oldMoves,oldTime,oldSize=S:GetLegacyBests(data.stats.difficulty)
+    if oldMoves>0 then lines[#lines+1]=string.format(L.legacy_best_moves,oldSize,oldSize,oldMoves) end
+    if oldTime>0 then lines[#lines+1]=string.format(L.legacy_best_time,oldSize,oldSize,ArcadiaNexus.Format.SecondsMMSS(oldTime,false)) end
+    if data.newMetricRecords.moves then lines[#lines+1]=L.record_moves end
+    if data.newMetricRecords.time then lines[#lines+1]=L.record_time end
+    ArcadiaNexus.UI.ShowArcadeResult(self._fieldFrame,{gameId="MOSAICOFAZEROTH",difficulty=data.difficulty,result="WIN",
+        title=L.win_title,xp=data.awardedXP,gold=data.awardedGold,hideHighscore=true,lines=lines,L=L,
+        isCurrent=function() return ArcadiaNexus.SLP_Engine._runId==run and ArcadiaNexus.SLP_Engine.state=="WIN" end,
+        onRetry=function() ArcadiaNexus.SLP_Engine:RetryPuzzle() end,onExit=function() ArcadiaNexus.SLP_Engine:StopGame() end})
 end
-
-function R:ShowWinResult(score, moves, elapsed, diff)
-    local parent = self._fieldFrame
-    if not parent then return end
-    local L  = ArcadiaNexus.GetLocaleTable("MOSAICOFAZEROTH")
-    local UI = ArcadiaNexus.UI
-    local timeStr = ArcadiaNexus.Format.SecondsMMSS(elapsed or 0, false)
-    UI.ShowArcadeResult(parent, {
-        title      = (L and L.win_title) or "Gelöst!",
-        titleColor = { 1, 0.84, 0 },
-        score      = score,
-        gameId     = "MOSAICOFAZEROTH",
-        difficulty = diff,
-        result     = "WIN",
-        lines      = {
-            string.format((L and L.win_moves) or "Züge: %d", moves or 0),
-            string.format((L and L.win_time) or "Zeit: %s", timeStr),
-        },
-        L          = L,
-        onRetry    = function()
-            local Eng = ArcadiaNexus.SLP_Engine
-            if Eng then Eng:StartGame() end
-        end,
-        onExit     = function()
-            local Eng = ArcadiaNexus.SLP_Engine
-            if Eng then Eng:StopGame() end
-        end,
-    })
+function R:ShowPendingResult()
+    local E=ArcadiaNexus.SLP_Engine; local run=E._runId; local L=ArcadiaNexus.GetLocaleTable("MOSAICOFAZEROTH")
+    ArcadiaNexus.UI.ShowArcadeResult(self._fieldFrame,{title=L.result_pending,xp=0,hideHighscore=true,lines={L.result_pending_tip},L=L,
+        isCurrent=function() return E._runId==run and E.state=="RESULT_PENDING" end,
+        onRetry=function() E:RetryResult() end,onExit=function() E:StopGame() end})
 end
 
 -- ── Init ──────────────────────────────────────────────────────

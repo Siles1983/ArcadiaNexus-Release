@@ -21,6 +21,7 @@
       highscore     (number, optional)
       hideHighscore (bool, optional – unterdrückt Auto-Lookup aus ScoreManager)
       lines         ({string}, optional – Zusatzzeilen)
+      symbolRow     ({ {icon, color={r,g,b}} }, optional – runde, eingefärbte Icons wie im Spiel)
       gameId        (string, optional – für XP-Berechnung)
       difficulty    (string, optional)
       result        ("WIN"|"LOSS"|"DRAW", optional – für XP-Berechnung)
@@ -51,6 +52,9 @@ local BTN_ROW_GAP   = 8
 local PAD           = 16
 local BADGE_H       = 22
 local FS_FALLBACK   = 16
+local SYM_SIZE      = 28
+local SYM_GAP       = 6
+local MASK_TEX      = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 
 local PANEL_BG  = { 0.05, 0.05, 0.08, 0.96 }
 local PANEL_BR  = { 0.90, 0.75, 0.30, 1.00 }
@@ -267,6 +271,11 @@ local function CreateShell(parent)
     extraFS:SetWidth(PANEL_W - PAD * 2)
     extraFS:SetTextColor(0.75, 0.70, 0.55)
 
+    local symbolRow = CreateFrame("Frame", nil, panel)
+    symbolRow:SetHeight(SYM_SIZE)
+    symbolRow._icons = {}
+    symbolRow:Hide()
+
     local hsBadge = CreateFrame("Frame", nil, panel, "BackdropTemplate")
     hsBadge:SetHeight(BADGE_H)
     hsBadge:SetPoint("TOP", extraFS, "BOTTOM", 0, -6)
@@ -295,6 +304,7 @@ local function CreateShell(parent)
         subtitleFS  = subtitleFS,
         statsFS     = statsFS,
         extraFS     = extraFS,
+        symbolRow   = symbolRow,
         hsBadge     = hsBadge,
         hsBadgeFS   = hsBadgeFS,
         btnBar      = btnBar,
@@ -378,15 +388,55 @@ local function LayoutButtons(btnBar, buttons, shell)
             local w = buttons[i].width or BTN_W
             btn:SetSize(w, BTN_H)
             if col == 0 then
-                local w2 = (buttons[i + 1] and (buttons[i + 1].width or BTN_W)) or w
-                local total = w + (buttons[i + 1] and (BTN_GAP + w2) or 0)
-                btn:SetPoint("TOP", btnBar, "TOP", -total / 2, -(row * rowH))
+                local w2 = buttons[i + 1] and (buttons[i + 1].width or BTN_W)
+                -- Mitte des linken Buttons, gleiche Formel wie bei zwei Buttons.
+                local offset = w2 and -(w2 + BTN_GAP) / 2 or 0
+                btn:SetPoint("TOP", btnBar, "TOP", offset, -(row * rowH))
             else
                 btn:SetPoint("TOPLEFT", btnBar._buttons[i - 1], "TOPRIGHT", BTN_GAP, 0)
             end
         end
         return rows * rowH - BTN_ROW_GAP
     end
+end
+
+local function UpdateSymbolRow(row, symbols)
+    if not row then return false end
+    if type(symbols) ~= "table" or #symbols == 0 then
+        row:Hide()
+        for _, holder in ipairs(row._icons) do holder:Hide() end
+        return false
+    end
+    local n = #symbols
+    row:SetSize(n * SYM_SIZE + (n - 1) * SYM_GAP, SYM_SIZE)
+    for i, spec in ipairs(symbols) do
+        local holder = row._icons[i]
+        if not holder then
+            holder = CreateFrame("Frame", nil, row)
+            holder:SetSize(SYM_SIZE, SYM_SIZE)
+            local tex = holder:CreateTexture(nil, "ARTWORK")
+            tex:SetAllPoints()
+            tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+            local maskTex
+            if holder.CreateMaskTexture then
+                maskTex = holder:CreateMaskTexture()
+                maskTex:SetAllPoints()
+                maskTex:SetTexture(MASK_TEX, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+                tex:AddMaskTexture(maskTex)
+            end
+            holder.icon = tex
+            row._icons[i] = holder
+        end
+        holder:ClearAllPoints()
+        holder:SetPoint("LEFT", row, "LEFT", (i - 1) * (SYM_SIZE + SYM_GAP), 0)
+        holder.icon:SetTexture(spec.icon)
+        local c = spec.color or { 1, 1, 1 }
+        holder.icon:SetVertexColor(c[1] or 1, c[2] or 1, c[3] or 1, 1)
+        holder:Show()
+    end
+    for i = n + 1, #row._icons do row._icons[i]:Hide() end
+    row:Show()
+    return true
 end
 
 -- ============================================================
@@ -453,6 +503,8 @@ local function PopulateShell(shell, config)
         extraFS:Hide()
     end
 
+    local hasSymbols = UpdateSymbolRow(shell.symbolRow, config.symbolRow)
+
     if config.newHighscore then
         hsBadge:Show()
         hsBadge:SetWidth(PANEL_W - PAD * 4)
@@ -463,16 +515,51 @@ local function PopulateShell(shell, config)
     local btnH = LayoutButtons(btnBar, config.buttons or {}, shell)
     btnBar:SetHeight(math.max(btnH, BTN_H))
 
-    local anchorFS = extraFS:IsShown() and extraFS or statsFS
-    if not statsFS:IsShown() and not extraFS:IsShown() then
-        anchorFS = subtitleFS:IsShown() and subtitleFS or titleFS
+    -- Zwei Standardbuttons passen in PANEL_W. Breitere Reihen vergrößern den Rahmen,
+    -- damit die Buttons mit demselben Seitenabstand innen bleiben.
+    local function ButtonWidth(cfg)
+        return (cfg and cfg.width) or BTN_W
+    end
+    local widest = 0
+    local buttonList = config.buttons or {}
+    for i = 1, #buttonList, 2 do
+        local row = ButtonWidth(buttonList[i])
+        if buttonList[i + 1] then
+            row = row + BTN_GAP + ButtonWidth(buttonList[i + 1])
+        end
+        if row > widest then widest = row end
+    end
+    local side = (PANEL_W - (BTN_W * 2 + BTN_GAP)) / 2
+    local panelW = math.max(PANEL_W, widest + side * 2)
+    shell.panel:SetWidth(panelW)
+    btnBar:SetWidth(math.max(PANEL_W - PAD * 2, widest))
+
+    local cursor = titleFS
+    subtitleFS:ClearAllPoints()
+    subtitleFS:SetPoint("TOP", titleFS, "BOTTOM", 0, -8)
+    if subtitleFS:IsShown() then cursor = subtitleFS end
+    if statsFS:IsShown() then
+        statsFS:ClearAllPoints()
+        statsFS:SetPoint("TOP", cursor, "BOTTOM", 0, -6)
+        cursor = statsFS
+    end
+    if extraFS:IsShown() then
+        extraFS:ClearAllPoints()
+        extraFS:SetPoint("TOP", cursor, "BOTTOM", 0, -4)
+        cursor = extraFS
+    end
+    if hasSymbols then
+        shell.symbolRow:ClearAllPoints()
+        shell.symbolRow:SetPoint("TOP", cursor, "BOTTOM", 0, -6)
+        cursor = shell.symbolRow
+    end
+    if config.newHighscore then
+        hsBadge:ClearAllPoints()
+        hsBadge:SetPoint("TOP", cursor, "BOTTOM", 0, -6)
+        cursor = hsBadge
     end
     btnBar:ClearAllPoints()
-    if config.newHighscore then
-        btnBar:SetPoint("TOP", hsBadge, "BOTTOM", 0, -PAD)
-    else
-        btnBar:SetPoint("TOP", anchorFS, "BOTTOM", 0, -PAD)
-    end
+    btnBar:SetPoint("TOP", cursor, "BOTTOM", 0, -PAD)
 
     local function Measured(fs, fallback)
         if not fs or not fs:IsShown() then return 0 end
@@ -489,11 +576,12 @@ local function PopulateShell(shell, config)
         end
     end
 
-    -- Gleiche Lücken wie SetPoint: Title-8-Sub-6-Stats-4-Extra-6-Badge-PAD-Buttons-PAD
+    -- Gleiche Lücken wie SetPoint: Title-8-Sub-6-Stats-4-Extra-6-Icons-6-Badge-PAD-Buttons-PAD
     local totalH = PAD + Measured(titleFS, 18) + 8
     totalH = totalH + Measured(subtitleFS, 14) + 6
     if statsFS:IsShown() then totalH = totalH + Measured(statsFS, 14) + 4 end
     if extraFS:IsShown() then totalH = totalH + extraH + 6 end
+    if hasSymbols then totalH = totalH + SYM_SIZE + 6 end
     if config.newHighscore then
         totalH = totalH + BADGE_H + PAD
     else
@@ -598,6 +686,38 @@ function UI.ResultDialogButtons.Level(L, onNext, onSelect, onExit)
         { label = FirstLabel(L, { "btn_level_select", "btn_menu" }, "btn_level_select"), onClick = onSelect },
         { label = FirstLabel(L, { "btn_exit" }, "btn_exit"), onClick = onExit },
     }
+end
+
+-- Kampagnenabschluss: Nächstes Level, Levelauswahl, Level wiederholen, Beenden.
+-- Fehlende Aktionen (onNext nach dem letzten Level oder einer Niederlage) entfallen.
+function UI.ResultDialogButtons.Campaign(L, onNext, onSelect, onRepeat, onExit, nextLabel)
+    local w = 136
+    local buttons = {}
+    if onNext then
+        buttons[#buttons + 1] = {
+            label = nextLabel or FirstLabel(L, { "btn_next_level" }, "btn_next_level"),
+            onClick = onNext, width = w,
+        }
+    end
+    if onSelect then
+        buttons[#buttons + 1] = {
+            label = FirstLabel(L, { "btn_level_select" }, "btn_level_select"),
+            onClick = onSelect, width = w,
+        }
+    end
+    if onRepeat then
+        buttons[#buttons + 1] = {
+            label = FirstLabel(L, { "btn_repeat_level" }, "btn_repeat_level"),
+            onClick = onRepeat, width = w,
+        }
+    end
+    if onExit then
+        buttons[#buttons + 1] = {
+            label = FirstLabel(L, { "btn_exit" }, "btn_exit"),
+            onClick = onExit, width = w,
+        }
+    end
+    return buttons
 end
 
 function UI.ResultDialogButtons.Round(L, onNext, onQuit)

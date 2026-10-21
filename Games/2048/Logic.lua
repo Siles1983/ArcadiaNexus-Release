@@ -154,6 +154,7 @@ end
 -- ============================================================
 
 function Logic:Slide(board, direction)
+    if direction ~= "LEFT" and direction ~= "RIGHT" and direction ~= "UP" and direction ~= "DOWN" then return false, 0 end
     local size  = board.size
     local total = 0
     local moved = false
@@ -275,5 +276,90 @@ function Logic:IsFull(board)
             if board.cells[r][c] == 0 then return false end
         end
     end
+    return true
+end
+
+-- Complete move trace. Only Logic decides merges; renderer interpolates it.
+function Logic:Move(board, direction)
+    if direction ~= "LEFT" and direction ~= "RIGHT" and direction ~= "UP" and direction ~= "DOWN" then return false end
+    local size, motions, gain, moved = board.size, {}, 0, false
+    local function Position(line, index)
+        if direction == "LEFT" then return line, index
+        elseif direction == "RIGHT" then return line, size - index + 1
+        elseif direction == "UP" then return index, line
+        else return size - index + 1, line end
+    end
+    for r = 1, size do
+        for c = 1, size do board.merged[r][c] = false end
+    end
+    for line = 1, size do
+        local tiles = {}
+        for index = 1, size do
+            local r, c = Position(line, index)
+            local value = board.cells[r][c]
+            if value > 0 then tiles[#tiles + 1] = { row = r, col = c, value = value } end
+            board.cells[r][c] = 0
+        end
+        local i, dest = 1, 1
+        while i <= #tiles do
+            local tile, nextTile = tiles[i], tiles[i + 1]
+            local merge = nextTile and tile.value == nextTile.value
+            local r, c = Position(line, dest)
+            board.cells[r][c] = tile.value * (merge and 2 or 1)
+            board.merged[r][c] = merge and true or false
+            local function Record(source)
+                motions[#motions + 1] = { fromRow = source.row, fromCol = source.col,
+                    toRow = r, toCol = c, value = source.value, merged = merge and true or false }
+                if source.row ~= r or source.col ~= c then moved = true end
+            end
+            Record(tile)
+            if merge then Record(nextTile); gain, moved = gain + board.cells[r][c], true end
+            i, dest = i + (merge and 2 or 1), dest + 1
+        end
+    end
+    board.moved, board.score = moved, board.score + gain
+    return moved, gain, motions
+end
+
+function Logic:GetDifficulty(size)
+    return ({ [3] = "easy", [4] = "normal", [5] = "hard" })[size]
+end
+
+function Logic:HighestTile(board)
+    local highest = 0
+    for r = 1, board.size do
+        for c = 1, board.size do highest = math.max(highest, board.cells[r][c]) end
+    end
+    return highest
+end
+
+function Logic:ValidateSave(save)
+    if type(save) ~= "table" or save.saveVersion ~= 1 then return false end
+    local size = save.boardSize
+    if not self:GetDifficulty(size) or save.difficulty ~= self:GetDifficulty(size) then return false end
+    if type(save.runId) ~= "string" or save.runId == "" then return false end
+    if type(save.score) ~= "number" or save.score < 0 or save.score ~= math.floor(save.score) or save.score == math.huge then return false end
+    if type(save.cells) ~= "table" or #save.cells ~= size then return false end
+    for r = 1, size do
+        if type(save.cells[r]) ~= "table" or #save.cells[r] ~= size then return false end
+        for c = 1, size do
+            local value = save.cells[r][c]
+            if type(value) ~= "number" or value < 0 or value ~= math.floor(value) or value == math.huge then return false end
+            if value > 0 then
+                if value < 2 then return false end
+                while value > 1 and value % 2 == 0 do value = value / 2 end
+                if value ~= 1 then return false end
+            end
+        end
+    end
+    if save.phase ~= "ACTIVE" and save.phase ~= "AWAITING_WIN_CHOICE" and save.phase ~= "FINISHED" then return false end
+    if save.resultPending ~= nil and type(save.resultPending) ~= "boolean" then return false end
+    if save.resultPending and not save.reached2048 and save.phase ~= "FINISHED" then return false end
+    local board = { size = size, cells = save.cells }
+    if type(save.reached2048) ~= "boolean" or save.reached2048 ~= self:HasWon(board) then return false end
+    if save.highestTile ~= self:HighestTile(board) then return false end
+    if save.phase == "AWAITING_WIN_CHOICE" and (not save.reached2048 or not self:HasMoves(board)) then return false end
+    if save.phase == "ACTIVE" and not self:HasMoves(board) then return false end
+    if save.phase == "FINISHED" and not save.reached2048 and self:HasMoves(board) then return false end
     return true
 end

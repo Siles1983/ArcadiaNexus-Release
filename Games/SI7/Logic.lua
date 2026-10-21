@@ -17,9 +17,9 @@ local function Sets()
     return ArcadiaNexus.SI7_WordSets
 end
 
-function L.Word(id, wordSet)
+function L.Word(id, wordSet, locale)
     local sets = Sets()
-    return sets and sets:GetWord(wordSet, id, ArcadiaNexus.ActiveLocale) or "?"
+    return sets and sets:GetWord(wordSet, id, locale or ArcadiaNexus.ActiveLocale) or "?"
 end
 
 function L.EmptyPublic()
@@ -395,7 +395,7 @@ function L.MatchOpts(engine)
             if engine then engine:OnMatchState(st) end
         end,
         onResult = function(node, resultId)
-            if engine then engine:OnMatchResult(node, resultId) end
+            if engine then return engine:OnMatchResult(node, resultId) end
         end,
         onReject = function(_, f)
             if engine then engine:OnMatchReject(f) end

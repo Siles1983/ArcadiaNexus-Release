@@ -12,14 +12,16 @@ ArcadiaNexus.RegisterLocale("REACTIONSTRIKE", "deDE", {
     lbl_score          = "Punkte",
     lbl_ms             = "ms",
 
-    state_waiting      = "Klick oder Leertaste wenn der Orb erscheint!",
-    state_fakeout_hint = "Roter Orb = NICHT klicken!",
+    state_waiting      = "Warten – erst beim SIGNAL reagieren!",
+    state_signal       = "SIGNAL – jetzt reagieren!",
+    state_fakeout_hint = "TÄUSCHUNG – nicht reagieren!",
+    result_pending    = "Ergebnis noch nicht verbucht",
     state_idle         = "Schwierigkeit wählen und starten",
 
     result_great       = "Ausgezeichnet!",   -- < 200ms
     result_good        = "Gut!",             -- < 350ms
     result_ok          = "Geht so.",         -- < 500ms
-    result_slow        = "Zu langsam!",      -- >= 500ms
+    result_slow        = "Gültiger Treffer", -- kein Zeitlimit
 
     penalty_early      = "Zu früh!",
     penalty_fakeout    = "Falscher Orb!",
@@ -31,11 +33,11 @@ ArcadiaNexus.RegisterLocale("REACTIONSTRIKE", "deDE", {
 
     fakeout_survived   = "Nicht getäuscht!",
 
-    guide_1            = "Warte bis der blaue Orb erscheint.",
-    guide_2            = "Klicke den Orb ODER drücke die Leertaste.",
-    guide_3            = "Roter Orb = Fakeout! Nicht klicken.",
+    guide_1            = "Warte auf den blauen Orb und den Text SIGNAL.",
+    guide_2            = "Klick irgendwo im Spielfeld, Leertaste oder Gamepad-A / rechte Schulter reagieren gleichberechtigt.",
+    guide_3            = "Roter Orb und TÄUSCHUNG: Nicht reagieren. Beide Signale haben denselben Ton.",
     guide_4            = "Klick vor dem Signal = Fehlstart und Strafe.",
-    guide_5            = "Normal/Schwer: Der Orb bewegt sich!",
+    guide_5            = "Normal/Schwer bewegt sich der Orb nur zur Darstellung. Gültige Treffer haben kein Zeitlimit; Top 3 und Bestzeit verwenden aufgerundete echte Millisekunden. Beenden verwirft offene Versuche, ohne Saves.",
 
     box_sounds         = "Sound",
     box_guide          = "Anleitung",
@@ -60,14 +62,16 @@ ArcadiaNexus.RegisterLocale("REACTIONSTRIKE", "enUS", {
     lbl_score          = "Score",
     lbl_ms             = "ms",
 
-    state_waiting      = "Click or press Space when the orb appears!",
-    state_fakeout_hint = "Red orb = DO NOT click!",
+    state_waiting      = "Wait – react only to SIGNAL!",
+    state_signal       = "SIGNAL – react now!",
+    state_fakeout_hint = "FAKE – do not react!",
+    result_pending    = "Result not recorded yet",
     state_idle         = "Choose difficulty and start",
 
     result_great       = "Excellent!",
     result_good        = "Good!",
     result_ok          = "Average.",
-    result_slow        = "Too slow!",
+    result_slow        = "Valid strike",
 
     penalty_early      = "Too early!",
     penalty_fakeout    = "Wrong orb!",
@@ -79,11 +83,11 @@ ArcadiaNexus.RegisterLocale("REACTIONSTRIKE", "enUS", {
 
     fakeout_survived   = "Not fooled!",
 
-    guide_1            = "Wait for the blue orb to appear.",
-    guide_2            = "Click the orb OR press Space.",
-    guide_3            = "Red orb = Fakeout! Do not click.",
+    guide_1            = "Wait for the blue orb and the SIGNAL text.",
+    guide_2            = "Click anywhere in the field, press Space or gamepad A / right shoulder; all inputs are equivalent.",
+    guide_3            = "Red orb and FAKE: Do not react. Both signals use the same sound.",
     guide_4            = "Click before signal = false start penalty.",
-    guide_5            = "Normal/Hard: The orb moves!",
+    guide_5            = "On Normal/Hard the moving orb is visual only. Valid strikes have no time limit; Top 3 and best time use rounded-up measured milliseconds. Leaving discards open attempts, with no saves.",
 
     box_sounds         = "Sound",
     box_guide          = "Guide",

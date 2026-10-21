@@ -33,6 +33,14 @@ local function BuildLoaSettingsPanel(parent)
                 }, 15),
             },
         },
+        onReset=function()
+            local R=ArcadiaNexus.LOA_Renderer
+            if R then
+                if R._colorDropdown then R._colorDropdown:RefreshDisplay() end
+                if R._countDropdown then R._countDropdown:RefreshDisplay() end
+                if R._game then R:UpdateStatus(R._game) end
+            end
+        end,
     })
 end
 

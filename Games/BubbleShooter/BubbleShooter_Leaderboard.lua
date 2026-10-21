@@ -11,6 +11,14 @@ local stats = S.StatsWinsPlayed()
 table.insert(stats.rows, { fromStats = "maxCombo", labelKey = "lb_max_combo", valueColor = "gold" })
 table.insert(stats.rows, { fromStats = "maxDrop",  labelKey = "lb_max_drop",  valueColor = "gold" })
 
+local arcade={"endless_easy","endless_normal","endless_hard","time_easy","time_normal","time_hard"}
+local campaign={"shot_easy","shot_normal","shot_hard"}
+local scores=S.TopScores(3); scores.difficulties=arcade
+local history=S.TopScores(3); history.difficulties=campaign
+history.field="legacyCampaignScores"; history.titleKey="lb_campaign_legacy"
+local progress={type="stats",titleKey="lb_campaign_progress",difficulties=campaign,rows={
+    {field="completedLevels",labelKey="lb_campaign_levels",valueColor="gold"},
+    {field="campaignStars",labelKey="lb_campaign_stars",valueColor="gold"}}}
 ArcadiaNexus.RegisterLeaderboard({
     gameId = "BUBBLESHOOTER",
     difficulties = {
@@ -25,8 +33,9 @@ ArcadiaNexus.RegisterLeaderboard({
         { id = "shot_hard",      labelKey = "lb_shot_hard" },
     },
     sections = {
-        S.TopScores(3),
+        scores,
+        progress,
         stats,
-        S.BestLevelBox(),
+        history,
     },
 })

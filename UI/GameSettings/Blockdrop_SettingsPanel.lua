@@ -134,7 +134,7 @@ local function BuildBlockdropSettingsPanel(parent)
                 GS.GuideSection(nil, L, {
                     "guide_controls", "guide_keys", "guide_drop", "guide_empty",
                     "guide_scoring", "guide_score1", "guide_score2", "guide_mult",
-                    "guide_empty2", "guide_levelup", "guide_highscore", "guide_sizes",
+                    "guide_empty2", "guide_levelup", "guide_highscore", "guide_sizes", "guide_pause", "guide_lock",
                 }),
             },
         },

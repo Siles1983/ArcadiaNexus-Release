@@ -56,9 +56,18 @@ GI._menuHighlight = nil
 GI._overlayStack  = {}
 GI._overlayCancel = nil
 GI._assistCol     = nil
+GI._inputGen      = 0
 
 local function Engine(key)
     return key and ArcadiaNexus[key] or nil
+end
+
+local function InvalidateInput()
+    GI._inputGen = GI._inputGen + 1
+end
+
+local function InputCurrent(gen)
+    return gen == GI._inputGen
 end
 
 local function IsLeftStick(stick)
@@ -109,87 +118,42 @@ end
 -- Kein Eintrag = kein Stick/D-Pad-Gameplay (Klickspiele nutzen den Hub-Cursor).
 -- DevOnly, bewusst ohne Profil: AZEROTHFIGHTERS, AZEROTH_ASCENT, TINKERSREVENGE
 local PROFILES = {
+    HIGHERORLOWER = {
+        engine = "HOL_Engine",
+        keepCursor = true,
+        onButton = function(E,btn,pressed)
+            if not pressed then return end
+            if btn=="PADUP" or btn=="PADRIGHT" then E:HandleKey("UP")
+            elseif btn=="PADDOWN" or btn=="PADLEFT" then E:HandleKey("DOWN")
+            elseif btn=="PAD1" then E:HandleKey("ENTER")
+            elseif btn=="PADRSHOULDER" then E:HandleKey("ADD_BET")
+            elseif btn=="PADLSHOULDER" then E:HandleKey("REMOVE_BET") end
+        end,
+    },
     BLOCKBREAKER = {
-        engine = "BB_Engine",
-        analog = "x",
-        onButton = function(E, btn, pressed)
-            if btn == "PADLEFT" then
-                E:HandleKey(pressed and "LEFT_DOWN" or "LEFT_UP")
-            elseif btn == "PADRIGHT" then
-                E:HandleKey(pressed and "RIGHT_DOWN" or "RIGHT_UP")
-            elseif btn == "PAD1" and pressed then
-                local gs = E.gameState
-                if E.state == "PLAYING" and gs and gs.ballDocked then
-                    E:HandleKey("LAUNCH")
-                end
-            elseif (btn == "PADFORWARD" or btn == "PAD4") and pressed then
-                E:HandleKey("PAUSE")
-            end
-        end,
-        onAxis = function(E, x)
-            SyncHold("left",  x < -DEADZONE,
-                function() E:HandleKey("LEFT_DOWN") end,
-                function() E:HandleKey("LEFT_UP") end)
-            SyncHold("right", x > DEADZONE,
-                function() E:HandleKey("RIGHT_DOWN") end,
-                function() E:HandleKey("RIGHT_UP") end)
-        end,
+        engine="BB_Engine", analog="x",
+        onButton=function(E,btn,pressed) E:HandlePadButton(btn,pressed) end,
+        onAxis=function(E,x,_,dz) E:HandlePadAxis(x,dz) end,
     },
     ALIENDEFENSE = {
         engine = "AD_Engine",
         analog = "x",
         onButton = function(E, btn, pressed)
-            local gs = E.gameState
-            if btn == "PADLEFT" then
-                if gs then gs.keyLeft = pressed end
-            elseif btn == "PADRIGHT" then
-                if gs then gs.keyRight = pressed end
-            elseif btn == "PAD1" then
-                if gs then gs.keyFire = pressed end
-            elseif btn == "PADUP" and pressed and E.CycleWeaponUp then
-                E:CycleWeaponUp()
-            elseif btn == "PADDOWN" and pressed and E.CycleWeaponDown then
-                E:CycleWeaponDown()
-            elseif (btn == "PADFORWARD" or btn == "PAD4") and pressed and E.TogglePause then
-                E:TogglePause()
-            end
+            E:HandlePadButton(btn, pressed)
         end,
         onAxis = function(E, x)
-            local gs = E.gameState
-            if not gs then return end
-            gs.keyLeft  = x < -DEADZONE
-            gs.keyRight = x >  DEADZONE
+            E:HandlePadAxis(x, DEADZONE)
         end,
     },
     ARGUSORBDEFENSE = {
         engine = "AOD_Engine",
         analog = "xy",
-        onButton = function(E, btn, pressed)
-            if btn == "PADLEFT" then
-                E:HandleKey("ROTATE_LEFT", pressed)
-            elseif btn == "PADRIGHT" then
-                E:HandleKey("ROTATE_RIGHT", pressed)
-            elseif btn == "PADUP" or btn == "PADLSHOULDER" then
-                E:HandleKey("THRUST", pressed)
-            elseif btn == "PAD1" then
-                E:HandleKey("FIRE", pressed)
-            elseif (btn == "PADFORWARD" or btn == "PAD4") and pressed then
-                E:HandleKey("PAUSE", true)
-            end
-        end,
-        onAxis = function(E, x, y)
-            E:HandleKey("ROTATE_LEFT",  x < -DEADZONE)
-            E:HandleKey("ROTATE_RIGHT", x >  DEADZONE)
-            E:HandleKey("THRUST",       y >  DEADZONE)
-        end,
+        onButton = function(E, btn, pressed) E:HandlePadButton(btn,pressed) end,
+        onAxis = function(E,x,y) E:HandlePadAxis(x,y,DEADZONE) end,
     },
     SNAKE = {
-        engine = "SNK_Engine",
-        onButton = function(E, btn, pressed)
-            DirTap(E, btn, pressed, function(eng, dir)
-                eng:HandleKey(dir)
-            end)
-        end,
+        engine="SNK_Engine",
+        onButton=function(E,btn,pressed) E:HandlePadButton(btn,pressed) end,
     },
     ["2048"] = {
         engine = "TDG_Engine",
@@ -200,62 +164,18 @@ local PROFILES = {
         end,
     },
     BLOCKDROP = {
-        engine = "BLD_Engine",
-        onButton = function(E, btn, pressed)
-            if not pressed then return end
-            if     btn == "PADLEFT"  then E:HandlePlayKey("LEFT")
-            elseif btn == "PADRIGHT" then E:HandlePlayKey("RIGHT")
-            elseif btn == "PADUP"    then E:HandlePlayKey("UP")
-            elseif btn == "PADDOWN"  then E:HandlePlayKey("DOWN")
-            elseif btn == "PAD1"     then E:HandlePlayKey("SPACE")
-            end
-        end,
+        engine="BLD_Engine",
+        onButton=function(E,btn,pressed) E:HandlePadButton(btn,pressed) end,
     },
     GOBLINBLAST = {
-        engine = "GB_Engine",
-        analog = "xy",
-        onButton = function(E, btn, pressed)
-            if btn == "PAD1" then
-                if pressed then E:HandleKeyDown("SPACE") end
-                return
-            end
-            if btn == "PADFORWARD" and pressed then
-                E:HandleKeyDown("ESCAPE")
-                return
-            end
-            HoldKeyPair(E, btn, pressed,
-                function(eng, key) eng:HandleKeyDown(key) end,
-                function(eng, key) eng:HandleKeyUp(key) end)
-        end,
-        onAxis = function(E, x, y)
-            SyncDir4(E,
-                function(eng, key) eng:HandleKeyDown(key) end,
-                function(eng, key) eng:HandleKeyUp(key) end,
-                x, y)
-        end,
+        engine="GB_Engine",analog="xy",
+        onButton=function(E,btn,pressed) E:HandlePadButton(btn,pressed) end,
+        onAxis=function(E,x,y) E:HandlePadAxis(x,y,DEADZONE) end,
     },
     BARREL_BRAWL = {
-        engine = "BRB_Engine",
-        analog = "xy",
-        onButton = function(E, btn, pressed)
-            if btn == "PAD1" then
-                if pressed then E:HandleKeyDown("SPACE") end
-                return
-            end
-            if (btn == "PADFORWARD" or btn == "PAD4") and pressed then
-                E:HandleKeyDown("P")
-                return
-            end
-            HoldKeyPair(E, btn, pressed,
-                function(eng, key) eng:HandleKeyDown(key) end,
-                function(eng, key) eng:HandleKeyUp(key) end)
-        end,
-        onAxis = function(E, x, y)
-            SyncDir4(E,
-                function(eng, key) eng:HandleKeyDown(key) end,
-                function(eng, key) eng:HandleKeyUp(key) end,
-                x, y)
-        end,
+        engine="BRB_Engine",analog="xy",
+        onButton=function(E,btn,pressed) E:HandlePadButton(btn,pressed) end,
+        onAxis=function(E,x,y) E:HandlePadAxis(x,y,DEADZONE) end,
     },
     REACTIONSTRIKE = {
         engine = "RS_Engine",
@@ -285,9 +205,11 @@ local PROFILES = {
         onButton = function(E, btn, pressed)
             if not pressed then return end
             if btn == "PAD1" then
-                E:Fire()
+                if not E:CycleJokerColor() then E:Fire() end
+            elseif btn=="PAD2" then
+                E:ConfirmJokerColor()
             elseif btn == "PADFORWARD" or btn == "PAD4" then
-                if E.SaveAndPause then E:SaveAndPause() end
+                if E.SaveAndPause then E:SaveAndPause("exit") end
             end
         end,
         onAxis = function(_, x, y)
@@ -300,52 +222,8 @@ local PROFILES = {
     DARKMOON_PINBALL = {
         engine = "DMP_Engine",
         analog = "x",
-        onButton = function(E, btn, pressed)
-            if btn == "PADLEFT" or btn == "PADLSHOULDER" or btn == "PADLTRIGGER" then
-                E:HandleKey(pressed and "LEFT_DOWN" or "LEFT_UP")
-            elseif btn == "PADRIGHT" or btn == "PADRSHOULDER" or btn == "PADRTRIGGER" then
-                E:HandleKey(pressed and "RIGHT_DOWN" or "RIGHT_UP")
-            elseif btn == "PAD1" then
-                E:HandleKey(pressed and "LAUNCH" or "LAUNCH_UP")
-            elseif pressed and btn == "PADUP" then
-                E:HandleKey("NUDGE_UP")
-            elseif pressed and btn == "PADDOWN" then
-                E:HandleKey("NUDGE_LEFT")
-            elseif pressed and btn == "PAD3" then
-                E:HandleKey("NUDGE_RIGHT")
-            elseif pressed and (btn == "PADFORWARD" or btn == "PAD4") then
-                E:HandleKey("PAUSE")
-            end
-        end,
-        onAxis = function(E, x)
-            SyncHold("left",  x < -DEADZONE,
-                function() E:HandleKey("LEFT_DOWN") end,
-                function() E:HandleKey("LEFT_UP") end)
-            SyncHold("right", x > DEADZONE,
-                function() E:HandleKey("RIGHT_DOWN") end,
-                function() E:HandleKey("RIGHT_UP") end)
-        end,
-    },
-    AZEROTHWORDS = {
-        engine = "WRD_Engine",
-        keepCursor = true,
-        captureButtons = {
-            "PAD2", "PAD3", "PAD4",
-            "PADLSHOULDER", "PADRSHOULDER",
-            "PADBACK", "PADFORWARD", "PADSOCIAL", "PAD6",
-        },
-        onButton = function(E, btn, pressed)
-            if not pressed then return end
-            if btn == "PADLSHOULDER" or btn == "PAD4" then
-                E:HandleInput("BACKSPACE")
-            elseif btn == "PADRSHOULDER" then
-                E:HandleInput("CONFIRM")
-            elseif btn == "PAD3" then
-                GI.ClickCursorNode("RightButton")
-            elseif btn == "PADFORWARD" then
-                GI.RequestPause()
-            end
-        end,
+        onButton = function(E,btn,pressed) E:HandlePadButton(btn,pressed) end,
+        onAxis = function(E,x) E:HandlePadAxis(x) end,
     },
     ARCADIAROWS = {
         engine = "AR_Engine",
@@ -552,40 +430,10 @@ local function HighlightMenu(index)
 end
 
 function GI.RequestExit()
-    local GS = ArcadiaNexus.GameSession
-    local cur = GS and GS.GetCurrent and GS:GetCurrent()
-    local gameId = (cur and cur.gameId) or GI._activeGameId
     local GR = ArcadiaNexus.GameRegistry
-    local renderer = GR and GR.GetRenderer and gameId and GR.GetRenderer(gameId)
-    if renderer then
-        local btn = renderer._exitBtn or renderer.exitBtn
-        if btn and (not btn.IsShown or btn:IsShown()) then
-            if ClickFrame(btn) then return true end
-        end
-        if renderer.EnterIdleState then
-            local E = GI._profile and Engine(GI._profile.engine)
-            if E and E.SaveAndPause then
-                E:SaveAndPause()
-            elseif E and E.StopGame then
-                E:StopGame()
-            end
-            renderer:EnterIdleState()
-            return true
-        end
-    end
-    local E = GI._profile and Engine(GI._profile.engine)
-    if E then
-        if E.SaveAndPause then
-            E:SaveAndPause()
-            return true
-        end
-        if E.StopGame then
-            E:StopGame()
-            return true
-        end
-    end
-    if GR and GR.StopActiveGame then
-        GR.StopActiveGame()
+    if not GR or not GR.LeaveActiveGame then return false end
+    local ok, reason = GR.LeaveActiveGame()
+    if ok and (reason == "ended" or reason == "already-ended") then
         return true
     end
     return false
@@ -652,6 +500,10 @@ function GI.HandleMenuButton(button)
 end
 
 function GI.OnUiOverlay(buttons, opts)
+    if GI._keyboardFrame and GI._keyboardFrame:IsShown() then
+        GI._keyboardOverlays=GI._keyboardOverlays or {}
+        GI._keyboardOverlays[#GI._keyboardOverlays+1]=buttons or {}
+    end
     if not GI.IsEnabled() then return false end
     opts = opts or {}
     if GI._overlayMode then
@@ -663,6 +515,7 @@ function GI.OnUiOverlay(buttons, opts)
         }
     end
     GI._overlayMode = true
+    InvalidateInput()
     GI._menuButtons = buttons or {}
     GI._overlayCancel = opts.onCancel
     GI._menuIndex = 1
@@ -681,13 +534,60 @@ function GI.OnUiOverlay(buttons, opts)
     return true
 end
 
-function GI.OnUiOverlayClosed()
+--- Aktualisiert nur eine vorhandene Ebene mit dieser Buttonliste.
+--- nil = Controller-Integration aus, kein Fehler. false = Besitzer fehlt.
+--- Legt keine neue Ebene an.
+function GI.SyncOverlay(ownerButtons, opts)
+    if type(ownerButtons) ~= "table" then return false end
+    if not GI.IsEnabled() then return nil end
+    if not GI._overlayMode then return false end
+    opts = opts or {}
+    if GI._menuButtons == ownerButtons then
+        InvalidateInput()
+        GI._overlayCancel = opts.onCancel
+        GI._menuHighlight = nil
+        GI._menuIndex = 1
+        HighlightMenu(1)
+        return true
+    end
+    local stack = GI._overlayStack
+    if stack then
+        for i = #stack, 1, -1 do
+            if stack[i].buttons == ownerButtons then
+                stack[i].cancel = opts.onCancel
+                stack[i].index = 1
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function GI.OnUiOverlayClosed(ownerButtons)
+    -- Optional owner removes a hidden lower overlay without disturbing a popup
+    -- above it. Existing callers without an owner retain top-of-stack behavior.
+    if ownerButtons then
+        local keyboard = GI._keyboardOverlays or {}
+        for i = #keyboard, 1, -1 do
+            if keyboard[i] == ownerButtons then table.remove(keyboard, i); break end
+        end
+        if not GI._overlayMode then return end
+        if GI._menuButtons ~= ownerButtons then
+            local stack = GI._overlayStack or {}
+            for i = #stack, 1, -1 do
+                if stack[i].buttons == ownerButtons then table.remove(stack, i); break end
+            end
+            return
+        end
+    end
+    if not ownerButtons and GI._keyboardOverlays and #GI._keyboardOverlays>0 then table.remove(GI._keyboardOverlays) end
     if not GI._overlayMode then return end
     ResetHolds()
     local stack = GI._overlayStack
     local prev = stack[#stack]
     if prev then
         stack[#stack] = nil
+        InvalidateInput()
         GI._menuButtons = prev.buttons
         GI._overlayCancel = prev.cancel
         GI._menuHighlight = nil
@@ -695,9 +595,22 @@ function GI.OnUiOverlayClosed()
         return
     end
     GI._overlayMode = false
+    InvalidateInput()
     GI._menuButtons = nil
     GI._overlayCancel = nil
     GI._menuHighlight = nil
+    local GS = ArcadiaNexus.GameSession
+    local cur = GS and GS.GetCurrent and GS:GetCurrent()
+    if GI._profile and cur and cur.status == "PAUSED"
+        and (not GI._activeGameId or cur.gameId == GI._activeGameId) then
+        local pausedFrame = GI._captureFrame
+        if pausedFrame then pausedFrame:Hide() end
+        local pausedBridge = Bridge()
+        if pausedBridge and pausedBridge.SetGameplayCapture then
+            pausedBridge.SetGameplayCapture(false)
+        end
+        return
+    end
     if GI._profile then
         local keep = GI._profile.keepCursor == true
         local f = GI._captureFrame
@@ -722,6 +635,25 @@ function GI.OnUiOverlayClosed()
     GI.Stop()
 end
 
+local function ConsumeBubbleJokerPad2()
+    if GI._activeGameId ~= "BUBBLESHOOTER" then return false end
+    local profile = GI._profile
+    if not profile or profile.engine ~= "BS_Engine" then return false end
+    local E = Engine(profile.engine)
+    if not E or not E._sessionId or E.state ~= "AIMING" then return false end
+    local gs = E.gameState
+    if type(gs) ~= "table" or gs.pendingPower ~= "joker" then return false end
+    local GS = ArcadiaNexus.GameSession
+    if not GS or not GS.IsCurrent or not GS:IsCurrent("BUBBLESHOOTER", E._sessionId) then
+        return false
+    end
+    if GS.GetStatus and GS:GetStatus() ~= "PLAYING" then return false end
+    if gs.jokerChoice then
+        E:ConfirmJokerColor()
+    end
+    return true
+end
+
 function GI.HandleButton(button, pressed)
     button = NormalizeButton(button)
     pressed = pressed and true or false
@@ -733,6 +665,9 @@ function GI.HandleButton(button, pressed)
         if pressed then
             return GI.HandleMenuButton(button)
         end
+        return true
+    end
+    if pressed and button == "PAD2" and ConsumeBubbleJokerPad2() then
         return true
     end
     if pressed and EXIT_BUTTONS[button] then
@@ -767,9 +702,11 @@ function GI.HandleStick(stick, x, y)
 end
 
 function GI.Poll()
+    local gen = GI._inputGen
     if GI._overlayMode then
         if IsGamePadButtonDown then
             for i = 1, #CAPTURE_BUTTONS do
+                if not InputCurrent(gen) then return end
                 local btn = CAPTURE_BUTTONS[i]
                 local down = IsGamePadButtonDown(btn) == true
                 if GI._held[btn] ~= down then
@@ -786,6 +723,7 @@ function GI.Poll()
     end
     if IsGamePadButtonDown then
         for i = 1, #pollList do
+            if not InputCurrent(gen) then return end
             local btn = pollList[i]
             local down = IsGamePadButtonDown(btn) == true
             if GI._held[btn] ~= down then
@@ -793,6 +731,7 @@ function GI.Poll()
             end
         end
     end
+    if not InputCurrent(gen) or not GI._profile then return end
     if GI._profile.keepCursor and not GI._profile.onAxis then
         return
     end
@@ -800,6 +739,7 @@ function GI.Poll()
         local ok, state = pcall(function()
             return C_GamePad.GetDeviceMappedState(C_GamePad.GetActiveDeviceID())
         end)
+        if not InputCurrent(gen) or GI._overlayMode or not GI._profile then return end
         if ok and type(state) == "table" and type(state.sticks) == "table" then
             local stick = state.sticks[1] or state.sticks[0]
             if type(stick) == "table" then
@@ -838,6 +778,7 @@ function GI.ReleaseAll()
 end
 
 local function ApplyProfile(gameId, profile)
+    InvalidateInput()
     GI._activeGameId = gameId
     GI._profile = profile
     GI._assistCol = nil
@@ -879,6 +820,9 @@ function GI.StartCursorAssist(gameId)
 end
 
 function GI.Stop()
+    InvalidateInput()
+    GI._keyboardOverlays=nil
+    if GI._keyboardFrame then GI._keyboardFrame:EnableKeyboard(false); GI._keyboardFrame:Hide() end
     GI.ReleaseAll()
     local B = Bridge()
     if B and B.SetGameplayCapture then
@@ -897,18 +841,45 @@ function GI.Stop()
     ResetHolds()
 end
 
+function GI.StartKeyboard(gameId)
+    if gameId~="SUDOKU" then return false end
+    if not GI._keyboardFrame then
+        local f=CreateFrame("Frame",nil,UIParent)
+        GI._keyboardFrame=f
+        f:SetScript("OnKeyDown",function(self,key)
+            self:SetPropagateKeyboardInput(true)
+            local E,R=ArcadiaNexus.SDK_Engine,ArcadiaNexus.SDK_Renderer
+            if not E or E.state~="PLAYING" or not ArcadiaNexus.GameSession:IsCurrent("SUDOKU",E._sessionId) then return end
+            if GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() then return end
+            if IsAltKeyDown and IsAltKeyDown() or IsShiftKeyDown and IsShiftKeyDown() then return end
+            local stack=GI._keyboardOverlays
+            local overlay=stack and stack[#stack]
+            if overlay and not (R and R.popupOpen and R.popup and overlay==R.popup.menuButtons) then return end
+            if GI._overlayMode and not (R and R.popupOpen and R.popup and GI._menuButtons==R.popup.menuButtons) then return end
+            if E:HandleKey(key,IsControlKeyDown and IsControlKeyDown()) then self:SetPropagateKeyboardInput(false) end
+        end)
+    end
+    GI._keyboardFrame:EnableKeyboard(true)
+    GI._keyboardFrame:SetPropagateKeyboardInput(true)
+    GI._keyboardFrame:Show()
+    return true
+end
+
 function GI.OnBegin(gameId)
     if SKIP_GAMES[gameId] then
         GI.Stop()
         return false
     end
-    if GI.HasProfile(gameId) then
-        return GI.Start(gameId)
-    end
-    return GI.StartCursorAssist(gameId)
+    local active
+    if GI.HasProfile(gameId) then active=GI.Start(gameId)
+    else active=GI.StartCursorAssist(gameId) end
+    local keyboard=GI.StartKeyboard(gameId)
+    return active or keyboard
 end
 
 function GI.OnPause()
+    InvalidateInput()
+    if GI._keyboardFrame then GI._keyboardFrame:EnableKeyboard(false); GI._keyboardFrame:Hide() end
     GI.ReleaseAll()
     local B = Bridge()
     if B and B.SetGameplayCapture then

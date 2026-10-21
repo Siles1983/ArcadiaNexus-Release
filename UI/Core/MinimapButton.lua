@@ -56,7 +56,10 @@ local function CreateMinimapButton()
             NexusTabs.SetActive("SETTINGS")
         else
             if F().main and F().main:IsShown() then
-                F().main:Hide()
+                local Nav = ArcadiaNexus.UI and ArcadiaNexus.UI.Navigation
+                if not (Nav and Nav.RequestHide and Nav.RequestHide()) then
+                    F().main:Hide()
+                end
             else
                 F().main:Show()
             end
@@ -66,8 +69,8 @@ local function CreateMinimapButton()
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("ArcadiaNexus", 1, 0.82, 0)
-        GameTooltip:AddLine("Linksklick: Öffnen / Schließen", 0.85, 0.78, 0.60)
-        GameTooltip:AddLine("Rechtsklick: Einstellungen", 0.85, 0.78, 0.60)
+        GameTooltip:AddLine(ArcadiaNexus.GetLocaleTable("UI").minimap_open, 0.85, 0.78, 0.60)
+        GameTooltip:AddLine(ArcadiaNexus.GetLocaleTable("UI").minimap_settings, 0.85, 0.78, 0.60)
         GameTooltip:Show()
     end)
 

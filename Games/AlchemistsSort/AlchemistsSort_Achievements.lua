@@ -85,7 +85,7 @@ ArcadiaNexus.RegisterAchievements({
           if data.gameId ~= "ALCHEMISTSSORT" then return 0 end
           local st = data.stats
           if not st or not st.moves or not st.minMoves then return 0 end
-          if st.minMoves <= 0 or st.moves > st.minMoves then return 0 end
+          if not st.minimumExact or st.usedAddTube or st.minMoves <= 0 or st.moves ~= st.minMoves then return 0 end
           local prog = db.achievements and db.achievements.progress
                        and db.achievements.progress["ALS_MOVES"]
           return (prog and prog.current or 0) + 1

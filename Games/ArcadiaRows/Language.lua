@@ -23,9 +23,6 @@ ArcadiaNexus.RegisterLocale("ARCADIAROWS", "deDE", {
     opt_pop_out       = "Pop-out",
     opt_pop_out_hint  = "|cff888888Rechtsklick oder Umschalt+1–7 entfernt den untersten eigenen Stein. Nur gegen die KI, nicht im MATCH.|r",
 
-    -- Anleitung
-    guide_1 = "Wirf abwechselnd eine Scheibe in eine Spalte. Sie fällt nach unten.",
-
     -- Symbole
     sym_auto        = "Automatisch erkennen (Fraktion)",
     sym_set_label   = "Symbol-Set:",
@@ -81,6 +78,8 @@ ArcadiaNexus.RegisterLocale("ARCADIAROWS", "deDE", {
 
     -- Sounds
     sound_enabled   = "Sounds aktiviert",
+    sound_drop      = "Stein setzen",
+    sound_pop       = "Pop-out",
     sound_win       = "Sieg",
     sound_loss      = "Niederlage",
     sound_draw      = "Unentschieden",
@@ -208,6 +207,8 @@ ArcadiaNexus.RegisterLocale("ARCADIAROWS", "enUS", {
 
     -- Sounds
     sound_enabled   = "Sounds enabled",
+    sound_drop      = "Drop stone",
+    sound_pop       = "Pop-out",
     sound_win       = "Victory",
     sound_loss      = "Defeat",
     sound_draw      = "Draw",

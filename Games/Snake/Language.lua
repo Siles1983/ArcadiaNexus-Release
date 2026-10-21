@@ -63,14 +63,22 @@ ArcadiaNexus.RegisterLocale("SNAKE", "deDE", {
     sound_start     = "Spielstart",
 
     -- Settings-Panel: Spielanleitung
-    guide_goal      = "|cffffff00Ziel:|r Fresse so viel wie möglich, ohne dich selbst zu beißen!",
-    guide_controls  = "|cffffff00Steuerung:|r WASD oder Pfeiltasten. Die Schlange bewegt sich automatisch.",
+    guide_goal      = "|cffffff00Ziel:|r Fülle das gesamte Feld, ohne dich selbst zu beißen – das ist der Sieg!",
+    guide_controls  = "|cffffff00Steuerung:|r WASD oder Pfeiltasten. Zwei gültige Kurven werden gepuffert. P / Gamepad Y pausiert; ESC speichert und beendet.",
     guide_wrap      = "|cffffff00Rand:|r Die Schlange erscheint am gegenüberliegenden Rand wieder (Wrap-Around).",
     guide_score     = "|cffffff00Punkte:|r Einfach x1 · Normal x2 · Schwer x4 Punkte pro gefressenem Bissen.",
     guide_diff      = "|cffffff00Schwierigkeit:|r Einfach=20x20 (langsam), Normal=16x16 (mittel), Schwer=10x10 (schnell).",
-    guide_hint      = "|cffaaaaaa Highscore wird pro Schwierigkeit gespeichert und oben rechts im Spiel angezeigt.|r",
+    guide_hint      = "|cffaaaaaa Start → Slot → Weiter setzt Körper, Futter und Tickrest fort. Highscore je Schwierigkeit; Früchterekord = meistes Futter in einer Partie. Längere Client-Stalls pausieren automatisch.|r",
 
     -- Reset
+    btn_pause="Pause", btn_resume="Weiter", pause_hint="Pause – P / Gamepad Y / Weiter",
+    pause_stall="Client-Unterbrechung: pausiert ohne Nachholschritte. P / Weiter setzt fort.",
+    pause_focus="Textfeld aktiv: pausiert. Fokus verlassen, dann P / Weiter.",
+    menu_title="Snake", slot_info="%s · %d Punkte", slot_paused="in Bearbeitung",
+    hint_select_slot="Spielstand wählen", confirm_overwrite="Spielstand überschreiben?",confirm_overwrite_body="Slot %d enthält einen Spielstand.",
+    confirm_delete="Spielstand löschen?",confirm_delete_body="Slot %d wird geleert.",
+    invalid_save_title="Spielstand nicht ladbar",invalid_save_body="Dieser Spielstand ist beschädigt oder nicht kompatibel. Er bleibt erhalten; wähle einen anderen Slot oder ein neues Spiel.",
+    win_explanation="Das gesamte Feld ist gefüllt – gewonnen!",loss_explanation="Die Schlange hat ihren Körper getroffen.",
     btn_reset       = "Reset",
 })
 
@@ -128,13 +136,21 @@ ArcadiaNexus.RegisterLocale("SNAKE", "enUS", {
     sound_start     = "Game start",
 
     -- Guide
-    guide_goal      = "|cffffff00Goal:|r Eat as much as possible without biting yourself!",
-    guide_controls  = "|cffffff00Controls:|r WASD or Arrow Keys. The snake moves automatically.",
+    guide_goal      = "|cffffff00Goal:|r Fill the entire grid without biting yourself – that is the win condition!",
+    guide_controls  = "|cffffff00Controls:|r WASD or Arrow Keys. Two valid turns are buffered. P / Gamepad Y pauses; ESC saves and exits.",
     guide_wrap      = "|cffffff00Borders:|r The snake reappears on the opposite side (wrap-around).",
     guide_score     = "|cffffff00Score:|r Easy x1 · Normal x2 · Hard x4 points per food eaten.",
     guide_diff      = "|cffffff00Difficulty:|r Easy=20x20 (slow), Normal=16x16 (medium), Hard=10x10 (fast).",
-    guide_hint      = "|cffaaaaaa Highscore is saved per difficulty and shown top-right during play.|r",
+    guide_hint      = "|cffaaaaaa Start → slot → Continue preserves body, food and tick remainder. Highscores per difficulty; food record means most food in one party. Longer client stalls pause automatically.|r",
 
     -- Reset
+    btn_pause="Pause", btn_resume="Continue", pause_hint="Paused – P / Gamepad Y / Continue",
+    pause_stall="Client interruption: paused without catch-up steps. P / Continue resumes.",
+    pause_focus="Text field active: paused. Leave the field, then P / Continue.",
+    menu_title="Snake", slot_info="%s · %d points", slot_paused="in progress",
+    hint_select_slot="Choose a save slot",confirm_overwrite="Overwrite save?",confirm_overwrite_body="Slot %d already has a save.",
+    confirm_delete="Delete this save?",confirm_delete_body="Slot %d will be cleared.",
+    invalid_save_title="Cannot load save",invalid_save_body="This save is damaged or incompatible. It remains intact; choose another slot or a new game.",
+    win_explanation="The entire grid is filled – you win!",loss_explanation="The snake hit its own body.",
     btn_reset       = "Reset",
 })

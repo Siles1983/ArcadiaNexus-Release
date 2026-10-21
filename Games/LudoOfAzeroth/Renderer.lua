@@ -35,6 +35,8 @@ local CFG = {
     piece_model_w   = 44,
     piece_model_h   = 56,
     hit_size        = 20,
+    -- Nur der Zielfeld-Pfeil. Positiv schiebt ihn nach oben. Figurenanker bleiben.
+    target_dy       = -16,
     stack_gap_x     = 16,
     dev_mark_size   = 10,
     dice_w          = 40,
@@ -131,12 +133,7 @@ function R:Init()
     local Dbg = ArcadiaNexus.LOA_Debug
     if Dbg then Dbg:Init(self) end
 
-    local Eng = ArcadiaNexus.Engine
-    Eng:On("LOA_GAME_STARTED",  function(g) R:OnGameStarted(g) end)
-    Eng:On("LOA_GAME_STOPPED",  function()   R:EnterIdleState() end)
-    Eng:On("LOA_DICE_ROLLED",   function(g,v) R:OnDiceRolled(g,v) end)
-    Eng:On("LOA_NO_MOVE",       function(g)   R:OnNoMove(g) end)
-    Eng:On("LOA_TURN_CHANGED",  function(g)   R:OnTurnChanged(g) end)
+
 end
 
 function R:_EnsureBuilt()
@@ -155,6 +152,7 @@ function R:_EnsureBuilt()
     self:RefreshDevPosOverlay()
     self:_CreateControls()
     self:CreateStatusBar()
+    self:_CreateSlots()
     self:_UpdateAssetWarning()
 end
 
@@ -234,7 +232,7 @@ function R:_CreateMainFrame()
     f:SetScript("OnHide", function()
         ArcadiaNexus.GameSession:HandleRendererHide("LOA", ArcadiaNexus.LOA_Engine, function(E)
             if E.activeGame then
-                E:StopGame()
+                E:SaveAndPause()
             end
         end)
     end)
@@ -687,7 +685,10 @@ function R:PositionDice(game)
     btn:Show()
 
     if Dice and not Dice._modelVerified and not Dice._warmingUp then
+        local E=ArcadiaNexus.LOA_Engine
+        local sid=E._sessionId
         Dice:Warmup(self._diceScene, function(ok, actor)
+            if self._game~=game or not ArcadiaNexus.GameSession:IsSession(E,sid) then return end
             if ok then self._diceActor = actor end
             if not Dice:IsRolling() then
                 Dice:ShowIdle(self._diceScene, self._diceResultFS, self._diceIcon, theme, game)
@@ -698,7 +699,7 @@ end
 
 function R:ShowValidMoveHighlights(game)
     self:ClearHighlights()
-    if not game then return end
+    if not game or game.phase~="move" or game.pending or game.current~=game.humanID then return end
 
     local Logic  = ArcadiaNexus.LOA_Logic
     local moves  = Logic:GetValidMoves(game)
@@ -716,6 +717,8 @@ function R:ShowValidMoveHighlights(game)
                 hit:SetScript("OnClick", function()
                     ArcadiaNexus.LOA_Engine:HandlePieceClick(idx)
                 end)
+                hit:SetScript("OnEnter",function() self:ShowTarget(game,idx) end)
+                hit:SetScript("OnLeave",function() self:_HideTarget() end)
             end
         end
     end
@@ -729,7 +732,116 @@ function R:ClearHighlights()
     for _, hit in ipairs(self._pieceHitBtns) do
         if hit.hl then hit.hl:Hide() end
         hit:SetScript("OnClick", nil)
+        hit:SetScript("OnEnter",nil); hit:SetScript("OnLeave",nil)
     end
+    self:_HideTarget()
+end
+
+function R:_HideTarget()
+    if self._targetBob then self._targetBob:Stop() end
+    if self._target then self._target:Hide() end
+end
+
+function R:ShowTarget(game,index)
+    local player=game.players[game.current]; local piece=player.pieces[index]
+    local dest=piece.relPos==0 and 1 or piece.relPos+game.dice
+    if not self._target then
+        local frame=CreateFrame("Frame",nil,self._playLayer)
+        frame:SetSize(40,40)
+        frame:EnableMouse(false)
+        frame:SetFrameLevel(self._playLayer:GetFrameLevel()+6)
+        local tex=frame:CreateTexture(nil,"OVERLAY")
+        tex:SetAllPoints(frame)
+        -- Same chevron as the hub headers. SetRotation(pi) points it down.
+        tex:SetTexture("Interface\\Buttons\\Arrow-Up-Up")
+        tex:SetVertexColor(1, 0.12, 0.08, 1)
+        tex:SetRotation(math.pi)
+        self._target=frame
+        self._targetTex=tex
+    end
+    self:PositionAtFrame(self._target,ArcadiaNexus.LOA_Positions:GetPixelPos(player.colorIdx,dest,index))
+    local capture=ArcadiaNexus.LOA_Logic:WouldCapture(game,player,index,dest)
+    self._target:Show()
+    self:_StartTargetBob()
+    self:UpdateStatus(game,capture and L().target_capture or L().target_move)
+end
+
+function R:_StartTargetBob()
+    local frame=self._target
+    if not frame then return end
+    if not self._targetBob then
+        self._targetBob=ArcadiaNexus.GameLoop.Create(nil,self.frame)
+    end
+    local baseX,baseY=frame._loaPosX,frame._loaPosY
+    local shift=CFG.target_dy
+    local elapsed=0
+    local function place(bob)
+        frame:ClearAllPoints()
+        frame:SetPoint("CENTER",self._fieldFrame,"TOPLEFT",baseX,-baseY+shift+bob)
+    end
+    place(0)
+    self._targetBob:Start(function(dt)
+        if not frame:IsShown() then self:_HideTarget(); return end
+        elapsed=elapsed+dt
+        place(math.sin(elapsed*(math.pi*2)/0.65)*8)
+    end)
+end
+
+function R:CancelMovement()
+    if self._moveLoop then self._moveLoop:Stop() end
+    self._motion,self._terminal=nil,nil
+end
+function R:StartMovement(game)
+    self:CancelMovement()
+    local m=game.motion
+    if not m then self:RenderAllPieces(game); return end
+    local Logic,Pos=ArcadiaNexus.LOA_Logic,ArcadiaNexus.LOA_Positions
+    local visual=Logic:Copy(game)
+    visual.players[m.player].pieces[m.piece].relPos=m.from
+    for _,c in ipairs(m.captured) do visual.players[c.player].pieces[c.piece].relPos=c.from end
+    self:RenderAllPieces(visual)
+    local slot=self:_PieceSlot(m.player,m.piece)
+    local model=self._pieceModels[slot]
+    local path={{x=model._loaPosX,y=model._loaPosY}}
+    local color=game.players[m.player].colorIdx
+    for _,rel in ipairs(m.route) do path[#path+1]=Pos:GetPixelPos(color,rel,m.piece) end
+    local elapsed=0
+    if game.pending and game.pending.kind=="MOVE" then
+        elapsed=math.max(0,m.duration-math.max(0,game.pending.deadline-GetTime()))
+    end
+    local motion={game=game,action=game.action,elapsed=elapsed,data=m,path=path}
+    self._motion=motion
+    if not self._moveLoop then self._moveLoop=ArcadiaNexus.GameLoop.Create(nil,self.frame) end
+    local function place(player,piece,pos)
+        local index=self:_PieceSlot(player,piece)
+        self:PositionAtFrame(self._pieceModels[index],pos); self:PositionAtFrame(self._pieceHitBtns[index],pos)
+    end
+    local function draw()
+        local progress=math.min(1,motion.elapsed/m.travel)*(#path-1)
+        local index=math.min(#path-1,math.floor(progress)+1)
+        local f=progress-(index-1); local a,b=path[index],path[index+1]
+        place(m.player,m.piece,{x=a.x+(b.x-a.x)*f,y=a.y+(b.y-a.y)*f})
+        for _,c in ipairs(m.captured) do
+            local from=Pos:GetPixelPos(game.players[c.player].colorIdx,c.from,c.piece)
+            local to=Pos:GetPixelPos(game.players[c.player].colorIdx,0,c.piece)
+            local t=math.max(0,math.min(1,(motion.elapsed-m.travel)/.25))
+            place(c.player,c.piece,{x=from.x+(to.x-from.x)*t,y=from.y+(to.y-from.y)*t})
+        end
+    end
+    draw()
+    self._moveLoop:Start(function(dt)
+        motion.elapsed=motion.elapsed+dt; draw()
+        if motion.elapsed>=m.duration then self:OnMovementComplete(game) end
+    end,{stateCheck=function() return self._motion==motion and self._game==game
+        and ArcadiaNexus.LOA_Engine.activeGame==game and game.action==motion.action end})
+end
+function R:OnMovementComplete(game)
+    if self._game~=game then return end
+    local terminal=self._terminal
+    local captured=game.motion and #game.motion.captured>0
+    self:CancelMovement(); self:RenderAllPieces(game); self:UpdateStatus(game)
+    if captured then self:UpdateStatus(game,L().capture_arrived) end
+    if terminal then self:OnGameWon(terminal.game,terminal.winner) end
 end
 
 function R:AnimateDice(theme, finalVal, callback)
@@ -743,6 +855,7 @@ end
 -- ============================================================
 function R:OnGameStarted(game)
     self:_EnsureBuilt()
+    self:CancelMovement()
     self.state    = "PLAYING"
     self._game    = game
     self._running = true
@@ -759,7 +872,9 @@ function R:OnGameStarted(game)
     self:RefreshDevPosOverlay()
 
     local function renderPieces(forceReload)
-        if self._game ~= game then return end
+        if self._game ~= game or self._motion then return end
+        local E=ArcadiaNexus.LOA_Engine
+        if not ArcadiaNexus.GameSession:IsSession(E,E._sessionId) then return end
         if forceReload then
             local Npc = ArcadiaNexus.LOA_NpcData
             for _, model in ipairs(self._pieceModels) do
@@ -779,26 +894,29 @@ function R:OnGameStarted(game)
         end
     end
 
+    if self._colorDropdown then self._colorDropdown:RefreshDisplay() end
+    if self._countDropdown then self._countDropdown:RefreshDisplay() end
     self:UpdateStatus(game)
+    if game.phase=="ROLLING" then self:OnDiceRolled(game,game.dice)
+    elseif game.phase=="MOVE_RESOLVING" then self:StartMovement(game)
+    elseif game.phase=="move" and game.current==game.humanID and not game.pending then self:ShowValidMoveHighlights(game) end
 end
 
-function R:OnDiceRolled(game, val)
-    local theme = ArcadiaNexus.LOA_Themes:GetTheme()
-    local loc   = L()
-    self:AnimateDice(theme, val, function()
-        self:UpdateStatus(game, string.format(loc["dice_result"] or "Würfel: %d", val))
-        if game.current == game.humanID and game.phase == "move" then
-            self:ShowValidMoveHighlights(game)
-        end
-
-        local Eng = ArcadiaNexus.LOA_Engine
-        if Eng and Eng._rollContinueFn and Eng._rollContinueGame == game then
-            local fn = Eng._rollContinueFn
-            Eng._rollContinueFn = nil
-            Eng._rollContinueGame = nil
-            fn()
-        end
+function R:OnDiceRolled(game,val)
+    self:ClearHighlights(); self:UpdateStatus(game)
+    if self._diceBtn then self._diceBtn:EnableMouse(false) end
+    local token=game.action
+    self:AnimateDice(ArcadiaNexus.LOA_Themes:GetTheme(),val,function()
+        if self._game~=game or game.action~=token then return end
+        self:UpdateStatus(game)
     end)
+end
+function R:OnRollResolved(game)
+    if self._game~=game then return end
+    local D=ArcadiaNexus.LOA_Dice
+    if D then D:CancelRoll(); D:ShowFace(self._diceScene,self._diceResultFS,self._diceIcon,ArcadiaNexus.LOA_Themes:GetTheme(),game.dice) end
+    self:UpdateStatus(game)
+    if game.phase=="move" and game.current==game.humanID then self:ShowValidMoveHighlights(game) end
 end
 
 function R:OnRollAgain(game)
@@ -834,7 +952,8 @@ end
 
 function R:OnPieceMoved(game, playerID, pieceIdx, result)
     self:ClearHighlights()
-    self:RenderAllPieces(game)
+    if self._diceBtn then self._diceBtn:EnableMouse(false) end
+    self:StartMovement(game)
     self:UpdateStatus(game)
 end
 
@@ -843,6 +962,7 @@ function R:OnNoMove(game)
 end
 
 function R:OnGameWon(game, winnerID)
+    if self._motion and self._motion.game==game then self._terminal={game=game,winner=winnerID}; return end
     self.state    = "GAMEOVER"
     self._running = false
     self:ClearHighlights()
@@ -902,7 +1022,7 @@ function R:UpdateStatus(game, extraMsg)
         self.statusLeft:SetText(string.format(
             loc["status_human"],
             humanClr[1]*255, humanClr[2]*255, humanClr[3]*255,
-            board:GetFactionName(humanP.colorIdx), countDone(humanP)))
+            board:GetFactionName(humanP.colorIdx), countDone(humanP)).." · "..game.aiCount..L().opponents_suffix)
         self.statusLeft:Show()
     end
 
@@ -917,6 +1037,10 @@ function R:UpdateStatus(game, extraMsg)
         else
             turnStr = loc["status_ai_think"]
         end
+        if game.phase=="ROLLING" then turnStr=loc.status_rolling
+        elseif game.phase=="MOVE_RESOLVING" then turnStr=loc.status_moving
+        elseif game.phase=="TURN_PENDING" then turnStr=loc.status_pending end
+        turnStr=turnStr..string.format(loc.attempts_hint,game.rollAttempts or 0,game.sixCount or 0)
         local faction = board:GetFactionName(currentP.colorIdx)
         local name = (game.current == game.humanID)
             and ("Du (" .. faction .. ")")
@@ -927,6 +1051,7 @@ function R:UpdateStatus(game, extraMsg)
             name, countDone(currentP), turnStr))
         self.statusRight:Show()
     end
+    if self._diceBtn then self._diceBtn:EnableMouse(game.current==game.humanID and game.phase=="roll" and not game.pending) end
 end
 
 function R:_CreateControls()
@@ -976,7 +1101,7 @@ function R:_CreateControls()
         ddColorAnchor, 0, 0, CFG.dd_w, "",
         factionDdOpts,
         function()
-            return ColorToKey(R._lastColor or S:Get("playerColor"))
+            return ColorToKey(S:Get("playerColor"))
         end,
         function(key)
             R._lastColor = KeyToColor(key)
@@ -1018,7 +1143,7 @@ function R:_CreateControls()
         ddCountAnchor, 0, 0, CFG.dd_w, "",
         ddOpts,
         function()
-            return AiCountToKey(R._lastAiCount or S:Get("aiCount") or 1)
+            return AiCountToKey(S:Get("aiCount"))
         end,
         function(key)
             R._lastAiCount = KeyToAiCount(key)
@@ -1032,7 +1157,7 @@ function R:_CreateControls()
         local Eng = ArcadiaNexus.LOA_Engine
         if not Eng then return end
         if R.state == "PLAYING" then
-            Eng:StopGame()
+            R:RequestExit()
         else
             R:ShowStartPopup()
         end
@@ -1066,49 +1191,49 @@ function R:_UpdateControlsForPlay()
 end
 
 function R:HideStartPopup()
+    if self._slots then self._slots:Hide() end
     if self._canvas and ArcadiaNexus.UI then
         ArcadiaNexus.UI.HideChoicePopup(self._canvas)
     end
 end
 
-function R:ShowStartPopup()
-    if not self._canvas then return end
-    local loc = L()
-    local UI  = ArcadiaNexus.UI
-    local Eng = ArcadiaNexus.LOA_Engine
-    local hasSave = Eng and Eng:HasSave()
-
-    UI.ShowChoicePopup({
-        parent     = self._canvas,
-        title      = loc["popup_start_title"],
-        titleColor = { 1, 0.82, 0 },
-        buttons    = {
-            {
-                label   = loc["btn_new_game"],
-                onClick = function()
-                    R:HideStartPopup()
-                    R:StartNewGame()
-                end,
-            },
-            {
-                label   = loc["btn_resume"],
-                enabled = hasSave,
-                onClick = function()
-                    R:HideStartPopup()
-                    if Eng then Eng:ResumeGame() end
-                end,
-            },
-        },
-    })
+function R:_CreateSlots()
+    if self._slots or not self._canvas then return end
+    local E=ArcadiaNexus.LOA_Engine
+    self._slots=ArcadiaNexus.UI.CreateSaveSlotMenu({parent=self._canvas,L=L(),maxSlots=3,
+        loadSlot=function(slot) return E:LoadSlot(slot) end,
+        deleteSlot=function(slot) E:SaveSlot(slot,nil) end,
+        canContinue=function(save) return E:CanContinue(save) end,
+        formatInfo=function(save) return string.format(L().slot_info,save.aiCount or 1,save.phase or "?") end,
+        onNewGame=function(slot) self:HideStartPopup(); self:StartNewGame(slot) end,
+        onContinue=function(slot) E:ResumeGame(slot) end,
+        onCancel=function() self:HideStartPopup(); self:_SetLogoVisible(true); self:_UpdateControlsForIdle() end})
 end
+function R:ShowStartPopup()
+    self:_CreateSlots()
+    if self._slots:IsShown() then self:HideStartPopup(); self:_SetLogoVisible(true)
+    else self:_SetLogoVisible(false); self._slots:Show() end
+    self._startBtn:SetLabel(self._slots:IsShown() and L().btn_back or L().btn_start)
+end
+function R:AskLegacyPhase(slot)
+    ArcadiaNexus.UI.ShowChoicePopup({parent=self._canvas,title=L().legacy_title,body=L().legacy_body,
+        buttons={{label=L().legacy_open,onClick=function() self:HideStartPopup(); ArcadiaNexus.LOA_Engine:ResumeGame(slot,"open") end},
+            {label=L().legacy_consumed,onClick=function() self:HideStartPopup(); ArcadiaNexus.LOA_Engine:ResumeGame(slot,"consumed") end}}})
+end
+function R:OnInvalidSave()
+    ArcadiaNexus.UI.ShowChoicePopup({parent=self._canvas,title=L().bad_save_title,body=L().bad_save_body,
+        buttons={{label=L().btn_back,onClick=function() ArcadiaNexus.UI.HideChoicePopup(self._canvas) end}}})
+end
+function R:RequestExit() ArcadiaNexus.LOA_Engine:SaveAndPause() end
 
-function R:StartNewGame()
+function R:StartNewGame(slot)
     local S = ArcadiaNexus.LOA_Settings
-    local aiCount = tonumber(self._lastAiCount or S:Get("aiCount")) or 1
+    local aiCount = tonumber(S:Get("aiCount")) or 1
     aiCount = math.max(1, math.min(3, aiCount))
     self._lastAiCount = aiCount
     ArcadiaNexus.LOA_Engine:StartGame({
-        humanColor = tonumber(self._lastColor or S:Get("playerColor")) or 1,
+        slot=slot or 1,
+        humanColor = tonumber(S:Get("playerColor")) or 1,
         aiCount    = aiCount,
     })
 end
@@ -1127,7 +1252,11 @@ function R:ShowOverlay(game, winnerID)
         gameId     = "LOA",
         result     = isHuman and "WIN" or "LOSS",
         L          = loc,
-        onRetry    = function() R:StartNewGame() end,
+        difficulty="ai_"..game.aiCount,hideHighscore=true,
+        xp=game.resultData and game.resultData.awardedXP or 0,
+        gold=game.resultData and game.resultData.awardedGold or 0,
+        isCurrent=function() return ArcadiaNexus.LOA_Engine.activeGame==game and game.winner~=0 end,
+        onRetry=function() ArcadiaNexus.LOA_Engine:StartGame({slot=ArcadiaNexus.LOA_Engine.slot,humanColor=game.humanColor,aiCount=game.aiCount}) end,
         onExit     = function() ArcadiaNexus.LOA_Engine:StopGame() end,
     })
 end
@@ -1138,6 +1267,7 @@ function R:EnterIdleState()
     self.state    = "IDLE"
     self._running = false
     self._game    = nil
+    self:CancelMovement()
 
     if self._canvas and ArcadiaNexus.UI then
         ArcadiaNexus.UI.HideResultDialog(self._canvas)

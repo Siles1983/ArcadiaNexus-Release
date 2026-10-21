@@ -19,6 +19,7 @@ function MSGame:Init(config)
     self.logic      = ArcadiaNexus.MS_Logic
     self.difficulty = self.config.difficulty or "easy"
     self.board      = self.logic:NewBoard(self.difficulty)
+    self.elapsedMs  = 0
 end
 
 function MSGame:RevealCell(r, c)
@@ -32,7 +33,25 @@ function MSGame:ToggleFlag(r, c)
 end
 
 function MSGame:GetBoardState()
-    return self.logic:GetBoardState(self.board)
+    local state=self.logic:GetBoardState(self.board)
+    state.elapsedMs,state.runId,state.resultPending=self.elapsedMs,self.runId,self.resultPending
+    state.score=self.logic:GetScore(self.board)
+    return state
+end
+
+function MSGame:Snapshot(elapsedMs)
+    local state=self:GetBoardState()
+    state.saveVersion,state.timestamp=1,GetServerTime()
+    state.elapsedMs=elapsedMs or self.elapsedMs
+    return state
+end
+
+function MSGame:Load(save)
+    if not ArcadiaNexus.MS_Logic:ValidateSave(save) then return false end
+    self.logic=ArcadiaNexus.MS_Logic
+    self.board=self.logic:GetBoardState(save)
+    self.difficulty,self.elapsedMs,self.runId,self.resultPending=save.difficulty,save.elapsedMs,save.runId,save.resultPending
+    return true
 end
 
 function MSGame:Reset()

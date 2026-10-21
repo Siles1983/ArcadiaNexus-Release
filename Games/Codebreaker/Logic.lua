@@ -14,22 +14,24 @@
 local ArcadiaNexus = _G.ArcadiaNexus
 ArcadiaNexus.CB_Logic = {}
 local L = ArcadiaNexus.CB_Logic
+local function Integer(v, lo, hi)
+    return type(v) == "number" and v == math.floor(v) and v >= lo and v <= hi
+end
 
 -- ============================================================
 -- Difficulty-Konfiguration
 -- ============================================================
 L.CONFIGS = {
-    easy   = { attempts = 10, defaultCodeLen = 4 },
+    easy   = { attempts = 10, defaultCodeLen = 3 },
     normal = { attempts = 8,  defaultCodeLen = 4 },
-    hard   = { attempts = 6,  defaultCodeLen = 5 },
+    hard   = { attempts = 6,  defaultCodeLen = 6 },
 }
 
 -- ============================================================
 -- NewBoard – erstellt ein frisches Board
 -- config = {
 --   difficulty  = "easy"|"normal"|"hard"
---   codeLength  = 3..6   (überschreibt default)
---   duplicates  = true|false
+--   codeLength / duplicates are derived from rule version 2, never overrides.
 --   theme       = "gems"|"elements"|"professions"
 --   themeName   = string
 --   symbolCount = number  (wie viele Symbole im Theme)
@@ -37,17 +39,18 @@ L.CONFIGS = {
 -- ============================================================
 function L:NewBoard(config)
     local diff       = config.difficulty or "normal"
-    local cfg        = self.CONFIGS[diff] or self.CONFIGS.normal
-    local codeLen    = config.codeLength  or cfg.defaultCodeLen
+    if not self.CONFIGS[diff] then diff = "normal" end
+    local cfg        = self.CONFIGS[diff]
+    local codeLen    = cfg.defaultCodeLen
     local maxAttempts= cfg.attempts
-    local duplicates = config.duplicates
-    if duplicates == nil then duplicates = true end
+    local duplicates = true
 
     -- Geheimen Code generieren
     local code = self:GenerateCode(codeLen, config.symbolCount, duplicates)
 
     return {
         -- Konfiguration
+        ruleVersion  = 2,
         difficulty   = diff,
         codeLength   = codeLen,
         maxAttempts  = maxAttempts,
@@ -94,8 +97,8 @@ end
 -- ============================================================
 function L:SetSlot(board, slotIdx, symbolIdx)
     if board.phase ~= "PLAYING" then return "game_over" end
-    if slotIdx < 1 or slotIdx > board.codeLength then return "invalid" end
-    if symbolIdx < 1 or symbolIdx > board.symbolCount then return "invalid" end
+    if not Integer(slotIdx, 1, board.codeLength) then return "invalid" end
+    if not Integer(symbolIdx, 1, board.symbolCount) then return "invalid" end
     board.currentGuess[slotIdx] = symbolIdx
     return "ok"
 end
@@ -104,6 +107,8 @@ end
 -- ClearSlot – leert einen Slot
 -- ============================================================
 function L:ClearSlot(board, slotIdx)
+    if board.phase ~= "PLAYING" then return "game_over" end
+    if not Integer(slotIdx, 1, board.codeLength) then return "invalid" end
     board.currentGuess[slotIdx] = 0
     return "ok"
 end
@@ -218,6 +223,8 @@ function L:GetBoardState(board)
     for i, v in ipairs(board.secretCode) do secretCopy[i] = v end
 
     return {
+        ruleVersion   = board.ruleVersion,
+        score         = self:GetScore(board),
         difficulty    = board.difficulty,
         codeLength    = board.codeLength,
         maxAttempts   = board.maxAttempts,
@@ -232,4 +239,55 @@ function L:GetBoardState(board)
         attemptCount  = #board.attempts,
         remainingAttempts = board.maxAttempts - #board.attempts,
     }
+end
+-- Comfort actions edit only the unsubmitted guess.
+function L:ClearGuess(board)
+    if board.phase ~= "PLAYING" then return "game_over" end
+    for i=1,board.codeLength do board.currentGuess[i]=0 end
+    return "ok"
+end
+
+function L:CopyPrevious(board)
+    if board.phase ~= "PLAYING" then return "game_over" end
+    local last=board.attempts[#board.attempts]
+    if not last then return "invalid" end
+    for i=1,board.codeLength do board.currentGuess[i]=last.guess[i] end
+    return "ok"
+end
+
+function L:GetScore(board)
+    if board.phase == "LOST" then return 0 end
+    local used=#board.attempts + (board.phase == "PLAYING" and 1 or 0)
+    local base=({easy=50,normal=100,hard=200})[board.difficulty]
+    return math.max(1,math.floor(base*(board.maxAttempts-used+1)/board.maxAttempts))
+end
+
+-- Recompute feedback and phase instead of trusting persisted outcome fields.
+function L:ValidateSave(s)
+    if type(s)~="table" or s.saveVersion~=1 or s.ruleVersion~=2
+        or type(s.runId)~="string" or not self.CONFIGS[s.difficulty] then return false end
+    local cfg=self.CONFIGS[s.difficulty]
+    if s.codeLength~=cfg.defaultCodeLen or s.maxAttempts~=cfg.attempts or s.duplicates~=true
+        or not ArcadiaNexus.CB_Themes.THEMES[s.theme]
+        or s.symbolCount~=ArcadiaNexus.CB_Themes:GetSymbolCount(s.theme)
+        or type(s.attempts)~="table" or #s.attempts>s.maxAttempts then return false end
+    local function Symbols(t, empty)
+        if type(t)~="table" or #t~=s.codeLength then return false end
+        for k,v in pairs(t) do
+            if not Integer(k,1,s.codeLength) or not Integer(v,empty and 0 or 1,s.symbolCount) then return false end
+        end
+        return true
+    end
+    if not Symbols(s.secretCode,false) or not Symbols(s.currentGuess,true) then return false end
+    local phase="PLAYING"
+    for k,a in pairs(s.attempts) do if not Integer(k,1,#s.attempts) or type(a)~="table" then return false end end
+    for i,a in ipairs(s.attempts) do
+        if phase~="PLAYING" or not Symbols(a.guess,false) then return false end
+        local exact,partial=self:EvaluateGuess(s.secretCode,a.guess,s.codeLength)
+        if a.exact~=exact or a.partial~=partial then return false end
+        if exact==s.codeLength then phase="WON" elseif i==s.maxAttempts then phase="LOST" end
+    end
+    if s.phase~=phase or (s.resultPending~=nil and type(s.resultPending)~="boolean") then return false end
+    if phase~="PLAYING" then for _,v in ipairs(s.currentGuess) do if v~=0 then return false end end end
+    return true
 end

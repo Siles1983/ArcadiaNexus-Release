@@ -69,7 +69,9 @@ local TAB_H   = 24
 local TAB_GAP = 4
 
 local function ResolveTabLabel(tab)
-    return L(tab.labelKey) or tab.labelFallback or tab.id
+    -- Der Locale-Resolver liefert für nil den sichtbaren Platzhalter "[nil]".
+    local localized = tab.labelKey and L(tab.labelKey)
+    return localized or tab.labelFallback or tab.id
 end
 
 local function GetSettingsTabRegistry()
@@ -97,6 +99,15 @@ function HubSettings:_BuildSettingsTabBar(tabBar, sc)
     end
 
     local slot = 0
+    local visibleCount = 0
+    for _, candidate in ipairs(HSTR.GetAll()) do
+        if not candidate.isVisible or candidate.isVisible() then
+            visibleCount = visibleCount + 1
+        end
+    end
+    local barWidth = tabBar:GetWidth()
+    if not barWidth or barWidth < 100 then barWidth = 560 end
+    local tabWidth = math.min(TAB_W, math.floor((barWidth - (visibleCount - 1) * TAB_GAP) / math.max(visibleCount, 1)))
     for _, tab in ipairs(HSTR.GetAll()) do
         if tab.isVisible and not tab.isVisible() then
             if oldBtns[tab.id] then oldBtns[tab.id]:Hide() end
@@ -107,16 +118,16 @@ function HubSettings:_BuildSettingsTabBar(tabBar, sc)
         if btn then
             btn:SetParent(tabBar)
             btn:ClearAllPoints()
-            btn:SetSize(TAB_W, TAB_H)
-            btn:SetPoint("TOPLEFT", tabBar, "TOPLEFT", (slot - 1) * (TAB_W + TAB_GAP), 0)
+            btn:SetSize(tabWidth, TAB_H)
+            btn:SetPoint("TOPLEFT", tabBar, "TOPLEFT", (slot - 1) * (tabWidth + TAB_GAP), 0)
             if btn._lbl then btn._lbl:SetText(ResolveTabLabel(tab)) end
             btn._tabID = tab.id
             btn:SetScript("OnClick", function() HubSettings:SetActiveTab(tab.id) end)
             btn:Show()
         else
             btn = CreateFrame("Button", nil, tabBar, "BackdropTemplate")
-            btn:SetSize(TAB_W, TAB_H)
-            btn:SetPoint("TOPLEFT", tabBar, "TOPLEFT", (slot - 1) * (TAB_W + TAB_GAP), 0)
+            btn:SetSize(tabWidth, TAB_H)
+            btn:SetPoint("TOPLEFT", tabBar, "TOPLEFT", (slot - 1) * (tabWidth + TAB_GAP), 0)
             btn:SetBackdrop({
                 bgFile   = "Interface\\Buttons\\WHITE8X8",
                 edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -164,6 +175,29 @@ function HubSettings:_BuildSettingsTabBar(tabBar, sc)
     end
 end
 
+function HubSettings:_LayoutSettingsTabBar()
+    if not self._tabBar or not self._tabBtns then return end
+    local count = 0
+    for _, btn in pairs(self._tabBtns) do
+        if btn:IsShown() then count = count + 1 end
+    end
+    if count == 0 then return end
+    local width = self._tabBar:GetWidth()
+    if not width or width < 100 then return end
+    local tabWidth = math.min(TAB_W, math.floor((width - (count - 1) * TAB_GAP) / count))
+    local slot = 0
+    local registry = GetSettingsTabRegistry()
+    for _, tab in ipairs(registry.GetAll()) do
+        local btn = self._tabBtns[tab.id]
+        if btn and btn:IsShown() then
+            btn:ClearAllPoints()
+            btn:SetSize(tabWidth, TAB_H)
+            btn:SetPoint("TOPLEFT", self._tabBar, "TOPLEFT", slot * (tabWidth + TAB_GAP), 0)
+            slot = slot + 1
+        end
+    end
+end
+
 function HubSettings:RebuildTabBar()
     if not self._tabBar or not self._sc then return end
     self:_BuildSettingsTabBar(self._tabBar, self._sc)
@@ -188,6 +222,17 @@ function HubSettings:BuildPanel(parent)
     p:Hide()
     self._panel = p
 
+    local help = CreateFrame("Button", nil, p)
+    help:SetSize(24, 24)
+    help:SetPoint("TOPRIGHT", p, "TOPRIGHT", -24, -12)
+    local helpMark = help:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    helpMark:SetAllPoints(help)
+    helpMark:SetText("?")
+    helpMark:SetTextColor(1, 0.82, 0)
+    help:SetScript("OnClick", function()
+        if ArcadiaNexus.Compendium then ArcadiaNexus.Compendium.Open("settings") end
+    end)
+
     -- ── Divider unter Titel ───────────────────────────────────
     local div = p:CreateTexture(nil, "ARTWORK", nil, 0)
     div:SetTexture("Interface\\AchievementFrame\\UI-Achievement-Divider")
@@ -201,6 +246,7 @@ function HubSettings:BuildPanel(parent)
     tabBar:SetPoint("TOPRIGHT", p, "TOPRIGHT", -20, -56)
     tabBar:SetHeight(26)
     self._tabBar = tabBar
+    tabBar:SetScript("OnSizeChanged", function() HubSettings:_LayoutSettingsTabBar() end)
 
     -- ── Content-ScrollFrame (ein einziger, Inhalt wird pro Tab gewechselt) ──
     -- Host = Anker für CreateNexusScrollbar (nicht das volle Panel inkl. Tab-Leiste).
@@ -305,6 +351,7 @@ end
 -- ============================================================
 
 function HubSettings:_RefreshSettingsLayout()
+    self:_LayoutSettingsTabBar()
     local pw = (self._sf and self._sf:GetWidth()) or 0
     if pw < 100 and self._panel then
         pw = (self._panel:GetWidth() or 0) - 40
@@ -428,11 +475,11 @@ function HubSettings:_ShowConfirm(title, body, onConfirm)
         bodyFS:SetWordWrap(true)
         d._bodyFS = bodyFS
 
-        local confirmBtn = UI.CreateButton(d, "Bestätigen", 160, 26)
+        local confirmBtn = UI.CreateButton(d, L("btn_confirm"), 160, 26)
         confirmBtn:SetPoint("BOTTOMLEFT", d, "BOTTOMLEFT", 14, 12)
         d._confirmBtn = confirmBtn
 
-        local cancelBtn = UI.CreateButton(d, "Abbrechen", 160, 26)
+        local cancelBtn = UI.CreateButton(d, L("btn_cancel"), 160, 26)
         cancelBtn:SetPoint("BOTTOMRIGHT", d, "BOTTOMRIGHT", -14, 12)
         cancelBtn:SetScript("OnClick", function() d:Hide() end)
 

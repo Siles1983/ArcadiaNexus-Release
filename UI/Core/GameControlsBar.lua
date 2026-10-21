@@ -165,7 +165,7 @@ end
 ---@field layout string
 ---@field width number
 ---@field segX number[]
----@field y { dropdown: number, button: number, checkbox: number }
+---@field y { dropdown: number, dropdownLower: number, dropdownUpper: number, button: number, checkbox: number }
 
 ---Create the shared bottom bar on the games-panel outer frame.
 ---@param parent Frame  viewport outer (or canvas; resolved to outer)
@@ -233,6 +233,8 @@ function UI.CreateGameControlsBar(parent, layout)
     local y = {
         dropdownOfs = cfg.dropdownOfsY or -3,
         dropdown    = 10,
+        dropdownLower = 4,
+        dropdownUpper = 28,
         button      = 10,
         checkbox    = 12,
     }

@@ -35,9 +35,12 @@ function TG:Add(amount, reason)
 
     ArcadiaNexus.Engine:Emit("GOLD_UPDATED", { balance=db.balance, delta=amount, reason=reason })
 
-    -- Toast für Gold-Gewinn
+    -- Toast erst nach dem Commit. Während einer Buchung puffert GOLD_UPDATED ihn.
     local TM = ArcadiaNexus.ToastManager
-    if TM and TM.ShowGold then
+    local preparing = ArcadiaNexus.LocalResults and ArcadiaNexus.LocalResults:IsPreparing()
+    local booking = ArcadiaNexus.GameResultProcessor and ArcadiaNexus.GameResultProcessor:IsBooking()
+    local isolating = ArcadiaNexus.AchievementManager and ArcadiaNexus.AchievementManager:IsIsolating()
+    if TM and TM.ShowGold and not preparing and not booking and not isolating then
         pcall(function() TM:ShowGold(amount, reason) end)
     end
 end

@@ -7,8 +7,8 @@ local ArcadiaNexus = _G.ArcadiaNexus
 local function getTotalWins(db, gameId)
     if not db.leaderboard or not db.leaderboard[gameId] then return 0 end
     local total = 0
-    for _, entry in pairs(db.leaderboard[gameId]) do
-        total = total + (entry.wins or 0)
+    for key, entry in pairs(db.leaderboard[gameId]) do
+        if key:match("^round_") then total = total + (entry.wins or 0) end
     end
     return total
 end
@@ -23,7 +23,8 @@ ArcadiaNexus.RegisterAchievements({
         icon="Interface\\Icons\\INV_Misc_Gem_Ruby_01",
         condition = function(data, db)
             if data.gameId ~= "SHELLGAME" then return 0 end
-            return getTotalWins(db, "SHELLGAME")
+            local prog=db.achievements and db.achievements.progress.SHG_PROFIT
+            return (prog and prog.legacyEarned or 0)+getTotalWins(db, "SHELLGAME")
         end,
         tiers = {
             { id="SHG_PROFIT_BRONZE", tierName="Bronze", target=1,  xp=15, desc_de="Gewinne 1x.",   desc_en="Win once."       },
@@ -57,7 +58,7 @@ ArcadiaNexus.RegisterAchievements({
     {
         id="SHG_HARD_WIN", gameId="SHELLGAME", category="GESCHICK",
         title_de="Flinke Finger", title_en="Quick Hands",
-        desc_de="Beende Schwer mit Gewinn.", desc_en="Finish Hard mode in profit.",
+        desc_de="Erreiche auf Schwer nach einer abgeschlossenen Runde über 100 Kapital.", desc_en="Reach capital above 100 on Hard after a completed round.",
         icon="Interface\\Icons\\INV_Misc_Dice_01",
         condition = function(data, db)
             if data.gameId ~= "SHELLGAME" then return 0 end

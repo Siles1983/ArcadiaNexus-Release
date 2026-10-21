@@ -1,0 +1,244 @@
+{
+  "game": "Azeroth Jewels",
+  "date": "2026-10-07",
+  "status": "art-exported-file-verified-and-runtime-integrated; client-acceptance-pending",
+  "generator": "built-in image_gen",
+  "artReference": "Arcane Barrage; existing artwork preserved",
+  "sourcePolicy": "Original generated PNG unchanged; RGBA TGA exported at 1024x1024 with LANCZOS resampling only if needed",
+  "basePrompt": "Create one square 1024x1024 production fantasy campaign-map illustration for Azeroth Jewels, a jewel-matching WoW minigame. Use stylized-concept painterly isometric/high oblique game background art, rich atmospheric depth and polished terrain, readable at 512px. Full-bleed opaque background. One landscape only, no collage. Jewel crystals embedded in natural terrain, restrained faceted gems. A broad winding traversable route runs from lower left through middle to upper right, with ten naturally spaced quiet clearings suitable for native level buttons; do not paint buttons, circles, symbols, numbers, stars, text, lettering, banners, logos, borders, UI or characters. Keep upper 10% and lower 12% low-contrast for native title and navigation. Main route is calmer and less saturated than peripheral scenery. This is campaign art, not an actual match-three board. Cohesive premium hand-painted fantasy style throughout the set. ",
+  "referencePrompt": "The supplied Emerald Valley image is a STYLE REFERENCE ONLY: preserve its hand-painted finish, high oblique camera, detail level and crystal design; create the distinctly new region described above, do not recolor or reuse that valley layout.",
+  "pages": [
+    {
+      "page": 1,
+      "firstLevel": 1,
+      "lastLevel": 10,
+      "png": "page_01_emerald_valley.png",
+      "tga": "page_01_emerald_valley.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothJewels\\assets\\map\\page_01_emerald_valley",
+      "prompt": "Page 01, levels 1-10: emerald jewel valley at dawn. Soft green rolling hills, scattered sapphire and emerald outcrops at the edges, a small clear river crossing, distant pale ancient stone arches and mountains. Welcoming exploration atmosphere, warm sunlight with cool shaded path, restrained jewel glow. A broad earthen winding path and quiet grass clearings remain clearly readable.",
+      "styleReferencePrompt": "",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "a072cc5b2756807e1e1099033322f6ad51ddd2fb237fbb7e67c25d074a417c8c",
+      "tgaSha256": "2cf0c847a2107577765a73033e5e209237f5f368c3ed49e53d98852464f6c97d",
+      "bytes": 4194348
+    },
+    {
+      "page": 2,
+      "firstLevel": 11,
+      "lastLevel": 20,
+      "png": "page_02_sapphire_woods.png",
+      "tga": "page_02_sapphire_woods.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothJewels\\assets\\map\\page_02_sapphire_woods",
+      "prompt": "Page 02, levels 11-20: sapphire woodland. Ancient forest bordering a broad winding path, blue jewel outcrops, a turquoise stream and small weathered stone bridge. Cool blue-green canopy with warm dappled light. Quiet path clearings between rich peripheral trees.",
+      "styleReferencePrompt": "The supplied Emerald Valley image is a STYLE REFERENCE ONLY: preserve its hand-painted finish, high oblique camera, detail level and crystal design; create the distinctly new region described above, do not recolor or reuse that valley layout.",
+      "styleReference": "page_01_emerald_valley.png",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "e9b91064bbe67b9d2d232c58c45e5d62fd540646621ea74149ee14da241dbe37",
+      "tgaSha256": "83452c9707e243d0e3ae38951e7d419137a35d6757fc28dddbcdf063b2c87708",
+      "bytes": 4194348
+    },
+    {
+      "page": 3,
+      "firstLevel": 21,
+      "lastLevel": 30,
+      "png": "page_03_crystal_depths.png",
+      "tga": "page_03_crystal_depths.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothJewels\\assets\\map\\page_03_crystal_depths",
+      "prompt": "Page 03, levels 21-30: vast crystal caverns. Broad stone trail through subterranean chambers, cyan and white faceted crystals, small purple mineral veins, underground pools, distant vaulted rock. Luminous minerals light dark slate terrain without obscuring clear path.",
+      "styleReferencePrompt": "The supplied Emerald Valley image is a STYLE REFERENCE ONLY: preserve its hand-painted finish, high oblique camera, detail level and crystal design; create the distinctly new region described above, do not recolor or reuse that valley layout.",
+      "styleReference": "page_01_emerald_valley.png",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "0bb26f9633ca2b0c24b5bfbe28f56eee7437ace5c3fea4aad69dec13b2b1fb3a",
+      "tgaSha256": "9c15c7b68017d85eaf1ce4bf4bd94e280b0d74e78b266dc839f4beeb6f3c67cf",
+      "bytes": 4194348
+    },
+    {
+      "page": 4,
+      "firstLevel": 31,
+      "lastLevel": 40,
+      "png": "page_04_frost_pass.png",
+      "tga": "page_04_frost_pass.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothJewels\\assets\\map\\page_04_frost_pass",
+      "prompt": "Page 04, levels 31-40: frosted mountain pass. Blue-white ice cliffs and restrained icy jewels, snow-dusted pines, broad dark stone winding trail and quiet snowy clearings, distant mountain arches. Crisp moonlit ice and subtle warm light, unobstructed center.",
+      "styleReferencePrompt": "The supplied Emerald Valley image is a STYLE REFERENCE ONLY: preserve its hand-painted finish, high oblique camera, detail level and crystal design; create the distinctly new region described above, do not recolor or reuse that valley layout.",
+      "styleReference": "page_01_emerald_valley.png",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "9109e4c0cce87e07f818952c2f214f54d38568867be4a514f1a93310008aeca5",
+      "tgaSha256": "34908f91c3077a5f1a4b87b49c5a0c48ce3e8e6a9055a6457496db96f077627b",
+      "bytes": 4194348
+    },
+    {
+      "page": 5,
+      "firstLevel": 41,
+      "lastLevel": 50,
+      "png": "page_05_ancient_terraces.png",
+      "tga": "page_05_ancient_terraces.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothJewels\\assets\\map\\page_05_ancient_terraces",
+      "prompt": "Page 05, levels 41-50: ancient jewel quarry terraces. Weathered golden sandstone ruins, broad ascending stone route, green and amber crystals in cliff edges, distant mountain aqueduct. Dusty teal shadows and warm afternoon light. No inscriptions.",
+      "styleReferencePrompt": "The supplied Emerald Valley image is a STYLE REFERENCE ONLY: preserve its hand-painted finish, high oblique camera, detail level and crystal design; create the distinctly new region described above, do not recolor or reuse that valley layout.",
+      "styleReference": "page_01_emerald_valley.png",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "020c58e509d7f13aa19a79529c9a8fd97c6a4e91b221f4f87ddbc139c3bfa60e",
+      "tgaSha256": "2143b42f7b77abd53ed448f573ab8664df7ee18caee668011a119ba970692da9",
+      "bytes": 4194348
+    },
+    {
+      "page": 6,
+      "firstLevel": 51,
+      "lastLevel": 60,
+      "png": "page_06_ruby_forge.png",
+      "tga": "page_06_ruby_forge.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothJewels\\assets\\map\\page_06_ruby_forge",
+      "prompt": "Page 06, levels 51-60: ruby volcanic forge landscape. Broad stable dark basalt trail amid peripheral red crystal spires, distant lava channels and monumental weathered stone forge architecture. Molten amber light at edges and cool slate route. No hazards drawn across path.",
+      "styleReferencePrompt": "The supplied Emerald Valley image is a STYLE REFERENCE ONLY: preserve its hand-painted finish, high oblique camera, detail level and crystal design; create the distinctly new region described above, do not recolor or reuse that valley layout.",
+      "styleReference": "page_01_emerald_valley.png",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "abb95a938b8a422d442007afbe3680510a79458921df146dc36a53b34fc57688",
+      "tgaSha256": "11b4645a80b15b59b5bd6198b1a5d409133bafb86411d33a322aa053ce156193",
+      "bytes": 4194348
+    },
+    {
+      "page": 7,
+      "firstLevel": 61,
+      "lastLevel": 70,
+      "png": "page_07_azure_isles.png",
+      "tga": "page_07_azure_isles.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothJewels\\assets\\map\\page_07_azure_isles",
+      "prompt": "Page 07, levels 61-70: azure floating isles linked by broad ancient stone bridges. Turquoise sky depths, sapphire crystals, pale waterfalls falling away at edges and distant ruins. Continuous readable winding route with quiet landings. Soft daylight.",
+      "styleReferencePrompt": "The supplied Emerald Valley image is a STYLE REFERENCE ONLY: preserve its hand-painted finish, high oblique camera, detail level and crystal design; create the distinctly new region described above, do not recolor or reuse that valley layout.",
+      "styleReference": "page_01_emerald_valley.png",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "ab2765b51dd8d6c14212dcde245c8b8bb4e7a61b1a0f931d96240c1f7e266a00",
+      "tgaSha256": "2fc44683c53f12cdc6196aef6a672403e2bceffb550eaeef3240a6c809abc166",
+      "bytes": 4194348
+    },
+    {
+      "page": 8,
+      "firstLevel": 71,
+      "lastLevel": 80,
+      "png": "page_08_amethyst_grove.png",
+      "tga": "page_08_amethyst_grove.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothJewels\\assets\\map\\page_08_amethyst_grove",
+      "prompt": "Page 08, levels 71-80: twilight amethyst grove. Winding slate and earthen path through lavender crystal gardens, ancient silver-barked trees, a small reflective pond, distant crystalline arches. Violet dusk and restrained cyan glow, calm dark route clearings.",
+      "styleReferencePrompt": "The supplied Emerald Valley image is a STYLE REFERENCE ONLY: preserve its hand-painted finish, high oblique camera, detail level and crystal design. Invent a new terrain composition for this new region, no repeated river valley, waterfall chain or same bridge location. Keep the winding traversal route, no UI.",
+      "styleReference": "page_01_emerald_valley.png",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "88eeca595227e2dee0f663bfb4febc826a344350ad855eca759d59edd81edb8e",
+      "tgaSha256": "d66e15dc8165682d80b076c7d55a0e595283288de78d83ea3a639ee17f5117e3",
+      "bytes": 4194348
+    },
+    {
+      "page": 9,
+      "firstLevel": 81,
+      "lastLevel": 90,
+      "png": "page_09_golden_summit.png",
+      "tga": "page_09_golden_summit.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothJewels\\assets\\map\\page_09_golden_summit",
+      "prompt": "Page 09, levels 81-90: golden high mountain sanctuary. Broad stone switchbacks toward distant jewel-carved arches, white and golden crystal clusters around cliffs, blue shadowed valleys. Majestic warm sunset, readable slate route and quiet platforms.",
+      "styleReferencePrompt": "The supplied Emerald Valley image is a STYLE REFERENCE ONLY: preserve its hand-painted finish, high oblique camera, detail level and crystal design. Invent a new terrain composition for this new region, no repeated river valley, waterfall chain or same bridge location. Keep the winding traversal route, no UI.",
+      "styleReference": "page_01_emerald_valley.png",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "778e835f66fba16c73bd50c5375085cbfe670269898d040978f4f30ee9308eee",
+      "tgaSha256": "1cd169aecd1d91de456db31b73a0f66f9385825fcfbbaeed9b65fd7f889c48ef",
+      "bytes": 4194348
+    },
+    {
+      "page": 10,
+      "firstLevel": 91,
+      "lastLevel": 100,
+      "png": "page_10_jewel_citadel.png",
+      "tga": "page_10_jewel_citadel.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\AzerothJewels\\assets\\map\\page_10_jewel_citadel",
+      "prompt": "Page 10, levels 91-100: jewel citadel overlooking the entire crystal realm. Broad elegant winding approach through terraces toward distant monumental crystalline palace, all seven jewel colors as restrained peripheral accents, deep blue and antique gold architecture. Luminous dawn, triumphant but calm, no painted final level marker.",
+      "styleReferencePrompt": "The supplied Emerald Valley image is a STYLE REFERENCE ONLY: preserve its hand-painted finish, high oblique camera, detail level and crystal design. Invent a new terrain composition for this new region, no repeated river valley, waterfall chain or same bridge location. Keep the winding traversal route, no UI.",
+      "styleReference": "page_01_emerald_valley.png",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "bc7770485569add77ef5462b5f9d69f492bd240ce049613c358aa4470fa3f154",
+      "tgaSha256": "e5200e46daec5273f94a61f6cbb9bad3ebe0dbf65d21bb63b425ed2bffce7a26",
+      "bytes": 4194348
+    }
+  ],
+  "runtimeIntegrated": true,
+  "clientAccepted": false,
+  "presentationData": "Games/AzerothJewels/CampaignMap.lua"
+}

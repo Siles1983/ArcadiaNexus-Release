@@ -43,6 +43,11 @@ ArcadiaNexus.RegisterHubTab({
             end
             return
         end
+        local LC = ArcadiaNexus.Lifecycle
+        local activeId = LC and LC.GetActiveGame and LC:GetActiveGame()
+        if activeId and prevTab and prevTab.id == "GAMES" then
+            return
+        end
         local GR = ArcadiaNexus.GameRegistry
         local cat = NexusTabState.activeCategory
         local eng = cat and GR and GR.GetEngine and GR.GetEngine(cat)
@@ -62,7 +67,7 @@ ArcadiaNexus.RegisterHubTab({
 
     onDeselect = function(tab, nextTab)
         if nextTab and nextTab.id ~= "GAMES" and nextTab.id ~= "MATCH" then
-            NexusTabs.StopAllGames()
+            if NexusTabs.LeaveActiveGame() == false then return false end
         end
         local wp = ArcadiaNexus.UI.WelcomePanel
         if wp then wp:Hide() end

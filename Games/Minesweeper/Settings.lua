@@ -30,7 +30,33 @@ function S:Get(key)
     return self.Defaults[key]
 end
 
-function S:Set(key, value) P:SetGameSetting(DB_KEY, key, value) end
+S.MAX_SLOTS=3
+function S:Set(key,value)
+    if key=="difficulty" and (ArcadiaNexus.MS_Engine.activeGame or not ArcadiaNexus.MS_Logic.CONFIGS[value]) then return false end
+    if self.Defaults[key]==nil then return false end
+    P:SetGameSetting(DB_KEY,key,value)
+    return true
+end
+
+function S:LoadSlot(slot)
+    local slots=GetDB().slots
+    return slots and slots[slot]
+end
+function S:SaveSlot(slot,save)
+    if type(slot)~="number" or slot~=math.floor(slot) or slot<1 or slot>self.MAX_SLOTS then return false end
+    local db=GetDB()
+    db.slots=db.slots or {}
+    db.slots[slot]=save
+    return true
+end
+function S:DeleteSlot(slot)
+    local E=ArcadiaNexus.MS_Engine
+    if E.activeGame and E.activeSlot==slot then return false end
+    local slots=GetDB().slots
+    if slots then slots[slot]=nil end
+    ArcadiaNexus.LocalResults:Prune()
+    return true
+end
 
 function S:Reset()
     local db = GetDB()

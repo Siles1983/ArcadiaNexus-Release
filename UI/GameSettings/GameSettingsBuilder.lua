@@ -6,7 +6,7 @@
       Reihe 1: Sound (links) | Theme (rechts)  — oder Sound full width (noTheme)
       Reihe 2: Spielanleitung (100 %), optional mehrere Sektionen
 
-    Siehe docs/GameSettings_Blueprint.md
+    Siehe docs/Hub/GameSettings_Blueprint.md
 ]]
 
 ArcadiaNexus = ArcadiaNexus or {}
@@ -81,7 +81,8 @@ function GS.ComputeSoundContentHeight(soundCfg)
     if soundCfg.individual then
         return yStart + math.max(8, #items * spacing) + footer
     end
-    return yStart + SOUND_MASTER_H + (#items * spacing) + 8 + footer
+    local columns=math.max(1,math.floor(soundCfg.columns or 1))
+    return yStart + SOUND_MASTER_H + (math.ceil(#items/columns) * spacing) + 8 + footer
 end
 
 function GS.ComputeSoundBoxHeight(soundCfg)
@@ -162,11 +163,22 @@ end
 
 function GS.ComputeGuideBoxHeight(guideCfg)
     if not guideCfg or guideCfg.enabled == false then return 0 end
+    -- fitContent: minHeight is the measured box (text + chrome + pad), not a floor.
+    -- Skips the line-count estimate and GS.ROW2_H. Other guides keep both floors.
+    if guideCfg.fitContent and guideCfg.minHeight then
+        return guideCfg.minHeight
+    end
     local boxH = BOX_CHROME_H + GS.ComputeGuideContentHeight(guideCfg)
     if guideCfg.minHeight then
         boxH = math.max(boxH, guideCfg.minHeight)
     end
     return math.max(boxH, GS.ROW2_H)
+end
+
+local function ApplyGuideBoxHeight(guideCfg)
+    local h = GS.ComputeGuideBoxHeight(guideCfg)
+    if guideCfg and guideCfg.fitContent then return h end
+    return math.max(h, GS.ROW2_H)
 end
 
 function GS.FinishPanel(parent, contentBottomY)
@@ -312,7 +324,11 @@ function GS.BuildSoundSection(content, settings, locale, soundCfg)
     end
 
     local cbMain = UI.CreateCheckbox(content, masterLabel, 0, yStart)
-    cbMain:SetChecked(settings:Get(masterKey) and true or false)
+    local function MasterChecked(enabled)
+        if soundCfg.masterInverted then return not enabled end
+        return enabled and true or false
+    end
+    cbMain:SetChecked(MasterChecked(settings:Get(masterKey)))
 
     local function ItemChecked(item)
         if item.notfalse then
@@ -322,8 +338,19 @@ function GS.BuildSoundSection(content, settings, locale, soundCfg)
     end
 
     local subCBs = {}
+    local columns=math.max(1,math.floor(soundCfg.columns or 1))
+    local columnWidth=columns>2 and content:GetWidth()/columns or 0
     for i, item in ipairs(soundCfg.items or {}) do
-        local cb = UI.CreateCheckbox(content, item.label, 0, yStart + i * spacing)
+        local column=(i-1)%columns
+        local row=math.floor((i-1)/columns)+1
+        local cb = UI.CreateCheckbox(content, item.label, column*columnWidth, yStart + row * spacing)
+        if columns==2 and column==1 then
+            -- The anchored content may still report width 0 while its panel
+            -- is being built. TOP resolves to its midpoint once layout runs
+            -- and continues to follow the width when the panel is resized.
+            cb:ClearAllPoints()
+            cb:SetPoint("TOPLEFT",content,"TOP",0,-(yStart+row*spacing))
+        end
         cb:SetChecked(ItemChecked(item))
         cb._key = item.key
         cb._item = item
@@ -345,7 +372,7 @@ function GS.BuildSoundSection(content, settings, locale, soundCfg)
     RefreshSubs(settings:Get(masterKey))
 
     GS.RegisterRefresh(content, function()
-        cbMain:SetChecked(settings:Get(masterKey) and true or false)
+        cbMain:SetChecked(MasterChecked(settings:Get(masterKey)))
         for _, cb in ipairs(subCBs) do
             cb:SetChecked(ItemChecked(cb._item))
         end
@@ -354,14 +381,18 @@ function GS.BuildSoundSection(content, settings, locale, soundCfg)
 
     cbMain:SetScript("OnClick", function(self)
         local v = self:GetChecked()
+        if soundCfg.masterInverted then v=not v end
         settings:Set(masterKey, v)
-        if not v then
+        if not v and not soundCfg.preserveChecked then
             for _, cb in ipairs(subCBs) do
                 local item = cb._item
                 if not (item and item.independent) then
                     cb:SetChecked(false)
                 end
             end
+        end
+        if v and soundCfg.preserveChecked then
+            for _,cb in ipairs(subCBs) do cb:SetChecked(ItemChecked(cb._item)) end
         end
         RefreshSubs(v)
     end)
@@ -375,7 +406,7 @@ function GS.BuildSoundSection(content, settings, locale, soundCfg)
                 item.onClick(checked, settings)
             end
             if checked and not (item and item.independent) then
-                cbMain:SetChecked(true)
+                cbMain:SetChecked(MasterChecked(true))
                 settings:Set(masterKey, true)
                 RefreshSubs(true)
             end
@@ -658,6 +689,7 @@ end
       theme      – siehe BuildThemeSection (enabled=false bei noTheme)
       guide      – siehe BuildGuideSection (enabled=false bei noGuide)
       extraBoxes – optionale Zeilen unter Guide: { { title, height, build(content,w,S) }, ... }
+      stackTheme – Theme in voller Breite unter Sound und vor dem Guide
       showReset  – Reset-Button anzeigen (default true)
       onReset    – optional, nach S:Reset()
       refresh    – optional, nach dem zentralen Widget-Refresh
@@ -690,8 +722,9 @@ function GS.Build(parent, config)
 
     local soundBoxH = GS.ComputeSoundBoxHeight(soundCfg)
     local themeBoxH = hasTheme and GS.ComputeThemeBoxHeight(themeCfg, S) or 0
+    local stackTheme = hasTheme and config.stackTheme == true
     local row1H
-    if hasTheme then
+    if hasTheme and not stackTheme then
         row1H = math.max(GS.ROW1_H_MIN, soundBoxH, themeBoxH)
     else
         row1H = math.max(soundBoxH, 72)
@@ -701,23 +734,35 @@ function GS.Build(parent, config)
     local themeTitle = (themeCfg and themeCfg.title) or GS.L(L, "box_theme", "Theme")
     local guideTitle = (guideCfg and guideCfg.title) or GS.L(L, "box_guide", "Anleitung")
 
+    -- Optional guide-first order, with the same shared sizing/build contracts.
+    if hasGuide and config.guideFirst then
+        local guideH = ApplyGuideBoxHeight(guideCfg)
+        local _, cGuide = UI.CreateBox(parent, guideTitle, UI.BOX_PAD, startY, totalW, guideH)
+        GS.BuildGuideSection(cGuide, guideCfg)
+        startY = startY + guideH + UI.BOX_PAD
+    end
+
     -- ── Reihe 1: Sound ───────────────────────────────────────
     local soundX = UI.BOX_PAD
-    local soundW = hasTheme and leftW or totalW
+    local soundW = (hasTheme and not stackTheme) and leftW or totalW
     local _, cSound = UI.CreateBox(parent, soundTitle, soundX, startY, soundW, row1H)
     GS.BuildSoundSection(cSound, S, L, soundCfg)
 
-    -- ── Reihe 1: Theme (rechts) ──────────────────────────────
-    if hasTheme then
+    -- ── Reihe 1: Theme (rechts), oder volle Breite unter Sound ─
+    local nextY = startY + row1H + UI.BOX_PAD
+    if hasTheme and stackTheme then
+        local _, cTheme = UI.CreateBox(parent, themeTitle, UI.BOX_PAD, nextY, totalW, themeBoxH)
+        GS.BuildThemeSection(cTheme, totalW - UI.PAD * 2, S, themeCfg)
+        nextY = nextY + themeBoxH + UI.BOX_PAD
+    elseif hasTheme then
         local themeX = UI.BOX_PAD + leftW + UI.BOX_PAD
         local _, cTheme = UI.CreateBox(parent, themeTitle, themeX, startY, rightW, row1H)
         GS.BuildThemeSection(cTheme, rightW - UI.PAD * 2, S, themeCfg)
     end
 
     -- ── Reihe 2: Guide ───────────────────────────────────────
-    local nextY = startY + row1H + UI.BOX_PAD
-    if hasGuide then
-        local guideH = math.max(GS.ComputeGuideBoxHeight(guideCfg), GS.ROW2_H)
+    if hasGuide and not config.guideFirst then
+        local guideH = ApplyGuideBoxHeight(guideCfg)
         local _, cGuide = UI.CreateBox(parent, guideTitle, UI.BOX_PAD, nextY, totalW, guideH)
         GS.BuildGuideSection(cGuide, guideCfg)
         nextY = nextY + guideH + UI.BOX_PAD
@@ -917,7 +962,7 @@ function GS.BuildSoundVisualGuide(parent, config)
 
     if guideCfg and guideCfg.enabled ~= false then
         local guideTitle = guideCfg.title or GS.L(L, "box_guide", "Anleitung")
-        local guideH = math.max(GS.ComputeGuideBoxHeight(guideCfg), GS.ROW2_H)
+        local guideH = ApplyGuideBoxHeight(guideCfg)
         local _, cGuide = UI.CreateBox(parent, guideTitle, UI.BOX_PAD, nextY, totalW, guideH)
         GS.BuildGuideSection(cGuide, guideCfg)
         nextY = nextY + guideH + UI.BOX_PAD

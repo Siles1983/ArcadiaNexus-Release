@@ -28,6 +28,7 @@ local function BuildSolitaireSettingsPanel(parent)
                 { key = "soundOnFnd",   label = L.sound_foundation },
                 { key = "soundOnInval", label = L.sound_invalid    },
                 { key = "soundOnWin",   label = L.sound_win        },
+                { key = "soundOnUndo",  label = L.sound_undo       },
             },
         },
         theme = {
@@ -60,6 +61,7 @@ local function BuildSolitaireSettingsPanel(parent)
                 GS.GuideSection(nil, L, {
                     "guide_1", "guide_2", "guide_3", "guide_4",
                     "guide_5", "guide_6", "guide_7", "guide_8",
+                    "guide_9", "guide_10", "guide_11",
                 }),
             },
         },

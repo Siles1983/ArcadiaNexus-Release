@@ -58,7 +58,7 @@ local CFG = {
     hud_score_y      = -180,
     hud_score_alpha  = 0.75,
     hud_stats_w      = 500,
-    hud_stats_h      = 28,
+    hud_stats_h      = 42,
     hud_stats_x      = 0,
     hud_stats_y      = 220,
     hud_stats_alpha  = 0.75,
@@ -133,6 +133,7 @@ function R:_AcquireSprite(ref)
         if not tex then
             tex = self._gridHolder:CreateTexture(nil, "ARTWORK")
         end
+        if tex._powerLabel then tex._powerLabel:Hide() end
         tex:Show()
         self._sprites[ref] = tex
     end
@@ -142,6 +143,7 @@ end
 function R:_ReleaseAllSprites()
     for ref, tex in pairs(self._sprites) do
         tex:Hide()
+        if tex._powerLabel then tex._powerLabel:Hide() end
         tex:SetVertexColor(1, 1, 1, 1)
         tex:SetAlpha(1)
         table.insert(self._spritePool, tex)
@@ -165,9 +167,6 @@ function R:Init()
     self:_CreateKeyFrame()
     self:EnterIdleState()
 
-    local Eng = ArcadiaNexus.Engine
-    Eng:On("GB_GAME_STARTED", function(b) R:OnGameStarted(b) end)
-    Eng:On("GB_GAME_STOPPED", function()  R:EnterIdleState() end)
 end
 
 -- ============================================================
@@ -192,11 +191,11 @@ function R:_CreateMainFrame()
 
     f:SetScript("OnHide", function()
         ArcadiaNexus.GameSession:HandleRendererHide("GOBLINBLAST", ArcadiaNexus.GB_Engine, function(E)
-            if E.state == "PLAYING" or E.state == "LEVELWIN" then
+            if E.state == "PLAYING" or E.state == "LEVELWIN" or E.state == "PAUSED" then
                 E:SaveAndPause()
             end
         end)
-        if R.state == "MENU" or R.state == "PLAYING" then
+        if ArcadiaNexus.GB_Engine.state == "IDLE" then
             R:EnterIdleState()
         end
     end)
@@ -276,13 +275,15 @@ function R:_CreateKeyFrame()
             w = "W", a = "A", s = "S", d = "D",
             W = "W", A = "A", S = "S", D = "D",
             UP = "UP", DOWN = "DOWN", LEFT = "LEFT", RIGHT = "RIGHT",
-            SPACE = "SPACE", ESCAPE = "ESCAPE",
+            SPACE = "SPACE", ESCAPE = "ESCAPE", P = "P", p = "P",
         }
         local k = mapped[key]
+        kf:SetPropagateKeyboardInput(not k or GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()~=nil)
         if k then ArcadiaNexus.GB_Engine:HandleKeyDown(k) end
     end)
     kf:SetScript("OnKeyUp", function(_, key)
         local mapped = {
+            SPACE="SPACE", ESCAPE="ESCAPE", P="P", p="P",
             w = "W", a = "A", s = "S", d = "D",
             W = "W", A = "A", S = "S", D = "D",
             UP = "UP", DOWN = "DOWN", LEFT = "LEFT", RIGHT = "RIGHT",
@@ -322,6 +323,7 @@ function R:_CreateHUD()
     hintFS:SetPoint("CENTER", self._fieldFrame, "CENTER", 0, CFG.hint_ofs_y)
     hintFS:SetTextColor(0.80, 0.80, 0.70)
     hintFS:SetJustifyH("CENTER")
+    hintFS:SetWidth(380)
     hintFS:SetText("")
     self._hintFS = hintFS
 end
@@ -341,22 +343,26 @@ function R:UpdateHUD(board)
     local SM = ArcadiaNexus.ScoreManager
     local hs = SM and SM:GetBestScore("GOBLINBLAST", board.difficulty) or 0
     if self._scoreFS then
-        self._scoreFS:SetText(string.format("%s: %s   %s: %s",
+        if board.legacyContinuation then
+            self._scoreFS:SetText(string.format("%s: %d   %s: %d",L.lbl_score,board.score,L.lbl_legacy_score,board.legacyScore+board.score))
+        else self._scoreFS:SetText(string.format("%s: %s   %s: %s",
             L["lbl_score"] or "Score", tostring(board.score or 0),
-            L["lbl_highscore"] or "Highscore", tostring(math.max(hs, board.score or 0))))
+            L["lbl_highscore"] or "Highscore", tostring(hs)))
+        end
     end
     if self._statsFS then
         local p = board.player or {}
         local t = ArcadiaNexus.Format.SecondsMMSS(math.floor(board.time or 0), false)
         local bombs = math.max(0, (p.bombsMax or 0) - (p.bombsActive or 0))
         self._statsFS:SetText(string.format(
-            "%s: %s   %s: %d/%d   %s: %s   %s: %d/%d   %s: %d   %s: %d",
+            "%s: %s   %s: %d/%d   %s: %s\n%s: %d/%d   %s: %d   %s: %d   %s: %s",
             L["lbl_lives"] or "Leben", string.rep(HEART_ICON, math.max(0, board.lives or 0)),
             L["lbl_level"] or "Level", board.level or 0, ArcadiaNexus.GB_Levels.COUNT,
-            L["lbl_time"] or "Zeit", t,
+            L["lbl_total_time"] or "Gesamtzeit", t,
             L["lbl_bombs"] or "Bomben", bombs, p.bombsMax or 0,
             L["lbl_enemies"] or "Gegner", #(board.enemies or {}),
-            L["lbl_radius"] or "Radius", p.radius or 0))
+            L["lbl_radius"] or "Radius", p.radius or 0,
+            L["lbl_level_time"] or "Levelzeit", ArcadiaNexus.Format.SecondsMMSS(math.floor(board.levelTime or 0),false)))
     end
 end
 
@@ -377,17 +383,19 @@ function R:_CreateControls()
     ddAnchor:SetSize(CFG.dd_w, CFG.btn_h)
     ddAnchor:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
 
-    UI.CreateSimpleDropdown(
+    self._diffDropdown = UI.CreateSimpleDropdown(
         ddAnchor, 0, 0, CFG.dd_w, "",
         {
             { key = "easy",   label = L["diff_easy"]   },
             { key = "normal", label = L["diff_normal"] },
             { key = "hard",   label = L["diff_hard"]   },
         },
-        function() return (S and S:Get("difficulty")) or "easy" end,
+        function()
+            local E=ArcadiaNexus.GB_Engine
+            return E.board and E.state~="IDLE" and E.state~="GAMEOVER" and E.board.difficulty or S:Get("difficulty")
+        end,
         function(key)
-            R._lastDiff = key
-            if S then S:Set("difficulty", key) end
+            if S and S:Set("difficulty",key) then R._lastDiff=key end
         end
     )
 
@@ -416,6 +424,40 @@ function R:_CreateControls()
     end)
     exitBtn:Hide()
     self._exitBtn = exitBtn
+    self._pauseBtn=UI.CreateArcadiaButton(cf,L.btn_pause,CFG.btn_w,CFG.btn_h)
+    self._pauseBtn:SetPoint("BOTTOM",cf,"BOTTOM",bar.segX[3],bar.y.button)
+    self._pauseBtn:SetScript("OnClick",function() ArcadiaNexus.GB_Engine:TogglePause() end)
+    self._pauseBtn:Hide()
+    local overlay=CreateFrame("Frame",nil,self._fieldFrame)
+    overlay:SetAllPoints(self._fieldFrame); overlay:SetFrameLevel(self._fieldFrame:GetFrameLevel()+20)
+    local shade=overlay:CreateTexture(nil,"BACKGROUND"); shade:SetAllPoints(overlay); shade:SetColorTexture(0,0,0,.75)
+    local text=overlay:CreateFontString(nil,"OVERLAY","GameFontNormalLarge"); text:SetPoint("CENTER"); text:SetText(L.pause_hint)
+    overlay:Hide(); self._pauseOverlay=overlay
+    if self._statsBox then
+        self._statsBox:EnableMouse(true)
+        self._statsBox:SetScript("OnEnter",function(box) if UI.ShowFrameTooltip then UI.ShowFrameTooltip(box,L.lbl_bombs,L.hud_tooltip) end end)
+        self._statsBox:SetScript("OnLeave",function() if UI.HideFrameTooltip then UI.HideFrameTooltip() end end)
+    end
+end
+function R:_SyncControls(locked)
+    if self._diffDropdown then self._diffDropdown:SetEnabled(not locked); self._diffDropdown:RefreshDisplay() end
+    if self._pauseBtn then if locked then self._pauseBtn:Show() else self._pauseBtn:Hide() end end
+end
+function R:ShowPause()
+    self.state="PAUSED"; ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
+    if self._pauseOverlay then self._pauseOverlay:Show() end
+    if self._pauseBtn then self._pauseBtn:SetLabel(Loc().btn_resume) end
+    self:_SyncControls(true)
+end
+function R:HidePause()
+    if self._pauseOverlay then self._pauseOverlay:Hide() end
+    if self._pauseBtn then self._pauseBtn:SetLabel(Loc().btn_pause) end
+    self.state=ArcadiaNexus.GB_Engine.state
+end
+function R:ShowInvalidSave()
+    local L=Loc()
+    ArcadiaNexus.UI.ShowChoicePopup({parent=self._fieldFrame,title=L.invalid_save_title,body=L.invalid_save_body,
+        buttons={{label=L.btn_exit,onClick=function() ArcadiaNexus.UI.HideChoicePopup(self._fieldFrame) end}}})
 end
 
 function R:_CreateSlotMenu()
@@ -435,7 +477,7 @@ function R:_CreateSlotMenu()
         formatInfo    = function(save, loc)
             local score = (ArcadiaNexus.Format and ArcadiaNexus.Format.Score(save.score or 0))
                 or tostring(save.score or 0)
-            return string.format(loc.slot_info or "Level %d · %s", save.level or 1, score)
+            return string.format(loc.slot_info or "Level %d · %s", save.level or 1, score)..(save.version==nil and (" · "..loc.legacy_slot) or "")
         end,
         isPaused      = function() return true end,
         onNewGame     = function(slot)
@@ -444,7 +486,7 @@ function R:_CreateSlotMenu()
             if E then
                 E:StartGame({
                     slot = slot, mode = "new",
-                    difficulty = R._lastDiff or (S2 and S2:Get("difficulty")) or "easy",
+                    difficulty = (S2 and S2:Get("difficulty")) or "easy",
                 })
             end
         end,
@@ -465,12 +507,12 @@ function R:EnterSlotMenu()
     if self._slotMenu then self._slotMenu:Show() end
 end
 
-function R:_StartNewGame()
+function R:_StartNewGame(board)
     local S = ArcadiaNexus.GB_Settings
     ArcadiaNexus.GB_Engine:StartGame({
-        slot       = S and S:GetActiveSlot() or 1,
+        slot       = ArcadiaNexus.GB_Engine.activeSlot or (S and S:GetActiveSlot()) or 1,
         mode       = "new",
-        difficulty = R._lastDiff or (S and S:Get("difficulty")) or "easy",
+        difficulty = board and board.difficulty or (S and S:Get("difficulty")) or "easy",
     })
 end
 
@@ -525,6 +567,9 @@ function R:_SyncSprites(board)
             tex:SetVertexColor(0.3, 0.7, 1)       -- blau = mehr Bomben
         end
         PlaceSprite(tex, self._gridHolder, pu.x, pu.y)
+        if not tex._powerLabel then tex._powerLabel=self._gridHolder:CreateFontString(nil,"OVERLAY","GameFontNormalLarge") end
+        tex._powerLabel:SetText(pu.kind=="radius" and "R" or "B")
+        PlaceSprite(tex._powerLabel,self._gridHolder,pu.x,pu.y); tex._powerLabel:Show()
     end
 
     -- Bomben (Puls kurz vor der Explosion)
@@ -568,6 +613,7 @@ function R:_SyncSprites(board)
     for ref, tex in pairs(self._sprites) do
         if not seen[ref] then
             tex:Hide()
+        if tex._powerLabel then tex._powerLabel:Hide() end
             tex:SetVertexColor(1, 1, 1, 1)
             tex:SetAlpha(1)
             table.insert(self._spritePool, tex)
@@ -624,38 +670,30 @@ local function ResultLines(board, withTimeBonus)
         table.insert(lines,
             string.format(L["result_time_bonus"] or "Zeitbonus: +%d", board.lastTimeBonus))
     end
+    if board.legacyContinuation then
+        lines[#lines+1]=L.legacy_hint
+        lines[#lines+1]=string.format(L.legacy_points,board.legacyScore,board.legacyScore+board.score)
+    end
     return lines
 end
 
-function R:ShowLevelWin(board, isNewHighscore)
-    local L  = Loc()
-    local UI = ArcadiaNexus.UI
-    self.state = "LEVELWIN"
-    if self.keyFrame then self.keyFrame:EnableKeyboard(false) end
-
-    UI.ShowArcadeResult(self._fieldFrame, {
-        title        = L["result_level_win_title"] or "Level geschafft!",
-        titleColor   = { 0.3, 1, 0.3 },
-        score        = board.score,
-        gameId       = "GOBLINBLAST",
-        difficulty   = board.difficulty,
-        result       = "WIN",
-        newHighscore = isNewHighscore,
-        lines        = ResultLines(board, true),
-        L            = L,
-        buttons      = UI.ResultDialogButtons.Level(L,
-            function() ArcadiaNexus.GB_Engine:ContinueToNextLevel() end,
-            function() R:_StartNewGame() end,
-            function() ArcadiaNexus.GB_Engine:StopGame() end
-        ),
+function R:ShowLevelWin(board)
+    local L,UI,E=Loc(),ArcadiaNexus.UI,ArcadiaNexus.GB_Engine
+    self.state="LEVELWIN"; self:_SyncControls(true)
+    UI.ShowArcadeResult(self._fieldFrame,{
+        title=L.result_level_win_title,titleColor={.3,1,.3},score=board.score,result="WIN",xp=0,gold=0,
+        hideHighscore=true,lines=ResultLines(board,true),L=L,
+        isCurrent=function() return E.board==board and E.state=="LEVELWIN" end,
+        buttons={{label=L.btn_next_level,onClick=function() E:ContinueToNextLevel(board) end},
+            {label=L.btn_exit,onClick=function() E:StopGame() end}},
     })
 end
 
 function R:ShowFinalWin(board, isNewHighscore)
     local L  = Loc()
     local UI = ArcadiaNexus.UI
-    self.state = "WON"
-    if self.keyFrame then self.keyFrame:EnableKeyboard(false) end
+    self.state = "WON"; self:_SyncControls(false)
+    if self.keyFrame then self.keyFrame:EnableKeyboard(true) end
     if self._startBtn then self._startBtn:SetLabel(L["btn_start"]) end
 
     UI.ShowArcadeResult(self._fieldFrame, {
@@ -665,10 +703,14 @@ function R:ShowFinalWin(board, isNewHighscore)
         gameId       = "GOBLINBLAST",
         difficulty   = board.difficulty,
         result       = "WIN",
-        newHighscore = isNewHighscore,
+        newHighscore = not board.legacyContinuation and isNewHighscore,
+        xp = board.resultData and board.resultData.awardedXP or 0,
+        gold = board.resultData and board.resultData.awardedGold or 0,
+        hideHighscore = board.legacyContinuation,
+        isCurrent = function() return ArcadiaNexus.GB_Engine.board==board and ArcadiaNexus.GB_Engine.state=="GAMEOVER" end,
         lines        = ResultLines(board, true),
         L            = L,
-        onRetry      = function() R:_StartNewGame() end,
+        onRetry      = function() R:_StartNewGame(board) end,
         onExit       = function() ArcadiaNexus.GB_Engine:StopGame() end,
     })
 end
@@ -677,6 +719,7 @@ end
 -- LEVEL-WECHSEL (vom Engine nach "Weiter"-Button)
 -- ============================================================
 function R:OnLevelAdvanced(board)
+    self:HidePause(); self:_SyncControls(true)
     self.state = "PLAYING"
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     if self.keyFrame then
@@ -694,11 +737,15 @@ end
 -- EVENT-HANDLER
 -- ============================================================
 function R:OnGameStarted(board)
+    self:HidePause(); self:_SyncControls(true)
     self.state     = "PLAYING"
     self._lastDiff = board.difficulty
 
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
-    if self._hintFS  then self._hintFS:Hide()  end
+    if self._hintFS then
+        self._hintFS:SetText(board.legacyContinuation and Loc().legacy_hint or "")
+        if board.legacyContinuation then self._hintFS:Show() else self._hintFS:Hide() end
+    end
     if self._logoTex then self._logoTex:Hide() end
     if self._slotMenu then self._slotMenu:Hide() end
 
@@ -724,8 +771,8 @@ end
 function R:OnGameLost(board, isNewHighscore)
     local L  = Loc()
     local UI = ArcadiaNexus.UI
-    self.state = "LOST"
-    if self.keyFrame then self.keyFrame:EnableKeyboard(false) end
+    self.state = "LOST"; self:_SyncControls(false)
+    if self.keyFrame then self.keyFrame:EnableKeyboard(true) end
     if self._startBtn then self._startBtn:SetLabel(L["btn_start"]) end
 
     UI.ShowArcadeResult(self._fieldFrame, {
@@ -735,10 +782,14 @@ function R:OnGameLost(board, isNewHighscore)
         gameId       = "GOBLINBLAST",
         difficulty   = board.difficulty,
         result       = "LOSS",
-        newHighscore = isNewHighscore,
+        newHighscore = not board.legacyContinuation and isNewHighscore,
+        xp = board.resultData and board.resultData.awardedXP or 0,
+        gold = board.resultData and board.resultData.awardedGold or 0,
+        hideHighscore = board.legacyContinuation,
+        isCurrent = function() return ArcadiaNexus.GB_Engine.board==board and ArcadiaNexus.GB_Engine.state=="GAMEOVER" end,
         lines        = ResultLines(board, false),
         L            = L,
-        onRetry      = function() R:_StartNewGame() end,
+        onRetry      = function() R:_StartNewGame(board) end,
         onExit       = function() ArcadiaNexus.GB_Engine:StopGame() end,
     })
 end
@@ -747,6 +798,7 @@ end
 -- IDLE STATE
 -- ============================================================
 function R:EnterIdleState()
+    self:HidePause(); self:_SyncControls(false)
     self.state = "IDLE"
 
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)

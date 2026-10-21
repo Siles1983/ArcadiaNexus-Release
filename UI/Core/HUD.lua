@@ -53,7 +53,7 @@ local function UpdateBadge()
         local maxLevel = XPM and XPM.IsMaxLevel and XPM:IsMaxLevel()
         if maxLevel or xpReq == 0 then
             F().badgeBar:SetValue(1)
-            F().badgeFS:SetText("MAX LEVEL")
+            F().badgeFS:SetText(L("stats_max_level"))
         else
             local ratio = math.min(1, xp / xpReq)
             F().badgeBar:SetAnimatedValue(ratio)

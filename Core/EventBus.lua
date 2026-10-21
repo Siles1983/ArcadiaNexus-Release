@@ -54,12 +54,26 @@ end
 -- EMISSION
 -- ============================================================
 
---- Feuert ein Event. Alle registrierten Listener werden aufgerufen.
---- Unterstützt beliebig viele Argumente (data, ...).
+--- Feuert ein Event synchron und reicht alle Argumente unverändert weiter, einschließlich nil.
+--- Beim Eintritt wird eine Momentaufnahme der Callback-Referenzen gebildet.
+--- Diese Teilnehmer werden in Registrierungsreihenfolge jeweils einmal aufgerufen.
+--- On, Off und Clear ändern die Registry sofort, den begonnenen Dispatch aber nicht:
+--- Selbst- und Fremdabmeldungen, Neuregistrierungen und Clear gelten erst für
+--- anschließend gestartete Emissionen. Jeder rekursive Emit-Aufruf erhält eine
+--- eigene Momentaufnahme des dann aktuellen Registrierungsstands.
+--- Ein Listenerfehler bleibt isoliert; nachfolgende Teilnehmer laufen weiter.
 function EventBus:Emit(event, ...)
-    if not self._listeners[event] then return end
-    for _, cb in ipairs(self._listeners[event]) do
-        local ok, err = pcall(cb, ...)
+    local list = self._listeners[event]
+    local count = list and #list or 0
+    if count == 0 then return end
+
+    local dispatch = {}
+    for i = 1, count do
+        dispatch[i] = list[i]
+    end
+
+    for i = 1, count do
+        local ok, err = pcall(dispatch[i], ...)
         if not ok then
             GH_LogError("EventBus", "Listener-Fehler bei '" .. tostring(event) .. "': " .. tostring(err))
         end

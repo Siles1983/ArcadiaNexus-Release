@@ -1,0 +1,388 @@
+{
+  "game": "BlockBreaker",
+  "date": "2026-10-07",
+  "status": "10-art-pages-runtime-integrated-and-technically-tested; client-acceptance-pending",
+  "generator": "built-in image_gen",
+  "artReference": "Arcane Barrage campaign illustrations; existing BlockBreaker logo/blocks for visual identity",
+  "difficulties": [
+    "easy",
+    "normal",
+    "hard"
+  ],
+  "levelCountPerDifficulty": 100,
+  "exportSize": [
+    1024,
+    1024
+  ],
+  "basePrompt": "Use case: stylized-concept. Create ONE square 1024x1024 full-bleed opaque production campaign-map background for BlockBreaker, an arcade brick-breaking WoW minigame. Visually connect to glossy vivid beveled rectangular blocks in red, orange, yellow, green, cyan, blue and violet. A cohesive premium hand-painted stylized high-oblique/isometric world built from solid rectangular block masonry, terraces, arches and bridges. Landscape scale with atmospheric depth, readable at 512px. NOT a pixel-art image or Lego toy photo. Broad matte quiet traversal path winds from lower left through center toward upper right, with naturally spaced broad stretches for ten native level nodes. Colorful scenic blocks stand at route edges; keep the route itself neutral and uncluttered. Upper 10 percent and lower 12 percent remain low-contrast muted areas for native title/navigation overlays. No text, lettering, numbers, icons, circles, stars, padlocks, buttons, HUD, border, logo, characters, painted puzzle board, paddle, ball, power-up symbols or jewel crystal spires. No new gameplay mechanics. One scene only, no collage. ",
+  "pages": [
+    {
+      "page": 1,
+      "firstLevel": 1,
+      "lastLevel": 10,
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "png": "page_01_rainbow_courtyard.png",
+      "tga": "page_01_rainbow_courtyard.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_01_rainbow_courtyard",
+      "prompt": "Page 01 levels 1-10: inviting rainbow block courtyard. Low brightly colored rectangular block walls, broad sandstone-colored winding pathway, a few grassy terraces, colorful block arches and distant block towers. Warm daylight, restrained glossy edge highlights, simple welcoming landscape.",
+      "styleReference": "Games/BlockBreaker/assets/logo/logo_blockbreaker.tga",
+      "styleReferencePrompt": "The supplied BlockBreaker logo is a VISUAL IDENTITY REFERENCE ONLY: borrow its vivid rainbow colors and glossy beveled rectangular block material. Do not copy its lettering, logo, composition or UI. Build the scenic world described above.",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "943fec3100b88e4e5a522772bdbe8a0d32306d913b0995b682ae27d15fd7aa25",
+      "tgaSha256": "415f108de1e15eab56e671941f5882cceb59fe44c5354a8a8983b6b19fff189f",
+      "bytes": 4194348
+    },
+    {
+      "page": 2,
+      "firstLevel": 11,
+      "lastLevel": 20,
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "png": "page_02_blue_terraces.png",
+      "tga": "page_02_blue_terraces.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_02_blue_terraces",
+      "prompt": "Page 02 levels 11-20: blue block terraces. Azure and deep blue block architecture stepping across layered cliffs, broad pale slate route linked by sturdy low block bridges, a quiet pool below. Cool daylight and restrained cyan highlights, distinct terraced composition.",
+      "styleReference": "page_01_rainbow_courtyard.png",
+      "styleReferencePrompt": "The supplied Rainbow Courtyard image is a STYLE REFERENCE ONLY: preserve its painterly block material, beveled glossy edges, vivid arcade colors and camera/detail level. Create the distinct regional landscape described, with a new composition. Keep the traversal path neutral and broad; no UI or lettering.",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "a2c06464efbace626e515b9e7fc76919d2b44d97c97cc584775b98aaff88a076",
+      "tgaSha256": "4c5d2b02eeb2ff64830dbdf91983f0754d1b7b096a3963ef54ed625bc7ef4e16",
+      "bytes": 4194348
+    },
+    {
+      "page": 3,
+      "firstLevel": 21,
+      "lastLevel": 30,
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "png": "page_03_green_gardens.png",
+      "tga": "page_03_green_gardens.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_03_green_gardens",
+      "prompt": "Page 03 levels 21-30: green block gardens. Emerald and lime beveled block walls surrounding landscaped terraced lawns, small leafy trees at periphery and broad neutral path through gardens. Soft sunlit green setting, sturdy angular masonry rather than gems.",
+      "styleReference": "page_01_rainbow_courtyard.png",
+      "styleReferencePrompt": "The supplied Rainbow Courtyard image is a STYLE REFERENCE ONLY: preserve its painterly block material, beveled glossy edges, vivid arcade colors and camera/detail level. Create the distinct regional landscape described, with a new composition. Keep the traversal path neutral and broad; no UI or lettering.",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "0f9d075f0ee86ea12fadc641b711b655764a5a4bea5fe35b0565a100264bb881",
+      "tgaSha256": "bf5eb1c7e698b767398eaf615d4892706615879c3ae1585097e3390cd26b563a",
+      "bytes": 4194348
+    },
+    {
+      "page": 4,
+      "firstLevel": 31,
+      "lastLevel": 40,
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "png": "page_04_red_foundry.png",
+      "tga": "page_04_red_foundry.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_04_red_foundry",
+      "prompt": "Page 04 levels 31-40: red block foundry landscape. Massive red and orange rectangular block structures, peripheral warm forge glow and distant smokeless chimneys, broad cool gray stable stone route over block-built bridges. Rich warm light, no machinery on the path, no lava crossing route.",
+      "styleReference": "page_01_rainbow_courtyard.png",
+      "styleReferencePrompt": "The supplied Rainbow Courtyard image is a STYLE REFERENCE ONLY: preserve its painterly block material, beveled glossy edges, vivid arcade colors and camera/detail level. Create the distinct regional landscape described, with a new composition. Keep the traversal path neutral and broad; no UI or lettering.",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "2d6396f72824325229f716e0d4cfc1575ec27bc29e3251a67b05832d64f86bf5",
+      "tgaSha256": "e787b74872e5e53e522d550a1e8a3b705c4a9df7a8d24eb6e60b87e0a84e4cc0",
+      "bytes": 4194348
+    },
+    {
+      "page": 5,
+      "firstLevel": 41,
+      "lastLevel": 50,
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "png": "page_05_violet_skyworks.png",
+      "tga": "page_05_violet_skyworks.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_05_violet_skyworks",
+      "prompt": "Page 05 levels 41-50: violet high-altitude block architecture. Purple and magenta beveled towers on spacious stepped platforms linked by broad sturdy angular bridges, distant blue sky and muted clouds. Lavender lighting, calm matte paths and platforms.",
+      "styleReference": "page_01_rainbow_courtyard.png",
+      "styleReferencePrompt": "The supplied Rainbow Courtyard image is a STYLE REFERENCE ONLY: preserve its painterly block material, beveled glossy edges, vivid arcade colors and camera/detail level. Create the distinct regional landscape described, with a new composition. Keep the traversal path neutral and broad; no UI or lettering.",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "152a2b4cd11377c65b429517d729cdd53a0963823329ab684419b262e617e6e2",
+      "tgaSha256": "27c176649f3f687215acdc774d07b74fb16ba17778ef57e40c1a051b311f33a8",
+      "bytes": 4194348
+    },
+    {
+      "page": 6,
+      "firstLevel": 51,
+      "lastLevel": 60,
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "png": "page_06_amber_fortress.png",
+      "tga": "page_06_amber_fortress.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_06_amber_fortress",
+      "prompt": "Page 06 levels 51-60: amber block fortress terraces. Golden yellow and orange rectangular block battlements and broad ascending gray sandstone route, layered walls and distant mountain silhouettes. Warm late-afternoon sun; no banners, signs or inscriptions.",
+      "styleReference": "page_01_rainbow_courtyard.png",
+      "styleReferencePrompt": "The supplied Rainbow Courtyard image is a STYLE REFERENCE ONLY: preserve its painterly block material, beveled glossy edges, vivid arcade colors and camera/detail level. Create the distinct regional landscape described, with a new composition. Keep the traversal path neutral and broad; no UI or lettering.",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "313281640e87f8618512c93acf96da339d967be571fce18c1c172db2ce0171b5",
+      "tgaSha256": "115c7efdfd9d855c397f8d95d4d787074c09e29e95966676979b1751420b7644",
+      "bytes": 4194348
+    },
+    {
+      "page": 7,
+      "firstLevel": 61,
+      "lastLevel": 70,
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "png": "page_07_cyan_canals.png",
+      "tga": "page_07_cyan_canals.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_07_cyan_canals",
+      "prompt": "Page 07 levels 61-70: cyan canal district made of chunky beveled block masonry. Turquoise block embankments, calm water terraces and broad winding pale stone promenades connected by low bridges. Clear cool daylight and blue shadows. Route stays continuous and uncluttered.",
+      "styleReference": "page_01_rainbow_courtyard.png",
+      "styleReferencePrompt": "The supplied Rainbow Courtyard image is a STYLE REFERENCE ONLY: preserve its painterly block material, beveled glossy edges, vivid arcade colors and camera/detail level. Create the distinct regional landscape described, with a new composition. Keep the traversal path neutral and broad; no UI or lettering.",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "6441b32aebb2487336fbfb17c642105b24c15be95a64accc213d53c19df562a3",
+      "tgaSha256": "84bc85fd315966eb99f263fd54b40ab950c8b01cba03f2e039ac8a63d588acf2",
+      "bytes": 4194348
+    },
+    {
+      "page": 8,
+      "firstLevel": 71,
+      "lastLevel": 80,
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "png": "page_08_prism_arches.png",
+      "tga": "page_08_prism_arches.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_08_prism_arches",
+      "prompt": "Page 08 levels 71-80: multicolor prism block arches. Monumental arches built of solid rectangular rainbow blocks at scene edges, broad slate route winding across neutral stepped platforms, distant softly colored block skyline. Pastel twilight; no faceted crystal or glass prism forest.",
+      "styleReference": "page_01_rainbow_courtyard.png",
+      "styleReferencePrompt": "The supplied Rainbow Courtyard image is a STYLE REFERENCE ONLY: preserve its painterly block material, beveled glossy edges, vivid arcade colors and camera/detail level. Create the distinct regional landscape described, with a new composition. Keep the traversal path neutral and broad; no UI or lettering.",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "c865d0f8f511077caa777daf30554e4d5dfc818771beb69a0a6fcf52de971c60",
+      "tgaSha256": "412b0c0f120ea3351f0e3f1d6a3c79eec60a8fd6e9e471000803e68178ac55ec",
+      "bytes": 4194348
+    },
+    {
+      "page": 9,
+      "firstLevel": 81,
+      "lastLevel": 90,
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "png": "page_09_obsidian_bastion.png",
+      "tga": "page_09_obsidian_bastion.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_09_obsidian_bastion",
+      "prompt": "Page 09 levels 81-90: dark block bastion with restrained colored beveled edges. Charcoal angular towers and layered fortress terraces, muted red and blue accent blocks, broad winding neutral route clearly lit against the darker periphery. Strong readable depth, no ominous creatures.",
+      "styleReference": "page_01_rainbow_courtyard.png",
+      "styleReferencePrompt": "The supplied Rainbow Courtyard image is a STYLE REFERENCE ONLY: preserve its painterly block material, beveled glossy edges, vivid arcade colors and camera/detail level. Create the distinct regional landscape described, with a new composition. Keep the traversal path neutral and broad; no UI or lettering.",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "cb9877c638b3ba7dd353ebe4a20158d94646be5dcee00191307d97049f279e3d",
+      "tgaSha256": "aa992f724e2888f1d85adff6aaa450dc084a4a2cf49a63734f28cdfbc78875da",
+      "bytes": 4194348
+    },
+    {
+      "page": 10,
+      "firstLevel": 91,
+      "lastLevel": 100,
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "png": "page_10_rainbow_citadel.png",
+      "tga": "page_10_rainbow_citadel.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_10_rainbow_citadel",
+      "prompt": "Page 10 levels 91-100: grand rainbow block citadel, built from large glossy beveled rectangular blocks of all seven colors. Broad elegant winding neutral stone approach through stepped courtyards toward distant citadel at upper right below title zone. Warm celebratory dawn lighting, polished arcade architecture, no final marker or boss character.",
+      "styleReference": "page_01_rainbow_courtyard.png",
+      "styleReferencePrompt": "The supplied Rainbow Courtyard image is a STYLE REFERENCE ONLY: preserve its painterly block material, beveled glossy edges, vivid arcade colors and camera/detail level. Create the distinct regional landscape described, with a new composition. Keep the traversal path neutral and broad; no UI or lettering.",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "673bced79386b436d357af8f7a9dcc292c77a3490ab25a201cf9c72beabcf49b",
+      "tgaSha256": "ac52e2afcad08343bd79e9c9a77dc5a43544e84a355681bbac082db0cea15ebb",
+      "bytes": 4194348
+    }
+  ],
+  "preservedAssets": {
+    "Games/BlockBreaker/assets/border/border_blockbreaker.tga": "809b3ba48ca995c7425b946460a5dbcc34daf084e703bbdaad28758d3cf1d718",
+    "Games/BlockBreaker/assets/logo/logo_blockbreaker.tga": "3a3a733b393813a4ea72f34fe51942c5acd53fe9d99d7f7e1bd363298adcc72f",
+    "Games/BlockBreaker/assets/sounds/block_hit.wav": "42be9e964988d9639e11e066ad1bae07cd30a7ff3d18d820b1ef53ae43c743f3",
+    "Games/BlockBreaker/assets/sounds/paddle_side_hit.wav": "b947b58043c3cceeef01e8bf357409b99d92ae5658944317053f23b5092b8e33",
+    "Games/BlockBreaker/assets/sounds/power_up.wav": "f009e6a431781a2d67811e7936fbe1d0e48ad4034da3cb58061c80ce8f864daa",
+    "Games/BlockBreaker/assets/sounds/wall_hit.wav": "1d1ca029f4d449f6d3b388f5828b367b60b5f90c2f16969ed730fd262db92f63",
+    "Games/BlockBreaker/assets/tile/blocks/blue.tga": "39815baa26ed01f48a25a91298b2bbd409b245e5b8736c10aa1fc4cfbf2c9aea",
+    "Games/BlockBreaker/assets/tile/blocks/blue_broken.tga": "a9765bd06e0966c9152cfc99343734a89c1520b2e4239d6cf992626f84aaf7a7",
+    "Games/BlockBreaker/assets/tile/blocks/brown.tga": "759ab0b278fedb004c5d415ada5210554ed0dd86f5065e7f345c347e1c437174",
+    "Games/BlockBreaker/assets/tile/blocks/brown_broken.tga": "11dc040698b60d63970806cfb3c84a765beb7539ea6fa909073247c89eabc355",
+    "Games/BlockBreaker/assets/tile/blocks/green.tga": "2adcef87fc2940ad2291e0e6792f924363241683151cead933a19c62c9107ee1",
+    "Games/BlockBreaker/assets/tile/blocks/green_broken.tga": "81370d1175557d51e465bc6ee97f623fe1fa0e9eca85d1adbe1693710cd7310c",
+    "Games/BlockBreaker/assets/tile/blocks/grey.tga": "5dc05e08534f967941cb23551a2984c0ccb01569410687855ee0d897694577d5",
+    "Games/BlockBreaker/assets/tile/blocks/grey_broken.tga": "89fa0541bdc917d4e9ac08997d350c0d0bbe3976f85296ae30c92f2c6a2d2d9b",
+    "Games/BlockBreaker/assets/tile/blocks/light_blue.tga": "2df27326cd8da31e8a2fa83a72db496b82538736a2340000250dacdaea1bf2f2",
+    "Games/BlockBreaker/assets/tile/blocks/light_blue_broken.tga": "345b2f521e4d0060e5c637756acd9d8611ecf860a3b3fbfe9f40231553f22b3d",
+    "Games/BlockBreaker/assets/tile/blocks/light_green.tga": "a7bfee15e21a69cc3d3443ec33688392baa005876e517d785c97e8eebfed483d",
+    "Games/BlockBreaker/assets/tile/blocks/light_green_broken.tga": "ebbec95f0fd376fb1458a82b8f3e2db77e8df4c56a02d8e3039d3ad9c447b817",
+    "Games/BlockBreaker/assets/tile/blocks/orange.tga": "414bbc32a497ad124653e8eafad6f908e41ee68fdebac8a17037b7b9cc40ac68",
+    "Games/BlockBreaker/assets/tile/blocks/orange_broken.tga": "9ec3e91411d5b6bf19c197e053fc1584ddf9ec10c0d182e5514425fd1aa95745",
+    "Games/BlockBreaker/assets/tile/blocks/red.tga": "b2c1a10ba49a6fde5321dbe95a00b9a3ab70f7e786193d6d5cdbd187149c5fd0",
+    "Games/BlockBreaker/assets/tile/blocks/red_broken.tga": "32bc8defcb70dc9b3d546cc5073622b40f73e985586a6e689040275b7dbe2965",
+    "Games/BlockBreaker/assets/tile/blocks/violett.tga": "b7eafabb4bc61df6b493357a852308683dd4409452384356dc660bbd58b2b8ee",
+    "Games/BlockBreaker/assets/tile/blocks/violett_broken.tga": "e2938f64d3dd96c2c7f9443217ac5fc4dbf4bd2ed4a4a55729eb9c49b7818608",
+    "Games/BlockBreaker/assets/tile/blocks/yellow.tga": "096ebf280c44d086d8275b7663967585ec08df0e97ef3aab18dda1f5d3711709",
+    "Games/BlockBreaker/assets/tile/blocks/yellow_broken.tga": "5a2a08bf46c51d87d60fbb4854199f54c243ceff6a099d06ad3c398cff69eff6",
+    "Games/BlockBreaker/assets/tile/ui/heart.tga": "0fff7690819a103563981c00b8436d03b8b518f1d3a465c12241876442f533fc",
+    "Games/BlockBreaker/assets/tile/theme/bullet/bullet_blue.tga": "28d72abbd8128bbcbd4a8df5e45a577fb2fb8fd9a323d1989f70ffcabce8576e",
+    "Games/BlockBreaker/assets/tile/theme/bullet/bullet_green.tga": "467e39e3b8b5ca217f3e9e66f441e7224988a01d92fad4e76545397a0f9fc854",
+    "Games/BlockBreaker/assets/tile/theme/bullet/bullet_red.tga": "5be93c972d678fbf001977b62cea23de2a9153d5eb61d190c147507f493c66ba",
+    "Games/BlockBreaker/assets/tile/theme/bullet/bullet_violett.tga": "2143bf5fd86842c329a4ea85c66f45efed76336eff2e0a18da90ca7bdec284cc",
+    "Games/BlockBreaker/assets/tile/theme/bullet/bullet_yellow.tga": "a4754212c2a76ea8408dafba6367e4a0e4623796b72937ae1d3ab5bd80dc974e",
+    "Games/BlockBreaker/assets/tile/theme/capsule/capsule_blue.tga": "27270bbac4cf51688bdf58e7365e8cb720570db8646a056a58db8946a4797dbb",
+    "Games/BlockBreaker/assets/tile/theme/capsule/capsule_green.tga": "bb0864d65ec596106db576530b8aaa3c9d0c47b85434a7419bc1afb3352d10d6",
+    "Games/BlockBreaker/assets/tile/theme/capsule/capsule_red.tga": "f4f9426c3a0f7f975c8d69229dc7eae89874118a0e976f946ee9d9f3a11e6252",
+    "Games/BlockBreaker/assets/tile/theme/capsule/capsule_violett.tga": "f91865eba592ca73f0e5f1df05dcc4c635863ca72aa2b95ffc49a30bbd336fde",
+    "Games/BlockBreaker/assets/tile/theme/capsule/capsule_yellow.tga": "ea605eb0d0e5060c1cd063eb8e0f72829232cedcc29c4f04ab958fa597df58db",
+    "Games/BlockBreaker/assets/tile/ui/bonus_250/bonus_250_blue.tga": "4cd9d0698787b42a600759734aa469037892128611702eb4798425e8dfefdaf7",
+    "Games/BlockBreaker/assets/tile/ui/bonus_250/bonus_250_green.tga": "6394d00c305481e04625907faec7488ae9ad06297baf39dca1e9c7b7dd84cba2",
+    "Games/BlockBreaker/assets/tile/ui/bonus_250/bonus_250_red.tga": "9392bc618964c8206777b60521663f2f382cc3af7988e32c680077bd27f8d52f",
+    "Games/BlockBreaker/assets/tile/ui/bonus_250/bonus_250_violett.tga": "085dab79871c4a3d1a17d09d851192d12d52c44061bcdff3a8495c539b163f20",
+    "Games/BlockBreaker/assets/tile/ui/bonus_250/bonus_250_yellow.tga": "ae19a10265c0c7bba44786fa381cb46fa4f2d32ec234cc8a7186520beb68e245",
+    "Games/BlockBreaker/assets/tile/ui/bonus_500/bonus_500_blue.tga": "b4dd73e5f70324c5a97ca1e82d025ca097b20febe054b9892e00ad4e547bcbee",
+    "Games/BlockBreaker/assets/tile/ui/bonus_500/bonus_500_green.tga": "30296348700e8d92f6fd918db984691ecda90d2a9867fc551b821a8f2149fed2",
+    "Games/BlockBreaker/assets/tile/ui/bonus_500/bonus_500_red.tga": "47364a2d5d14f3fc65839b85c86364deb448cfac8ef6ec66e1098e5dcfabe979",
+    "Games/BlockBreaker/assets/tile/ui/bonus_500/bonus_500_violett.tga": "75816fca3a6588fc87e0c1d5ff9bdf01bb2baaf56aa1869e4e373615e61644ee",
+    "Games/BlockBreaker/assets/tile/ui/bonus_500/bonus_500_yellow.tga": "1a705327ba1569f28d040110f21d781fdab483ed318d7d0bd57ef2454e66a6f0",
+    "Games/BlockBreaker/assets/tile/ui/bonus_big/bonus_big_blue.tga": "9d2a3abbd062a4990855c09f9c624eb40d0ec1cbed70451f6c01e9b9d055e5e9",
+    "Games/BlockBreaker/assets/tile/ui/bonus_big/bonus_big_green.tga": "27d796d9409d29e4b87c12c78ebfbe3f726ea25b7f073e5d88fb6daa2db84a83",
+    "Games/BlockBreaker/assets/tile/ui/bonus_big/bonus_big_red.tga": "c8781644272206340f0c4e0c79684c1f5407fe41338c4ee6dfb9744c6882893f",
+    "Games/BlockBreaker/assets/tile/ui/bonus_big/bonus_big_violett.tga": "52056bcc9f4c5a118932887eccbb5683720fe5fcf075a9d465be3fb87efabaf4",
+    "Games/BlockBreaker/assets/tile/ui/bonus_big/bonus_big_yellow.tga": "626bf5848339926db0a12b1c31f30e2491746e91197e99b9bb0fbac52b0625ae",
+    "Games/BlockBreaker/assets/tile/ui/bonus_bullet/bonus_bullet_blue.tga": "0a483bcad045625b780f589ec759d6d1f01602162c9beb43207a28e0ca5a0c60",
+    "Games/BlockBreaker/assets/tile/ui/bonus_bullet/bonus_bullet_green.tga": "8b138dc0b0d20c2eaf972d0f99ed61f04d871ef4c6b80d592b00f3553c3ff938",
+    "Games/BlockBreaker/assets/tile/ui/bonus_bullet/bonus_bullet_red.tga": "16ac740d4d2093d2a464a8bb7cf6d0b20d05990f111d842d89c84aaaa41bce6e",
+    "Games/BlockBreaker/assets/tile/ui/bonus_bullet/bonus_bullet_violett.tga": "bbd1b08363d1a0f9a00a3f32e317f5be585aab6cb000143702446b21599a7f2a",
+    "Games/BlockBreaker/assets/tile/ui/bonus_bullet/bonus_bullet_yellow.tga": "4f93a40d5273baca6543ff75ce8c752c247a9c46ecf40190bd904091d5040b6f",
+    "Games/BlockBreaker/assets/tile/ui/bonus_fast/bonus_fast_blue.tga": "9fd54bda9a175d0a618eadd843e0c182bd5292488595ac44eaf99428d5c10b7a",
+    "Games/BlockBreaker/assets/tile/ui/bonus_fast/bonus_fast_green.tga": "29db96623d040d1cfe9ab8c244a92c9495562bf51e4d602ced75267cfefaa656",
+    "Games/BlockBreaker/assets/tile/ui/bonus_fast/bonus_fast_red.tga": "8ed8cd5ee230dcfad6390f83d84a3cfe6d53cd35d43c4d1d0bc82646e3ec7e78",
+    "Games/BlockBreaker/assets/tile/ui/bonus_fast/bonus_fast_violett.tga": "1f6156e1fbf3e955e1d579afa25c86d99174aff0938ec78b29fcbc2b626265f3",
+    "Games/BlockBreaker/assets/tile/ui/bonus_fast/bonus_fast_yellow.tga": "68c408faf06593e39a25fa2fd56a1e8d3b899d3d3f0b4e222af1ada67a72ec79",
+    "Games/BlockBreaker/assets/tile/ui/bonus_lives/bonus_lives_blue.tga": "7f85271d357e701d44829b42ad77647cc7f22436251ef97b10b2023b859a5ae7",
+    "Games/BlockBreaker/assets/tile/ui/bonus_lives/bonus_lives_green.tga": "9b74c9f0b4e0df325298c4ebf3a63bac75458968746603f3db55b536f6aec06e",
+    "Games/BlockBreaker/assets/tile/ui/bonus_lives/bonus_lives_red.tga": "3642193f6d5368b6bd58cd1e46fed4389bea4dd65af6219ccfb6bfb6c8e410f0",
+    "Games/BlockBreaker/assets/tile/ui/bonus_lives/bonus_lives_violett.tga": "166f090b119fa04aff67e4484a505185a332987c5cc4d7ab015247f7cdc46ae3",
+    "Games/BlockBreaker/assets/tile/ui/bonus_lives/bonus_lives_yellow.tga": "455b9219171a7356033126004b759b0fcdac8d44bdd0fc6f54dbaeafb714d723",
+    "Games/BlockBreaker/assets/tile/ui/bonus_slow/bonus_slow_blue.tga": "c450bf0d0c22413a770e2d28ce25abcb27b6e5badf3f2ee716f86d84f8db1289",
+    "Games/BlockBreaker/assets/tile/ui/bonus_slow/bonus_slow_green.tga": "43847f7cae664ecf290011f6fae80024b19efa44a616a64bf632824579841af7",
+    "Games/BlockBreaker/assets/tile/ui/bonus_slow/bonus_slow_red.tga": "88e5e475d0a58abab76a81e4bf809d563b8559fc85b17b9294335b835ca27ad3",
+    "Games/BlockBreaker/assets/tile/ui/bonus_slow/bonus_slow_violett.tga": "fc9e4c106624f28676a52f3b5e9bb59796b0b2e9f8a1aa0a52b112d94d379ab8",
+    "Games/BlockBreaker/assets/tile/ui/bonus_slow/bonus_slow_yellow.tga": "6ee2da4cfc3d40184106e88ed21772f1a83245219d51477167e297f92ec3f5b4",
+    "Games/BlockBreaker/assets/tile/ui/bonus_small/bonus_small_blue.tga": "7d9a6b27a342eee0d503954ab162e388000868bb923c9d4052af6bf9983db9ed",
+    "Games/BlockBreaker/assets/tile/ui/bonus_small/bonus_small_green.tga": "5d61694d4afff425b42fb5a73a3cb0e0fde53ce9f9b0e235a8b142c7d55dcbae",
+    "Games/BlockBreaker/assets/tile/ui/bonus_small/bonus_small_red.tga": "ddb995a329409b4dbc1838938460f9d9767e5984249f5138c899c0143e578e16",
+    "Games/BlockBreaker/assets/tile/ui/bonus_small/bonus_small_violett.tga": "1b47f0dbfbbcdbc1ff3b4d269297531400a3048c830b210db0dc6a34d08e92f2",
+    "Games/BlockBreaker/assets/tile/ui/bonus_small/bonus_small_yellow.tga": "c2170ee7329be041b5d5c9d05fd23e8560564b5e6b30244ccda0c809e98e5e2f",
+    "Games/BlockBreaker/assets/tile/ui/bonus_strength/bonus_strength_blue.tga": "f9c8eb236add0f680907d649d2688a2b4479676d588c2d82c16dc15bfb148d7f",
+    "Games/BlockBreaker/assets/tile/ui/bonus_strength/bonus_strength_green.tga": "a60e13c6ed4e60a9894a8c3065dbeb180252c59a67da2aa7ea4db70b19f0697e",
+    "Games/BlockBreaker/assets/tile/ui/bonus_strength/bonus_strength_red.tga": "e285ac12d70bfd37619afc9531fb8bc7fdb926d117220bff293db194351bfa8a",
+    "Games/BlockBreaker/assets/tile/ui/bonus_strength/bonus_strength_violett.tga": "de191afbf69eb1b19c90254bde008dbd246ae730267f6863b0420870692e34c4",
+    "Games/BlockBreaker/assets/tile/ui/bonus_strength/bonus_strength_yellow.tga": "114ceef80d369ad0f266ef45a6983f831bda2431f07c53593572a6cfb8954e73"
+  },
+  "runtimeIntegrated": true,
+  "clientAccepted": false,
+  "presentationData": "Games/BlockBreaker/CampaignMap.lua",
+  "navigationContract": "saved-run-overview-with-exact-resume; no-individual-level-starts-or-new-stars"
+}

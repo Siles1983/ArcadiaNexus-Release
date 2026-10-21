@@ -176,12 +176,31 @@ local function Resolve(entry)
     }
 end
 
-function W:Pick(category, difficulty)
+function W:ResolveId(id,locale)
+    local data=localeData[locale or ArcadiaNexus.ActiveLocale or "enUS"] or localeData.enUS
+    for _,entry in ipairs(entries) do
+        if entry.id==id and data and data[id] then
+            return {id=id,word=data[id].word,hint=data[id].hint,catID=entry.category,
+                category=ArcadiaNexus.GetLocaleTable("HANGMAN_CATEGORIES")["cat_"..entry.category],difficulty=entry.difficulty}
+        end
+    end
+end
+
+function W:Pick(category, difficulty, history)
     local activeLocale = ArcadiaNexus.ActiveLocale or "enUS"
     local key = table.concat({ activeLocale, category or "all", difficulty or "normal" }, ":")
+    local pool=W:GetEntries(category,difficulty)
+    local allowed={}
+    history=type(history)=="table" and history or {}
+    for first=1,#history+1 do
+        local excluded={}; for i=first,#history do excluded[history[i]]=true end
+        local count=0; allowed={}
+        for _,e in ipairs(pool) do if not excluded[e.id] then allowed[e.id]=true; count=count+1 end end
+        if count>0 then break end
+    end
+    if #pool>1 and history[#history] then allowed[history[#history]]=nil end
     local bag = bags[key]
     if not bag or bag.index > #bag.pool then
-        local pool = W:GetEntries(category, difficulty)
         ArcadiaNexus.ArrayUtils.Shuffle(pool)
         if #pool > 1 and lastPicked[key] == pool[1].id then
             pool[1], pool[#pool] = pool[#pool], pool[1]
@@ -189,6 +208,16 @@ function W:Pick(category, difficulty)
         bag = { pool=pool, index=1 }
         bags[key] = bag
     end
+    -- Rotate excluded entries to the tail; keep the existing shuffled order.
+    local chosen
+    for i=bag.index,#bag.pool do if allowed[bag.pool[i].id] then chosen=i; break end end
+    if not chosen then
+        local remaining={}; for _,e in ipairs(pool) do if allowed[e.id] then remaining[#remaining+1]=e end end
+        ArcadiaNexus.ArrayUtils.Shuffle(remaining)
+        if #remaining==0 then return nil end
+        bag={pool=remaining,index=1}; bags[key]=bag; chosen=1
+    end
+    local selected=table.remove(bag.pool,chosen); table.insert(bag.pool,bag.index,selected)
     local entry = ArcadiaNexus.LevelPool.GetEntry({ active=bag.pool }, "active", bag.index)
     if not entry then return nil end
     bag.index = bag.index + 1

@@ -1,44 +1,97 @@
 --[[
     TavernCards – Settings Panel
-    Layout: P13 (2×2-Grid) via GameSettingsBuilder.BuildGrid2x2
-      Reihe 1: Sound | Hausregeln
-      Reihe 2: Theme | Anleitung
+    GS.Build, stackTheme: Sound (volle Breite), Theme, Anleitung, Hausregeln.
+    Zufälliger Charakter ist ein Eintrag im Charakter-Dropdown und setzt randomPlayerCharacter.
 ]]
 
 local GS = ArcadiaNexus.GameSettings
 local UI = ArcadiaNexus.UI
+local RANDOM_CHARACTER = "random"
 
 local function BuildTavernCardsSettingsPanel(parent)
     local S = ArcadiaNexus.TC_Settings
     if not S then return end
     local L = ArcadiaNexus.GetLocaleTable("TAVERNCARDS") or {}
 
-    GS.BuildGrid2x2(parent, {
-        settings    = S,
-        locale      = L,
-        row1Height  = 180,
-        row2Height  = 180,
-        boxes = {
-            tl = {
-                title = L.box_sounds,
-                build = function(c)
-                    GS.BuildSoundSection(c, S, L, {
-                        masterLabel = L.sound_enabled,
-                        rowSpacing  = 22,
-                        items = {
-                            { key = "soundOnPlay",    label = L.sound_play    },
-                            { key = "soundOnDraw",    label = L.sound_draw    },
-                            { key = "soundOnSpecial", label = L.sound_special },
-                            { key = "soundOnWin",     label = L.sound_win     },
-                            { key = "soundOnLose",    label = L.sound_lose    },
-                        },
-                    })
-                end,
+    local guideLines={L.guide_1,L.guide_2,L.guide_3,L.guide_4,L.guide_5,L.guide_stack_challenge,L.guide_closing,L.guide_save,L.guide_mp}
+    local guideCfg={title=L.box_guide,sections={{lines=guideLines}}}
+    local totalW=GS.GetTotalWidth(parent)
+    parent._tcGuideMeasure=parent._tcGuideMeasure or parent:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    local measure=parent._tcGuideMeasure; measure:SetWidth(totalW-UI.PAD*2); measure:Hide()
+    local wrappedHeight=48
+    for _,line in ipairs(guideLines) do measure:SetText(line); wrappedHeight=wrappedHeight+measure:GetStringHeight()+3 end
+    guideCfg.minHeight=wrappedHeight
+
+    local charOpts={{key=RANDOM_CHARACTER,label=L.random_character}}
+    for _,opt in ipairs(ArcadiaNexus.TC_NpcData:GetDropdownOptions()) do
+        charOpts[#charOpts+1]=opt
+    end
+    local function charGet()
+        if S:Get("randomPlayerCharacter") then return RANDOM_CHARACTER end
+        return S:Get("playerCharacter")
+    end
+    local function charSet(key)
+        if key==RANDOM_CHARACTER then
+            S:Set("randomPlayerCharacter", true)
+        else
+            S:Set("randomPlayerCharacter", false)
+            S:Set("playerCharacter", key)
+        end
+    end
+
+    GS.Build(parent, {
+        settings   = S,
+        locale     = L,
+        stackTheme = true,
+        sound = {
+            title       = L.box_sounds,
+            masterLabel = L.sound_enabled,
+            rowSpacing  = 22,
+            items = {
+                { key = "soundOnPlay",    label = L.sound_play    },
+                { key = "soundOnDraw",    label = L.sound_draw    },
+                { key = "soundOnSpecial", label = L.sound_special },
+                { key = "soundOnWin",     label = L.sound_win     },
+                { key = "soundOnLose",    label = L.sound_lose    },
             },
-            tr = {
-                title = L.box_rules,
-                build = function(c)
-                    local settings = S:GetAll()
+        },
+        theme = {
+            title = L.box_theme,
+            dropdown = {
+                label   = L.lbl_theme,
+                key     = "theme",
+                options = {
+                    { key = "neutral",  label = L.theme_neutral  },
+                    { key = "alliance", label = L.theme_alliance },
+                    { key = "horde",    label = L.theme_horde    },
+                },
+            },
+            build = function(content, width, _, yOff, measureOnly)
+                local extraH = 52 + 48
+                if measureOnly then return extraH end
+                local ddW = width - UI.PAD * 2 - 24
+                local charDD = UI.CreateSimpleDropdown(content, 0, yOff, ddW,
+                    L.lbl_character, charOpts, charGet, charSet)
+                if GS.TrackDropdown then GS.TrackDropdown(content, charDD, charGet) end
+                local displayItems={
+                    {key="showCardTooltips",label=L.show_card_tooltips},
+                    {key="showHouseRulesButton",label=L.show_house_rules_button},
+                }
+                for index,item in ipairs(displayItems) do
+                    local cb=UI.CreateCheckbox(content,item.label,0,yOff+52+(index-1)*24)
+                    cb:SetChecked(S:Get(item.key)~=false)
+                    cb:SetScript("OnClick",function(self) S:Set(item.key,self:GetChecked() and true or false) end)
+                    GS.TrackCheckbox(content,cb,S,item.key,"notfalse")
+                end
+                return extraH
+            end,
+        },
+        guide = guideCfg,
+        extraBoxes = {
+            {
+                title  = L.box_rules,
+                height = 160,
+                build  = function(c)
                     local ruleItems = {
                         { key = "stackDraw2",     label = L.rule_stack2     },
                         { key = "stackDraw4",     label = L.rule_stack4     },
@@ -48,72 +101,19 @@ local function BuildTavernCardsSettingsPanel(parent)
                     }
                     for i, item in ipairs(ruleItems) do
                         local cb = UI.CreateCheckbox(c, item.label, 0, (i - 1) * 24)
-                        cb:SetChecked(settings.rules[item.key])
+                        cb:SetChecked(S:GetRule(item.key))
+                        if S:IsConfigurationLocked() then cb:Disable() else cb:Enable() end
                         cb:SetScript("OnClick", function(self)
                             S:SetRule(item.key, self:GetChecked())
+                            self:SetChecked(S:GetRule(item.key) and true or false)
                         end)
                         if GS.RegisterRefresh then
                             GS.RegisterRefresh(c, function()
                                 cb:SetChecked(S:GetRule(item.key) and true or false)
+                                if S:IsConfigurationLocked() then cb:Disable() else cb:Enable() end
                             end)
                         end
                     end
-                end,
-            },
-            bl = {
-                title = L.box_theme,
-                build = function(c, innerW)
-                    local settings = S:GetAll()
-                    local themeGet = function() return S:Get("theme") end
-                    local themeDD = UI.CreateSimpleDropdown(c, 0, 0, innerW - 24,
-                        L.lbl_theme,
-                        {
-                            { key = "neutral",  label = L.theme_neutral  },
-                            { key = "alliance", label = L.theme_alliance },
-                            { key = "horde",    label = L.theme_horde    },
-                        },
-                        themeGet,
-                        function(key) S:Set("theme", key) end
-                    )
-                    if GS.TrackDropdown then GS.TrackDropdown(c, themeDD, themeGet) end
-
-                    local charOpts = {}
-                    for _, opt in ipairs(ArcadiaNexus.TC_NpcData:GetDropdownOptions()) do
-                        charOpts[#charOpts + 1] = opt
-                    end
-                    local charGet = function() return S:Get("playerCharacter") end
-                    local charDD = UI.CreateSimpleDropdown(c, 0, 52, innerW - 24,
-                        L.lbl_character, charOpts,
-                        charGet,
-                        function(key) S:Set("playerCharacter", key) end
-                    )
-                    if GS.TrackDropdown then GS.TrackDropdown(c, charDD, charGet) end
-
-                    local cbRandom = UI.CreateCheckbox(c, L.random_character, 0, 104)
-                    cbRandom:SetChecked(settings.randomPlayerCharacter)
-                    local function syncCharDropdown()
-                        local disabled = cbRandom:GetChecked()
-                        if charDD.SetEnabled then charDD:SetEnabled(not disabled) end
-                    end
-                    syncCharDropdown()
-                    cbRandom:SetScript("OnClick", function(self)
-                        S:Set("randomPlayerCharacter", self:GetChecked())
-                        syncCharDropdown()
-                    end)
-                    if GS.TrackCheckbox then
-                        GS.TrackCheckbox(c, cbRandom, S, "randomPlayerCharacter")
-                    end
-                    if GS.RegisterRefresh then
-                        GS.RegisterRefresh(c, syncCharDropdown)
-                    end
-                end,
-            },
-            br = {
-                title = L.box_guide,
-                build = function(c)
-                    UI.CreateGuideText(c, {
-                        L.guide_1, L.guide_2, L.guide_3, L.guide_4, L.guide_5, L.guide_mp,
-                    })
                 end,
             },
         },

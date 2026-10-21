@@ -9,7 +9,7 @@
         gridSize    number   Anzahl Zellen pro Seite
         snake       table    { {r,c}, ... } – Kopf = [1], Schwanz = [#]
         dir         table    {dr, dc} – aktuelle Richtung
-        nextDir     table    {dr, dc} – gepufferte nächste Richtung
+        dirQueue    table    FIFO mit höchstens zwei gültigen Kurven
         food        table    {r, c}
         score       number
         alive       bool
@@ -25,8 +25,10 @@ local L = ArcadiaNexus.SNK_Logic
 -- NewBoard
 -- ============================================================
 function L:NewBoard(config)
+    config=config or {}
     local T    = ArcadiaNexus.SNK_Themes
-    local diff = T:GetDiff(config.difficulty)
+    local difficulty=T:NormalizeDifficulty(config.difficulty)
+    local diff = T:GetDiff(difficulty)
     local g    = diff.gridSize
 
     -- Startposition: Mitte des Grids, 3 Segmente nach rechts
@@ -42,13 +44,14 @@ function L:NewBoard(config)
         gridSize   = g,
         snake      = snake,
         dir        = { dr=0, dc=1 },   -- startet nach rechts
-        nextDir    = { dr=0, dc=1 },
+        dirQueue   = {},
+        state      = "RUNNING", tickRemainder=0,
         food       = nil,
         score      = 0,
         alive      = true,
         multiplier = diff.multiplier,
-        difficulty = config.difficulty,
-        theme      = config.theme,
+        difficulty = difficulty,
+        theme      = "tiles",
         fruitsEaten = 0,
     }
 
@@ -88,13 +91,15 @@ end
 -- ============================================================
 -- QueueDir – puffert neue Richtung (verhindert 180°-Umkehr)
 -- ============================================================
-function L:QueueDir(board, dr, dc)
-    -- Keine 180°-Umkehr erlaubt
-    if dr == -board.dir.dr and dc == -board.dir.dc then return end
-    -- Keine Diagonalen
-    if dr ~= 0 and dc ~= 0 then return end
-    board.nextDir.dr = dr
-    board.nextDir.dc = dc
+function L:IsDirection(dr,dc)
+    return type(dr)=="number" and type(dc)=="number" and (dr==0 and (dc==1 or dc==-1) or dc==0 and (dr==1 or dr==-1))
+end
+function L:QueueDir(board,dr,dc)
+    if not board or not board.alive or not self:IsDirection(dr,dc) then return false end
+    local queue=board.dirQueue
+    local last=queue[#queue] or board.dir
+    if #queue>=2 or dr==last.dr and dc==last.dc or dr==-last.dr and dc==-last.dc then return false end
+    queue[#queue+1]={dr=dr,dc=dc}; return true
 end
 
 -- ============================================================
@@ -102,11 +107,11 @@ end
 -- Gibt zurück: "moved" | "ate" | "died" | "won"
 -- ============================================================
 function L:Tick(board)
-    if not board.alive then return "died" end
+    if not board.alive then return board.state=="WON" and "won" or "died" end
 
     -- Richtung übernehmen
-    board.dir.dr = board.nextDir.dr
-    board.dir.dc = board.nextDir.dc
+    local queued=table.remove(board.dirQueue,1)
+    if queued then board.dir=queued end
 
     local head  = board.snake[1]
     local g     = board.gridSize
@@ -124,10 +129,11 @@ function L:Tick(board)
     -- Selbst-Kollision prüfen (nur Körper ohne letztes Segment,
     -- da das im selben Tick wegfällt)
     local bodyLen = #board.snake
-    for i = 1, bodyLen - 1 do
+    local growing=board.food and newR==board.food.r and newC==board.food.c
+    for i = 1, bodyLen-(growing and 0 or 1) do
         local seg = board.snake[i]
         if seg.r == newR and seg.c == newC then
-            board.alive = false
+            board.alive = false; board.state="LOST"
             return "died"
         end
     end
@@ -143,6 +149,7 @@ function L:Tick(board)
         board.score = board.score + (1 * board.multiplier)
         board.food  = self:SpawnFood(board)
         if board.food == nil then
+            board.alive=false; board.state="WON"
             return "won"
         end
     end
@@ -153,4 +160,56 @@ function L:Tick(board)
     end
 
     return ate and "ate" or "moved"
+end
+
+function L:Copy(v)
+    if type(v)~="table" then return v end local out={} for k,x in pairs(v) do out[k]=self:Copy(x) end return out
+end
+function L:Snapshot(b,phase)
+    if not b or b.terminal or not b.alive or b.state~="RUNNING" then return nil end
+    local out={version=1,ruleVersion=2,phase=phase or "PLAYING"}
+    for _,key in ipairs({"gridSize","snake","dir","dirQueue","food","score","alive","state","multiplier","difficulty","theme","fruitsEaten","tickRemainder","runId"}) do out[key]=self:Copy(b[key]) end
+    out.tickRate=ArcadiaNexus.SNK_Themes:GetDiff(b.difficulty).tickRate
+    return out
+end
+function L:Restore(data)
+    local function int(n) return type(n)=="number" and n>=0 and n<math.huge and n%1==0 end
+    local function array(t)
+        if type(t)~="table" then return false end
+        for i=1,#t do if t[i]==nil then return false end end
+        for k in pairs(t) do if not int(k) or k<1 or k>#t then return false end end
+        return true
+    end
+    if type(data)~="table" or data.version~=1 or data.ruleVersion~=2 or data.terminal or data.alive~=true or data.state~="RUNNING"
+        or type(data.runId)~="string" or data.phase~="PLAYING" and data.phase~="PAUSED"
+        or not ArcadiaNexus.SNK_Themes.DIFFICULTY[data.difficulty] or data.theme~="tiles" then return nil end
+    local diff=ArcadiaNexus.SNK_Themes:GetDiff(data.difficulty); local g=diff.gridSize
+    if data.gridSize~=g or data.multiplier~=diff.multiplier or data.tickRate~=diff.tickRate
+        or not int(data.score) or not int(data.fruitsEaten) or data.score~=data.fruitsEaten*diff.multiplier
+        or not array(data.snake) or #data.snake~=data.fruitsEaten+3 or #data.snake>=g*g
+        or type(data.dir)~="table" or not self:IsDirection(data.dir.dr,data.dir.dc)
+        or not array(data.dirQueue) or #data.dirQueue>2
+        or type(data.tickRemainder)~="number" or data.tickRemainder~=data.tickRemainder or data.tickRemainder<0 or data.tickRemainder>=diff.tickRate then return nil end
+    local function cell(p) return type(p)=="table" and int(p.r) and int(p.c) and p.r>=1 and p.r<=g and p.c>=1 and p.c<=g end
+    local occupied={}
+    for i,seg in ipairs(data.snake) do
+        if not cell(seg) or occupied[seg.r*g+seg.c] then return nil end
+        occupied[seg.r*g+seg.c]=true
+        if i>1 then
+            local prev=data.snake[i-1]; local dr=(seg.r-prev.r)%g; local dc=(seg.c-prev.c)%g
+            if not (dr==0 and (dc==1 or dc==g-1) or dc==0 and (dr==1 or dr==g-1)) then return nil end
+        end
+    end
+    local head,neck=data.snake[1],data.snake[2]
+    if (neck.r+data.dir.dr-1)%g+1~=head.r or (neck.c+data.dir.dc-1)%g+1~=head.c then return nil end
+    if not cell(data.food) or occupied[data.food.r*g+data.food.c] then return nil end
+    local last=data.dir
+    for _,dir in ipairs(data.dirQueue) do
+        if type(dir)~="table" or not self:IsDirection(dir.dr,dir.dc) or dir.dr==last.dr and dir.dc==last.dc
+            or dir.dr==-last.dr and dir.dc==-last.dc then return nil end
+        last=dir
+    end
+    local b={}
+    for _,key in ipairs({"gridSize","snake","dir","dirQueue","food","score","alive","state","multiplier","difficulty","theme","fruitsEaten","tickRemainder","runId"}) do b[key]=self:Copy(data[key]) end
+    return b
 end

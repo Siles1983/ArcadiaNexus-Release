@@ -11,7 +11,7 @@
 --    Waste-1:          TOPLEFT +176/-48  (vorderste, spielbar)
 --    Foundation 1-4:   TOPLEFT +272/-48, +352/-48, +432/-48, +512/-48
 --    Tableau 1-7:      TOPLEFT +32/-160, +112/-160, ... +512/-160
---    Kontrollzeile:    Y=-392 (Undo, Score, AutoComplete)
+--    Brettaktionen:    Y=-444 (Aufgeben, Automatisch abschließen)
 --    Controls: CreateGameControlsBar "narrow"
 -- ============================================================
 
@@ -120,8 +120,6 @@ local CFG = {
     fnd_y        =  -48,
     ovr_down     =  10,   -- Overlap verdeckte Karten (Normalfall)
     ovr_up       =  15,   -- Overlap aufgedeckte Karten (Normalfall)
-    ovr_min_down =   8,   -- Overlap verdeckte Karten (Minimum)
-    ovr_min_up   =  14,   -- Overlap aufgedeckte Karten (Minimum)
     ovr_max_h    = 272,   -- Max. Stapelhöhe
 
     -- Resume-Overlay (zentriert über _F.playfield)
@@ -151,6 +149,7 @@ local _F = {
     stockFrame   = nil,
     wasteFrames  = {},    -- [1]=vorderste (spielbar), [2], [3]=hinterste
     fndFrames    = {},    -- [1..4]
+    cardFrames   = {},    -- persistente Kartenframes, höchstens 52 pro Renderer
     tabFrames    = {},    -- [1..7] = { frames[] }
     tabSlots     = {},    -- [1..7] permanente Slot-Frames für leere Spalten
     hudScore     = nil,
@@ -167,8 +166,7 @@ local _F = {
     dragWatcher  = nil,
     ghostCards   = {},
 }
--- Doppelklick über Zeitfenster, weil Refresh die Kartenframes neu baut
--- und Frame-OnDoubleClick nach dem ersten Klick nicht mehr greift.
+-- Gemeinsames Doppelklick-Zeitfenster für Maus und Cursor-Assist.
 local DBL_CLICK_SEC  = 0.35
 local DRAG_THRESHOLD = 8
 local MAX_GHOST      = 13
@@ -344,6 +342,7 @@ function R:EndDrag()
     if _dragPending and _dragPending.dimFrames then
         R:_DimFrames(_dragPending.dimFrames, 1)
     end
+    if _dragActive and GetEngine().gameState then GetEngine().gameState.selected=nil end
     _dragActive  = nil
     _dragPending = nil
     R:_HideGhost()
@@ -361,6 +360,8 @@ function R:_ActivateDrag()
     }
     _dragPending = nil
     _lastPointer = nil
+    GetEngine().gameState.selected={zone=_dragActive.zone,index=_dragActive.index,cardIndex=_dragActive.cardIndex}
+    R:Refresh(GetEngine().gameState)
     R:_DimFrames(_dragActive.dimFrames, 0.35)
     R:_ShowGhost(_dragActive.cards)
 end
@@ -499,7 +500,7 @@ function R:Init()
     for i = 1, 7 do
         _F.tabFrames[i] = {}
         -- Permanenter Slot-Frame als Klick-Ziel für leere Spalten
-        local ts = CreateFrame("Button", nil, _F.playfield)
+        local ts = R:_CreateCardSlot(_F.playfield, CFG.tableau_x[i], CFG.tableau_y, "tableau" .. i)
         ts:SetSize(CFG.card_w, CFG.card_h)
         ts:SetPoint("TOPLEFT", _F.playfield, "TOPLEFT", CFG.tableau_x[i], CFG.tableau_y)
         ts:SetFrameLevel((_F.playfield:GetFrameLevel() or 1) + 1)
@@ -547,14 +548,18 @@ function R:Init()
     })
     _F.hudScoreLbl, _F.hudTimeLbl = nil, nil
 
-    -- Auto-Complete-Button (unveraendert)
-    _F.autocmpBtn = UI.CreateArcadiaButton(_F.playfield, L["btn_auto_complete"] or "Auto-Complete", 144, 32)
-    _F.autocmpBtn:SetPoint("TOPLEFT", _F.playfield, "TOPLEFT", 144, -392)
+    -- Automatischer Abschluss unterhalb der maximalen Stapelhöhe
+    _F.autocmpBtn = UI.CreateArcadiaButton(_F.playfield, L["btn_auto_complete"] or "Automatisch abschließen", 230, 32)
+    _F.autocmpBtn:SetPoint("TOPLEFT", _F.playfield, "TOPLEFT", 176, -444)
     _F.autocmpBtn:SetScript("OnClick", function()
         local E = GetEngine()
         if E then E:OnAutoComplete() end
     end)
     _F.autocmpBtn:Hide()
+    _F.forfeitBtn = UI.CreateArcadiaButton(_F.playfield, L.btn_forfeit or "Aufgeben", 120, 32)
+    _F.forfeitBtn:SetPoint("TOPLEFT", _F.playfield, "TOPLEFT", 32, -444)
+    _F.forfeitBtn:SetScript("OnClick", function() GetEngine():RequestForfeit() end)
+    _F.forfeitBtn:Hide()
 
     -- Segment 1: Dropdown (Modus)
     local modeOpts = {
@@ -564,7 +569,7 @@ function R:Init()
     local ddAnchor = CreateFrame("Frame", nil, cf)
     ddAnchor:SetSize(120, 32)
     ddAnchor:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
-    UI.CreateSimpleDropdown(
+    _F.modeDD = UI.CreateSimpleDropdown(
         ddAnchor, 0, 0, 120,
         "",
         modeOpts,
@@ -602,7 +607,7 @@ function R:Init()
     _F.exitBtn:Hide()
 
     -- Segment 3 (x=+170): Undo-Button
-    _F.hudUndoBtn = UI.CreateArcadiaButton(cf, (L["btn_undo"] or "Rückgängig") .. " (3)", 144, 32)
+    _F.hudUndoBtn = UI.CreateArcadiaButton(cf, L["btn_undo"] or "Rückgängig", 144, 32)
     _F.hudUndoBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[3], bar.y.button)
     _F.hudUndoLbl = _F.hudUndoBtn.text
     _F.hudUndoBtn:SetScript("OnClick", function()
@@ -679,10 +684,29 @@ function R:Init()
     -- ── Save-Slot-Menü ─────────────────────────────────────────
     R:_CreateSlotMenu()
 
+    _F.container:EnableKeyboard(true)
+    _F.container:SetPropagateKeyboardInput(true)
+    _F.container:SetScript("OnKeyDown", function(frame, key)
+        frame:SetPropagateKeyboardInput(true)
+        local E, GI = GetEngine(), ArcadiaNexus.GameInput
+        if not frame:IsShown() or not E:CanInteract() then return end
+        if GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() then return end
+        if GI and (GI._overlayMode or GI._keyboardOverlays and #GI._keyboardOverlays > 0) then return end
+        if IsAltKeyDown and IsAltKeyDown() or IsShiftKeyDown and IsShiftKeyDown() then return end
+        local used = false
+        if key == "SPACE" then used = E:OnStockClick()
+        elseif key == "Z" and IsControlKeyDown and IsControlKeyDown() then used = E:OnUndo()
+        elseif key == "ESCAPE" and (E.gameState.selected or _dragActive or _dragPending) then
+            R:EndDrag(); E.gameState.selected=nil; R:Refresh(E.gameState); used=true
+        end
+        if used then frame:SetPropagateKeyboardInput(false) end
+    end)
+    R.frame, R._frames = _F.container, _F
+
     -- OnHide-Handler: SaveAndPause
     _F.container:SetScript("OnHide", function()
         ArcadiaNexus.GameSession:HandleRendererHide("SOLITAIRE", GetEngine(), function(E)
-            if E.state == "PLAYING" then
+            if E.gameState then
                 E:SaveAndPause()
             end
         end)
@@ -696,7 +720,7 @@ function R:Init()
     -- OnShow: IDLE (Slots erst nach „Spiel starten“)
     _F.container:SetScript("OnShow", function()
         local E = GetEngine()
-        if not E or E.state ~= "PLAYING" then
+        if not E or not E.gameState then
             R:SetState("IDLE")
         end
     end)
@@ -720,14 +744,18 @@ function R:_CreateSlotMenu()
             local modeLabel = loc["mode_" .. (save.mode or "1card")] or save.mode or ""
             local score = (ArcadiaNexus.Format and ArcadiaNexus.Format.Score(save.score or 0))
                 or tostring(save.score or 0)
-            return string.format(loc.slot_info or "%s · %s", modeLabel, score)
+            local gs = save.midGame or {}
+            local suffix = gs.scoreVersion == 1 and loc.slot_legacy or ""
+            if gs.phase == "WIN" or gs.phase == "LOSS" then suffix = loc.slot_completed end
+            return string.format(loc.slot_info or "%s · %s", modeLabel, score) .. (suffix and suffix ~= "" and " · " .. suffix or "")
         end,
-        isPaused      = function(save) return save.midGame ~= nil end,
+        canContinue   = function(save) return GetEngine():CanContinueSave(save) end,
+        isPaused      = function(save) return GetEngine():CanContinueSave(save) end,
         onNewGame     = function(slot)
             local E = GetEngine()
             local S2 = GetSettings()
             if E then
-                E:StartGame({ slot = slot, mode = "new", cardMode = S2 and S2:Get("mode") })
+                E:StartGame({ slot = slot, mode = "new", cardMode = S2 and S2:Get("mode"), overwrite = true })
             end
         end,
         onContinue    = function(slot)
@@ -771,70 +799,39 @@ end
 
 -- ── Karten-Frame erstellen ────────────────────────────────────
 function R:_CreateCardFrame(parent, card, x, y, zone, idx, cardIdx)
-    local f = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    f:SetSize(CFG.card_w, CFG.card_h)
+    local key = card.suit .. ":" .. card.rank
+    local f = _F.cardFrames[key]
+    if not f then
+        f = self:_CreateCardSlot(parent, x, y, key)
+        _F.cardFrames[key] = f
+        f._tex = f:CreateTexture(nil, "ARTWORK")
+        f._tex:SetPoint("TOPLEFT", f, "TOPLEFT", 2, -2)
+        f._tex:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -2, 2)
+        f:SetScript("OnMouseDown", function(self, btn)
+            if not PadClickMode() and btn == "LeftButton" then R:_StartPointer(self._zone, self._idx, self._cardIdx) end
+        end)
+        f:SetScript("OnMouseUp", function(self, btn)
+            if not PadClickMode() and btn == "LeftButton" then R:_EndPointer(self._zone, self._idx, self._cardIdx) end
+        end)
+        f:SetScript("OnClick", function(self, btn)
+            if not PadClickMode() then return end
+            if btn == "RightButton" then GetEngine():OnCardDoubleClick(self._zone, self._idx, self._cardIdx)
+            elseif btn == "LeftButton" then R:_HandleCardClick(self._zone, self._idx, self._cardIdx) end
+        end)
+        f:SetScript("OnEnter", function(self)
+            if GetEngine():CanInteract() and self._card.faceUp then self:SetBackdropBorderColor(unpack(COL.gold)) end
+        end)
+        f:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(unpack(self._baseBorder)) end)
+    end
+    f:ClearAllPoints()
     f:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    f:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 2,
-        insets   = {left=2,right=2,top=2,bottom=2},
-    })
+    f._tex:SetTexture(card.faceUp and R:GetCardTexture(card) or R:GetCardBack())
+    f._card, f._zone, f._idx, f._cardIdx = card, zone, idx, cardIdx
+    f._baseBorder = {0.35, 0.33, 0.25, 0.9}
+    f:SetBackdropBorderColor(unpack(f._baseBorder))
     f:SetBackdropColor(1, 1, 1, 1)
-    f:SetBackdropBorderColor(0.35, 0.33, 0.25, 0.9)
-    f:EnableMouse(true)
-    if f.RegisterForClicks then
-        f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    end
-
-    local tex = f:CreateTexture(nil, "ARTWORK")
-    tex:SetPoint("TOPLEFT",  f, "TOPLEFT",  2,  -2)
-    tex:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -2, 2)
-    f._tex = tex
-
-    -- Textur setzen
-    if card.faceUp then
-        tex:SetTexture(R:GetCardTexture(card))
-    else
-        tex:SetTexture(R:GetCardBack())
-    end
-
-    -- Metadaten für Event-Handler
-    f._card    = card
-    f._zone    = zone
-    f._idx     = idx
-    f._cardIdx = cardIdx
-
-    f:SetScript("OnMouseDown", function(self, btn)
-        if PadClickMode() then return end
-        if btn ~= "LeftButton" then return end
-        R:_StartPointer(self._zone, self._idx, self._cardIdx)
-    end)
-    f:SetScript("OnMouseUp", function(self, btn)
-        if PadClickMode() then return end
-        if btn ~= "LeftButton" then return end
-        R:_EndPointer(self._zone, self._idx, self._cardIdx)
-    end)
-    f:SetScript("OnClick", function(self, btn)
-        if not PadClickMode() then return end
-        if btn == "RightButton" then
-            local E = GetEngine()
-            if E then E:OnCardDoubleClick(self._zone, self._idx, self._cardIdx) end
-            return
-        end
-        if btn == "LeftButton" then
-            R:_HandleCardClick(self._zone, self._idx, self._cardIdx)
-        end
-    end)
-
-    f:SetScript("OnEnter", function(self)
-        if self._zone ~= "stock" and not (self._card and self._card.faceUp) then return end
-        f:SetBackdropBorderColor(COL.gold[1], COL.gold[2], COL.gold[3], 1.0)
-    end)
-    f:SetScript("OnLeave", function(self)
-        f:SetBackdropBorderColor(0.35, 0.33, 0.25, 0.9)
-    end)
-
+    f:SetAlpha(1)
+    f:Show()
     return f
 end
 
@@ -853,20 +850,16 @@ function R:_RebuildTableau(gs)
         local xBase = CFG.tableau_x[col]
         local yOff  = CFG.tableau_y
 
-        -- Dynamischer Overlap: benötigte Höhe berechnen
+        -- Die letzte Karte zählt mit ihrer vollständigen Höhe; nur Zwischenräume stauchen.
         local nDown, nUp = 0, 0
-        for _, card in ipairs(cards) do
-            if card.faceUp then nUp = nUp + 1 else nDown = nDown + 1 end
+        for row = 1, #cards - 1 do
+            if cards[row].faceUp then nUp = nUp + 1 else nDown = nDown + 1 end
         end
         local needed = nDown * CFG.ovr_down + nUp * CFG.ovr_up
-        local ovDown = CFG.ovr_down
-        local ovUp   = CFG.ovr_up
-        if needed > CFG.ovr_max_h and (nDown + nUp) > 1 then
-            -- Overlap proportional stauchen bis CFG.ovr_max_h passt
-            local ratio  = CFG.ovr_max_h / needed
-            ovDown = math.max(CFG.ovr_min_down, math.floor(CFG.ovr_down * ratio))
-            ovUp   = math.max(CFG.ovr_min_up,   math.floor(CFG.ovr_up   * ratio))
-        end
+        local budget = CFG.ovr_max_h - CFG.card_h
+        local ratio = needed > budget and budget / needed or 1
+        local ovDown = math.floor(CFG.ovr_down * ratio)
+        local ovUp = math.floor(CFG.ovr_up * ratio)
 
         for row = 1, #cards do
             local card    = cards[row]
@@ -892,7 +885,8 @@ function R:_RebuildTableau(gs)
             for row = selIdx, #cards do
                 local f = _F.tabFrames[col][row]
                 if f then
-                    f:SetBackdropBorderColor(COL.gold[1], COL.gold[2], COL.gold[3], 1.0)
+                    f._baseBorder = {COL.gold[1], COL.gold[2], COL.gold[3], 1.0}
+                    f:SetBackdropBorderColor(unpack(f._baseBorder))
                 end
             end
         end
@@ -925,6 +919,7 @@ function R:_UpdateStock(gs)
         _F.stockFrame._emptyLbl:Show()
     end
     if _F.stockFrame._emptyLbl then
+        _F.stockFrame._emptyLbl:SetText(#gs.waste > 0 and (GetLocale().stock_recycle or "NEU") or "–")
         _F.stockFrame._emptyLbl:SetShown(#gs.stock == 0)
     end
 end
@@ -1037,6 +1032,7 @@ function R:Refresh(gs)
     R:_UpdateFoundation(gs)
     R:_RebuildTableau(gs)
     R:_UpdateUndoButton(gs)
+    R:_UpdateInteraction(gs)
 end
 
 -- ── HUD-Update ────────────────────────────────────────────────
@@ -1054,20 +1050,35 @@ end
 
 function R:_UpdateUndoButton(gs)
     if not _F.hudUndoBtn or not gs then return end
-    local undosLeft = 3 - #gs.undoStack
-    local L = GetLocale()
-    if _F.hudUndoLbl then
-        _F.hudUndoLbl:SetText(
-            (L["btn_undo"] or "Rückgängig") ..
-            " (" .. undosLeft .. " " .. (L["lbl_undo_left"] or "übrig") .. ")"
-        )
+    _F.hudUndoLbl:SetText(GetLocale().btn_undo or "Rückgängig")
+    if GetEngine():CanInteract() and #gs.undoStack > 0 then _F.hudUndoBtn:Enable() else _F.hudUndoBtn:Disable() end
+end
+
+function R:_UpdateInteraction(gs)
+    local manual = GetEngine():CanInteract()
+    local L = GetLogic()
+    _F.stockFrame:EnableMouse(manual and (#gs.stock > 0 or #gs.waste > 0))
+    _F.stockFrame:SetAlpha((#gs.stock > 0 or #gs.waste > 0) and 1 or 0.45)
+    if #gs.stock > 0 then _F.stockFrame:SetAlpha(1) end
+    for i, ff in ipairs(_F.fndFrames) do
+        local target = gs.selected and L:CanMove(gs, gs.selected, {zone="foundation", index=i})
+        ff:EnableMouse(manual)
+        ff:SetAlpha((not gs.selected or target or #gs.foundation[FOUNDATION_KEYS[i]] > 0) and 1 or 0.45)
+        if not gs.selected or target then ff:SetAlpha(1) end
+        if target then ff:SetBackdropBorderColor(unpack(COL.highlight)) end
     end
-    local canUndo = #gs.undoStack > 0
-    if canUndo then
-        _F.hudUndoBtn:Enable()
-    else
-        _F.hudUndoBtn:Disable()
+    for col = 1, 7 do
+        local target = gs.selected and L:CanMove(gs, gs.selected, {zone="tableau", index=col})
+        _F.tabSlots[col]:EnableMouse(manual)
+        _F.tabSlots[col]:SetBackdropBorderColor(unpack(target and COL.highlight or {0.35,0.33,0.25,0.8}))
+        _F.tabSlots[col]:SetAlpha((not gs.selected or target or #gs.tableau[col] > 0) and 1 or 0.45)
+        for _, f in ipairs(_F.tabFrames[col]) do
+            f:EnableMouse(manual)
+            if target then f._baseBorder={COL.highlight[1],COL.highlight[2],COL.highlight[3],1}; f:SetBackdropBorderColor(unpack(f._baseBorder)) end
+        end
     end
+    for i, wf in ipairs(_F.wasteFrames) do wf:EnableMouse(manual and i == 1 and #gs.waste > 0) end
+    if _F.forfeitBtn then _F.forfeitBtn:SetShown(manual) end
 end
 
 -- ── Auto-Complete Button ein/ausblenden ───────────────────────
@@ -1106,6 +1117,7 @@ function R:ClearBoard()
             if ff._cardTex then ff._cardTex:Hide() end
         end
     end
+    if _F.forfeitBtn then _F.forfeitBtn:Hide() end
     -- HUD verstecken
     if _F.hudScoreBox then _F.hudScoreBox:Hide() end
     if _F.hudTimeBox  then _F.hudTimeBox:Hide()  end
@@ -1117,42 +1129,22 @@ function R:SetState(state)
     local L = GetLocale()
     _lastPointer = nil
     R:EndDrag()
-    if state == "IDLE" or state == "WIN" or state == "GAMEOVER" then
-        R._uiState = "IDLE"
-        if state == "IDLE" then
-            R:ClearBoard()
-        end
-        if _F.toggleBtn  then _F.toggleBtn:SetLabel(L["btn_start"] or "Spiel starten"); _F.toggleBtn:Show() end
-        if _F.exitBtn    then _F.exitBtn:Hide() end
-        if _F.logoTex    then _F.logoTex:Show()  end
-        if _F.slotMenu   then _F.slotMenu:Hide() end
-        if _F.canvas and ArcadiaNexus.UI then
-            ArcadiaNexus.UI.HideResultDialog(_F.canvas)
-        end
-        if _F.resumeOverlay then _F.resumeOverlay:Hide() end
-    elseif state == "PLAYING" then
-        R._uiState = "PLAYING"
-        if _F.toggleBtn  then _F.toggleBtn:Hide() end
-        if _F.exitBtn    then _F.exitBtn:Show()  end
-        if _F.logoTex    then _F.logoTex:Hide()  end
-        if _F.slotMenu   then _F.slotMenu:Hide() end
-        -- Slots einblenden
-        if _F.stockFrame then _F.stockFrame:Show() end
-        for i = 1, 4 do if _F.fndFrames[i]  then _F.fndFrames[i]:Show()  end end
-        for i = 1, 7 do if _F.tabSlots[i]   then _F.tabSlots[i]:Show()   end end
-        -- HUD einblenden und zurücksetzen
-        local Lhud = L
-        if _F.hudScoreBox then _F.hudScoreBox:Show() end
-        if _F.hudTimeBox  then _F.hudTimeBox:Show()  end
-        if _F.hudScore then _F.hudScore:SetText((Lhud["lbl_score"] or "Punkte") .. ": 0") end
-        if _F.hudTime  then _F.hudTime:SetText((Lhud["lbl_time"] or "Zeit") .. ": 00:00") end
-        if _F.hudUndoBtn  then _F.hudUndoBtn:Show()  ; _F.hudUndoBtn:Disable()      end
-        if _F.hudUndoLbl  then _F.hudUndoLbl:SetText("Rückgängig (3 übrig)")        end
-        if _F.canvas and ArcadiaNexus.UI then
-            ArcadiaNexus.UI.HideResultDialog(_F.canvas)
-        end
-        if _F.resumeOverlay then _F.resumeOverlay:Hide() end
+    R._uiState = state
+    if _F.modeDD then _F.modeDD:SetEnabled(state == "IDLE"); _F.modeDD:RefreshDisplay() end
+    if _F.slotMenu then _F.slotMenu:Hide() end
+    if _F.toggleBtn then _F.toggleBtn:SetShown(state == "IDLE") end
+    if _F.exitBtn then _F.exitBtn:SetShown(state ~= "IDLE") end
+    if _F.logoTex then _F.logoTex:SetShown(state == "IDLE") end
+    if state == "IDLE" then
+        R:ClearBoard()
+        if _F.canvas then ArcadiaNexus.UI.HideResultDialog(_F.canvas); ArcadiaNexus.UI.HideChoicePopup(_F.canvas) end
+        return
     end
+    _F.stockFrame:Show()
+    for _, f in ipairs(_F.fndFrames) do f:Show() end
+    for _, f in ipairs(_F.tabSlots) do f:Show() end
+    _F.hudScoreBox:Show(); _F.hudTimeBox:Show(); _F.hudUndoBtn:Show()
+    if state == "PLAYING" or state == "AUTO" then ArcadiaNexus.UI.HideResultDialog(_F.canvas) end
 end
 
 -- ── Theme-Wechsel: Hintergrund + Kartenrücken aktualisieren ──
@@ -1162,30 +1154,41 @@ function R:RefreshBackground()
     end
 end
 
+function R:ConfirmForfeit(sid, runId)
+    local UI, L = ArcadiaNexus.UI, GetLocale()
+    UI.ShowChoicePopup({parent=_F.canvas, title=L.confirm_forfeit, body=L.confirm_forfeit_body,
+        buttons={
+            {label=L.btn_forfeit, onClick=function() UI.HideChoicePopup(_F.canvas); GetEngine():ConfirmForfeit(sid, runId) end},
+            {label=L.btn_cancel, onClick=function() UI.HideChoicePopup(_F.canvas) end},
+        },
+    })
+end
+
+function R:ShowResultPending()
+    local UI, L = ArcadiaNexus.UI, GetLocale()
+    UI.ShowArcadeResult(_F.canvas, {title=L.result_pending, hideHighscore=true, L=L,
+        buttons={
+            {label=L.btn_retry, onClick=function() GetEngine():RetryResult() end},
+            {label=L.btn_exit, onClick=function() GetEngine():SaveAndPause() end},
+        },
+    })
+end
+
 function R:ShowResult(result, score)
     if not _F.canvas then return end
-    local L      = GetLocale()
-    local UI     = ArcadiaNexus.UI
-    local parent = _F.canvas
-    local won    = result == "WIN"
-
-    UI.ShowArcadeResult(parent, {
-        title      = won and (L["state_win"] or "Gewonnen!") or (L["state_gameover"] or "Keine Züge mehr!"),
-        titleColor = won and {1.0, 0.82, 0.0} or {0.9, 0.3, 0.3},
-        score      = score,
-        scoreLabel = L["lbl_score"] or "Punkte",
-        gameId     = "SOLITAIRE",
-        result     = won and "WIN" or "LOSS",
-        L          = L,
-        onRetry    = function()
-            local E = GetEngine()
-            local S = GetSettings()
-            if E and S then E:StartGame({ mode = "new", cardMode = S:Get("mode") }) end
-        end,
-        onExit     = function()
-            local E = GetEngine()
-            if E then E:StopGame() end
-            R:SetState("IDLE")
-        end,
+    local E, L = GetEngine(), GetLocale()
+    local gs, data = E.gameState, E._lastResult or {}
+    local actualMode = gs.mode
+    local scores = ArcadiaNexus.ScoreManager:GetScores("SOLITAIRE", actualMode)
+    local records = scores and scores.winScores or {}
+    ArcadiaNexus.UI.ShowArcadeResult(_F.canvas, {
+        title=result == "WIN" and L.state_win or L.state_gameover,
+        score=score, scoreLabel=L.lbl_score, gameId="SOLITAIRE", difficulty=actualMode, result=result, L=L,
+        xp=data.awardedXP or 0, gold=data.awardedGold or 0,
+        hideHighscore=gs.scoreVersion ~= 2 or result ~= "WIN",
+        highscore=records[1] and records[1].value or 0,
+        newHighscore=data.newMetricRecords and data.newMetricRecords.winScores or false,
+        onRetry=function() E:SaveAndPause(); GetSettings():Set("mode", actualMode); R:EnterSlotMenu() end,
+        onExit=function() E:SaveAndPause() end,
     })
 end

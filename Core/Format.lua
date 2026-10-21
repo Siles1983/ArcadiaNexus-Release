@@ -60,3 +60,18 @@ function F.Score(number)
     end
     return tostring(number)
 end
+
+-- Stored integer milliseconds; display tenths, rank using the full value.
+function F.Milliseconds(ms)
+    local tenths=math.floor(math.max(0,ms or 0)/100)
+    return F.SecondsMMSS(math.floor(tenths/10)).."."..tostring(tenths%10)
+end
+
+-- Exact half units, with client-local decimal separator (no rounding).
+function F.HalfUnits(units)
+    local sign=units<0 and "-" or ""
+    units=math.abs(units)
+    local base=F.Score(math.floor(units/2))
+    local sep=GetLocale and GetLocale()=="deDE" and "," or "."
+    return sign..base..(units%2==1 and sep.."5" or "")
+end

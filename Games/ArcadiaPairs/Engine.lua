@@ -111,15 +111,14 @@ function E:OnMatchReject(f)
 end
 
 function E:OnMatchResult(node, resultId)
+    if self._resultEmitted then return true end
     if self.match ~= node or not self._sessionId or node:GetState() ~= "FINISHED" then return end
-    if self._resultEmitted then return end
-    self._resultEmitted = true
     local board = self:GetBoardState()
     local result = (board and board.result) or "DRAW"
     local score = 0
     if result == "WIN" then score = 150
     elseif result == "DRAW" then score = 50 end
-    ArcadiaNexus.Engine:Emit("GAME_RESULT", {
+    local payload = {
         gameId = "ARCADIAPAIRS",
         resultId = resultId,
         matchHost = node.hostKey,
@@ -131,8 +130,12 @@ function E:OnMatchResult(node, resultId)
             pairs = board and board.pairs or 0,
             vsHuman = 1,
         },
-    })
+    }
+    ArcadiaNexus.Engine:Emit("GAME_RESULT", payload)
+    if payload.matchBooked ~= true then return false end
+    self._resultEmitted = true
     self:MaybeShowResult(result, board)
+    return true
 end
 
 function E:MaybeShowResult(result, board)
@@ -180,16 +183,14 @@ function E:StartGame(config)
         })
         return
     end
+    if self.match and not self.match._closed then return false end
+    local sid = ArcadiaNexus.Lifecycle:ClaimRestart("ARCADIAPAIRS", E._sessionId)
+    if not sid then return false end
     self.mode = mode
     self._resultEmitted = false
     self._notice = nil
-
     self:StopMatchQuiet()
-    if self.activeGame then
-        self:StopGame()
-    end
-
-    E._sessionId = ArcadiaNexus.Lifecycle:RestartGame("ARCADIAPAIRS", E._sessionId)
+    E._sessionId = sid
     local S = ArcadiaNexus.AP_Settings
     local cfg = {
         difficulty  = (config and config.difficulty) or (S and S:Get("difficulty")) or "easy",

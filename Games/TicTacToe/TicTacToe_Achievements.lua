@@ -4,11 +4,11 @@
 ]]
 local ArcadiaNexus = _G.ArcadiaNexus
 
-local function getTotalWins(db, gameId)
+local function getTotalWins(db, gameId, prefix)
     if not db.leaderboard or not db.leaderboard[gameId] then return 0 end
     local total = 0
-    for _, entry in pairs(db.leaderboard[gameId]) do
-        total = total + (entry.wins or 0)
+    for key, entry in pairs(db.leaderboard[gameId]) do
+        if key:match(prefix or "^solo_") then total = total + (entry.wins or 0) end
     end
     return total
 end
@@ -17,9 +17,9 @@ local function maxCustom(db, gameId, key)
     local lb = db.leaderboard and db.leaderboard[gameId]
     if not lb then return 0 end
     local best = 0
-    for _, entry in pairs(lb) do
+    for variant, entry in pairs(lb) do
         local v = entry.customStats and entry.customStats[key]
-        if type(v) == "number" and v > best then best = v end
+        if variant:match("^solo_") and type(v) == "number" and v > best then best = v end
     end
     return best
 end
@@ -34,16 +34,22 @@ local function vsAI(data)
     return not data.stats or (data.stats.vsHuman or 0) == 0
 end
 
+local function earned(db,id)
+    local p=db.achievements and db.achievements.progress[id]
+    return p and p.legacyEarned or 0
+end
+
 ArcadiaNexus.RegisterAchievements({
 
     {
         id="TTT_WINS", gameId="TICTACTOE", category="GESCHICK",
         title_de="Kreis und Kreuz", title_en="X Marks the Spot",
-        desc_de="Gewinne Spiele in Tic-Tac-Toe.", desc_en="Win games of Tic-Tac-Toe.",
+        desc_de="Gewinne Bretter gegen die KI in Tic-Tac-Toe.", desc_en="Win Tic-Tac-Toe boards against the AI.",
         icon="Interface\\Icons\\INV_Misc_Rune_01",
         condition = function(data, db)
             if data.gameId ~= "TICTACTOE" then return 0 end
-            return getTotalWins(db, "TICTACTOE")
+            if not vsAI(data) then return nil end
+            return earned(db,"TTT_WINS")+getTotalWins(db, "TICTACTOE")
         end,
         tiers = {
             { id="TTT_WINS_BRONZE", tierName="Bronze", target=5,  xp=15, desc_de="Gewinne 5x.",  desc_en="Win 5 games."  },
@@ -60,10 +66,7 @@ ArcadiaNexus.RegisterAchievements({
         condition = function(data, db)
             if data.gameId ~= "TICTACTOE" or data.result ~= "WIN" then return 0 end
             if not vsAI(data) then return 0 end
-            local entry = db.leaderboard and db.leaderboard["TICTACTOE"]
-            if not entry then return 0 end
-            local h = entry["hard"] or entry["HARD"] or {}
-            return h.wins or 0
+            return earned(db,"TTT_HARD")+getTotalWins(db,"TICTACTOE","^solo_hard_")
         end,
         tiers = {
             { id="TTT_HARD_BRONZE", tierName="Bronze", target=1,  xp=20, desc_de="Gewinne 1x auf Schwer.",  desc_en="Win 1 on Hard."  },
@@ -75,21 +78,21 @@ ArcadiaNexus.RegisterAchievements({
     {
         id="TTT_STREAK", gameId="TICTACTOE", category="GESCHICK",
         title_de="Serie halten", title_en="On a Roll",
-        desc_de="Gewinne hintereinander gegen die KI.",
-        desc_en="Win consecutive games against the AI.",
+        desc_de="Gewinne Best-of-3-Serien derselben Regelvariante ohne Niederlage, Remis oder Abbruch.",
+        desc_en="Win best-of-3 series with the same rules, without losses, draws or abandonment.",
         icon="Interface\\Icons\\Spell_Nature_BloodLust",
         condition = function(data, db)
             if data.gameId ~= "TICTACTOE" then return 0 end
-            if not vsAI(data) then return maxCustom(db, "TICTACTOE", "winStreak") end
-            local now = data.stats and data.stats.winStreak or 0
-            local stored = maxCustom(db, "TICTACTOE", "winStreak")
+            if not vsAI(data) then return nil end
+            local now = data.stats and data.stats.seriesStreak or 0
+            local stored = maxCustom(db, "TICTACTOE", "seriesStreak")
             if now > stored then return now end
             return stored
         end,
         tiers = {
-            { id="TTT_STREAK_BRONZE", tierName="Bronze", target=3, xp=20, desc_de="3 Siege in Folge.", desc_en="Win 3 in a row." },
-            { id="TTT_STREAK_SILBER", tierName="Silber", target=5, xp=35, desc_de="5 Siege in Folge.", desc_en="Win 5 in a row." },
-            { id="TTT_STREAK_GOLD",   tierName="Gold",   target=8, xp=55, desc_de="8 Siege in Folge.", desc_en="Win 8 in a row." },
+            { id="TTT_STREAK_BRONZE", tierName="Bronze", target=3, xp=20, desc_de="3 Seriensiege in Folge.", desc_en="Win 3 series in a row." },
+            { id="TTT_STREAK_SILBER", tierName="Silber", target=5, xp=35, desc_de="5 Seriensiege in Folge.", desc_en="Win 5 series in a row." },
+            { id="TTT_STREAK_GOLD", tierName="Gold", target=8, xp=55, desc_de="8 Seriensiege in Folge.", desc_en="Win 8 series in a row." },
         },
     },
 
@@ -171,8 +174,8 @@ ArcadiaNexus.RegisterAchievements({
     {
         id="TTT_QUICK", gameId="TICTACTOE", category="GESCHICK",
         title_de="Kurzes Spiel", title_en="Short Game",
-        desc_de="Gewinne ein klassisches 3×3 in wenigen Zügen.",
-        desc_en="Win classic 3×3 in few moves.",
+        desc_de="Gewinne ein klassisches 3×3 mit wenigen gesetzten Steinen beider Seiten.",
+        desc_en="Win classic 3×3 with few total marks placed by both sides.",
         icon="Interface\\Icons\\Ability_Rogue_Sprint",
         condition = function(data, db)
             if data.gameId ~= "TICTACTOE" or data.result ~= "WIN" then return 0 end
@@ -185,9 +188,9 @@ ArcadiaNexus.RegisterAchievements({
             return 0
         end,
         tiers = {
-            { id="TTT_QUICK_BRONZE", tierName="Bronze", target=1, xp=20, desc_de="Sieg in max. 9 Zügen.", desc_en="Win in at most 9 moves." },
-            { id="TTT_QUICK_SILBER", tierName="Silber", target=2, xp=35, desc_de="Sieg in max. 7 Zügen.", desc_en="Win in at most 7 moves." },
-            { id="TTT_QUICK_GOLD",   tierName="Gold",   target=3, xp=55, desc_de="Sieg in max. 5 Zügen.",  desc_en="Win in at most 5 moves." },
+            { id="TTT_QUICK_BRONZE", tierName="Bronze", target=1, xp=20, desc_de="Sieg mit max. 9 Steinen beider Seiten.", desc_en="Win with at most 9 total marks." },
+            { id="TTT_QUICK_SILBER", tierName="Silber", target=2, xp=35, desc_de="Sieg mit max. 7 Steinen beider Seiten.", desc_en="Win with at most 7 total marks." },
+            { id="TTT_QUICK_GOLD", tierName="Gold", target=3, xp=55, desc_de="Sieg mit max. 5 Steinen beider Seiten.", desc_en="Win with at most 5 total marks." },
         },
     },
 

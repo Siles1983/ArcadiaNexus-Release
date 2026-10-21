@@ -1,297 +1,177 @@
---[[
-    ArcadiaNexus – Barrel Brawl
-    Games/BarrelBrawl/Engine.lua
-    Version: 1.0.0
-
-    State-Machine: IDLE → PLAYING ⇄ PAUSED → GAMEOVER → IDLE
-
-    Session-Ownership:
-      StartGame: E._sessionId = Lifecycle:RestartGame("BARREL_BRAWL", E._sessionId)
-      StopGame : Lifecycle:EndGame("BARREL_BRAWL", E._sessionId)
-      Pause    : Lifecycle:PauseGame / ResumeGame (Session bleibt registriert)
-
-    Timer/Loops:
-      GameLoop   – Physik/Bewegung (Gravitation, Laufen, Klettern, Rollen)
-      TimerGuard – periodischer Fass-Spawn (Intervall sinkt pro Level)
-
-    Events (BRB_ Prefix):
-      BRB_GAME_STARTED(board)
-      BRB_GAME_STOPPED()
-]]
-
-local ArcadiaNexus = _G.ArcadiaNexus
-ArcadiaNexus.BRB_Engine = {}
-local E = ArcadiaNexus.BRB_Engine
-
-local GAME_ID = "BARREL_BRAWL"
-
-E._sessionId  = nil
-E.board       = nil
-E.state       = "IDLE"   -- IDLE | PLAYING | PAUSED | GAMEOVER
-E._generation = 0
-
-local _gameLoop   = ArcadiaNexus.GameLoop.Create("ArcadiaNexus_BRB_LoopFrame")
-local _timerGuard = ArcadiaNexus.TimerGuard.New()
-
--- ============================================================
--- Sound
--- ============================================================
-local function PlayBRB(event)
-    local S = ArcadiaNexus.BRB_Settings
-    if not S or not S:Get("soundEnabled") then return end
-    if event == "start" then
-        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or 774, "SFX")
-    elseif event == "jumped" and S:Get("soundOnScore") then
-        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF or 775, "SFX")
-    elseif (event == "hit" or event == "lost" or event == "timeout") and S:Get("soundOnHit") then
-        PlaySound(SOUNDKIT.INTERFACE_SOUND_LOST_TARGET_UNIT or 847, "SFX")
-    elseif event == "rescue" and S:Get("soundOnWin") then
-        PlaySound(SOUNDKIT.READY_CHECK or 8960, "SFX")
-    end
+-- Barrel Brawl: session-owned run; all gameplay clocks live in Logic.
+local A=_G.ArcadiaNexus
+A.BRB_Engine={state="IDLE",board=nil,_sessionId=nil,_generation=0}
+local E=A.BRB_Engine
+local GAME_ID="BARREL_BRAWL"
+local loop=A.GameLoop.Create("ArcadiaNexus_BRB_LoopFrame")
+local function Sound(event)
+    local S=A.BRB_Settings
+    if not S:Get("soundEnabled") then return end
+    local key,sound
+    if event=="start" then sound=774
+    elseif event=="jumped" then key,sound="soundOnScore",775
+    elseif event=="hit" then key,sound="soundOnHit",847
+    elseif event=="rescue" then key,sound="soundOnWin",8960
+    elseif event=="warning" then key,sound="soundOnWarning",8959 end
+    if sound and (not key or S:Get(key)) then PlaySound(sound,"SFX") end
 end
-
--- ============================================================
--- Loop & Spawner
--- ============================================================
 function E:_StartLoop()
-    _gameLoop:Start(function(dt) E:_Tick(dt) end, {
-        stateCheck = function() return E.state == "PLAYING" end,
-    })
+    loop:Start(function(dt) E:_Tick(dt) end,{stateCheck=function() return E.state=="PLAYING" end})
 end
-
---- Fass-Spawner (neu bewaffnet nach jedem Level, Intervall sinkt).
-function E:_ArmSpawner()
-    _timerGuard:Cancel()
-    if not self.board then return end
-
-    -- erstes Fass kurz nach Start/Levelwechsel, danach periodisch
-    _timerGuard:After(1.0, function()
-        if E.state == "PLAYING" and E.board then
-            ArcadiaNexus.BRB_Logic:SpawnBarrel(E.board)
-        end
-    end)
-    _timerGuard:EveryTicker(self.board.spawnInterval, function()
-        if E.state == "PLAYING" and E.board then
-            ArcadiaNexus.BRB_Logic:SpawnBarrel(E.board)
-        end
-    end)
+function E:_NeutralizeInput()
+    A.BRB_Logic:Neutralize(self.board)
+    self._blockedKeys=self._blockedKeys or {}
+    for key,down in pairs(self._heldKeys or {}) do if down then self._blockedKeys[key]=true end end
+    self._padBlocked=self._padBlocked or {}
+    for key,down in pairs(self._padHeld or {}) do if down then self._padBlocked[key]=true end end
+    if math.abs(self._padX or 0)>0.35 or math.abs(self._padY or 0)>0.35 then self._axisBlocked=true end
 end
-
-function E:_Tick(dt)
-    if self.state ~= "PLAYING" or not self.board then return end
-    local gen   = self._generation
-    local board = self.board
-    local Logic = ArcadiaNexus.BRB_Logic
-    local R     = ArcadiaNexus.BRB_Renderer
-
-    local events = Logic:Update(board, dt)
-    if self._generation ~= gen then return end   -- StopGame in einem Callback
-
-    local rearm = false
-    for _, ev in ipairs(events) do
-        PlayBRB(ev.type)
-        if ev.type == "rescue" then rearm = true end
-    end
-    if rearm then
-        self:_ArmSpawner()   -- kuerzeres Intervall des neuen Levels uebernehmen
-    end
-
-    if R and R.OnFrame then R:OnFrame(board, events) end
-
-    if board.state == "LOST" then
-        self:_HandleGameOver()
+function E:RetryPending()
+    local S=A.BRB_Settings
+    for id,data in pairs(A.BRB_Logic:Copy(S:GetPending())) do
+        A.Engine:Emit("GAME_RESULT",data)
+        if data.processed then S:ClearPending(id) end
     end
 end
-
--- ============================================================
--- StartGame
--- ============================================================
 function E:StartGame(config)
-    _timerGuard:Cancel()
-    _gameLoop:Stop()
-    self._generation = self._generation + 1
-
-    local S = ArcadiaNexus.BRB_Settings
-    if type(config) ~= "table" then config = {} end
-    local slot = config.slot or (S and S:GetActiveSlot()) or 1
-    if S and (slot < 1 or slot > S.MAX_SLOTS) then return end
-    local mode = config.mode or "new"
-    if S then S:SetActiveSlot(slot) end
-    self.activeSlot = slot
-
-    local boardCfg = {
-        difficulty = config.difficulty or (S and S:Get("difficulty")) or "normal",
-    }
-    if mode == "continue" and S then
-        local saved = S:LoadProgress(slot)
-        if saved then
-            boardCfg.difficulty = saved.diff or boardCfg.difficulty
-            boardCfg.level      = saved.level
-            boardCfg.score      = saved.score
-            boardCfg.lives      = saved.lives
-            boardCfg.time       = saved.time
-            boardCfg.stats      = saved.stats
+    config=type(config)=="table" and config or {}
+    local S,L=A.BRB_Settings,A.BRB_Logic
+    local slot=tonumber(config.slot or S:GetActiveSlot())
+    if not slot or slot%1~=0 or slot<1 or slot>S.MAX_SLOTS then return end
+    if config.mode and config.mode~="new" and config.mode~="continue" then return end
+    local save=config.mode=="continue" and S:LoadProgress(slot) or nil
+    if config.mode=="continue" and not save then return end
+    local diff=save and (save.difficulty or save.diff) or config.difficulty or S:Get("difficulty")
+    if not L.DIFFICULTY[diff] then return end
+    local board
+    if save and save.version then
+        if save.version~=2 then return end
+        board=L:Restore(save)
+        if not board or not A.LocalResults:GetSerial(GAME_ID,board.runId) then return end
+    else
+        local cfg={difficulty=diff}
+        if save then
+            local function number(n) return type(n)=="number" and n==n and n>=0 and n<math.huge end
+            if not number(save.level) or save.level<1 or save.level%1~=0
+                or not number(save.lives) or save.lives%1~=0 or save.lives<1 or save.lives>3
+                or not number(save.score or 0) or (save.score or 0)%1~=0 or not number(save.time or 0)
+                or save.stats~=nil and type(save.stats)~="table" then return end
+            for _,key in ipairs({"jumped","rescues","spawned"}) do
+                local n=save.stats and save.stats[key] or 0
+                if not number(n) or n%1~=0 then return end
+            end
+            for _,k in ipairs({"level","score","lives","time","stats"}) do cfg[k]=save[k] end
         end
-    elseif mode == "new" and S then
-        S:ResetSlot(slot)
+        board=L:NewBoard(cfg)
+        if save then board.legacyContinuation=true end
     end
-
-    local board = ArcadiaNexus.BRB_Logic:NewBoard(boardCfg)
-    if not board then return end   -- Validierung vor BeginGame
-
-    E._sessionId = ArcadiaNexus.Lifecycle:RestartGame(GAME_ID, E._sessionId)
-    self.board = board
-    self.state = "PLAYING"
-
-    PlayBRB("start")
-    ArcadiaNexus.Engine:Emit("BRB_GAME_STARTED", board)
-
-    self:_StartLoop()
-    self:_ArmSpawner()
+    self:RetryPending()
+    local receipt=board.runId and A.LocalResults:GetReceipt(board.runId)
+    if receipt then return end
+    if self.board and self.state~="IDLE" and self.state~="GAMEOVER" then S:SaveProgress(self.board,self.activeSlot,self.state) end
+    loop:Stop(); self:_NeutralizeInput(); self._generation=self._generation+1
+    local previous=self._sessionId
+    self._sessionId=A.Lifecycle:RestartGame(GAME_ID,self._sessionId)
+    if not self._sessionId then self._sessionId=previous; return end
+    self.activeSlot=slot; S:SetActiveSlot(slot)
+    board.runId=board.runId or A.LocalResults:NewRun(GAME_ID)
+    self.board=board; self.state=save and save.version==2 and save.phase or "PLAYING"
+    S:SaveProgress(board,slot,self.state)
+    local gen=self._generation
+    Sound("start"); A.Engine:Emit("BRB_GAME_STARTED",board)
+    if self.board~=board or self._generation~=gen then return end
+    if self.state=="PAUSED" then
+        A.Lifecycle:PauseGame(GAME_ID,self._sessionId)
+        local R=A.BRB_Renderer; if R and R.OnPauseChanged then R:OnPauseChanged(true) end
+    else self:_StartLoop() end
 end
-
--- ============================================================
--- Pause (P) – Session bleibt registriert
--- ============================================================
 function E:TogglePause()
-    local R = ArcadiaNexus.BRB_Renderer
-    if self.state == "PLAYING" then
-        if E._sessionId then
-            ArcadiaNexus.Lifecycle:PauseGame(GAME_ID, E._sessionId)
-        end
-        self.state = "PAUSED"
-        if R and R.OnPauseChanged then R:OnPauseChanged(true) end
-    elseif self.state == "PAUSED" then
-        if E._sessionId then
-            ArcadiaNexus.Lifecycle:ResumeGame(GAME_ID, E._sessionId)
-        end
-        self.state = "PLAYING"
-        if R and R.OnPauseChanged then R:OnPauseChanged(false) end
-    end
+    if self.state~="PLAYING" and self.state~="PAUSED" then return end
+    self:_NeutralizeInput()
+    local paused=self.state=="PLAYING"
+    self.state=paused and "PAUSED" or "PLAYING"
+    if paused then loop:Stop(); A.Lifecycle:PauseGame(GAME_ID,self._sessionId)
+    else A.Lifecycle:ResumeGame(GAME_ID,self._sessionId); self:_StartLoop() end
+    local R=A.BRB_Renderer; if R and R.OnPauseChanged then R:OnPauseChanged(paused) end
 end
-
--- ============================================================
--- Game Over
--- ============================================================
-function E:_HandleGameOver()
-    self.state = "GAMEOVER"
-    local board = self.board
-    if not board then return end
-
-    local S = ArcadiaNexus.BRB_Settings
-    if S then S:ClearProgress() end
-
-    _timerGuard:Cancel()
-    if E._sessionId then
-        ArcadiaNexus.Lifecycle:EndGame(GAME_ID, E._sessionId)
-        E._sessionId = nil
+function E:_Tick(dt)
+    if self.state~="PLAYING" or not self.board then return end
+    if GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() then self:_NeutralizeInput() end
+    local board,gen=self.board,self._generation
+    local events=A.BRB_Logic:Update(board,dt)
+    if board.state=="LOST" then self:_HandleGameOver(true) end
+    if self.board~=board or self._generation~=gen then return end
+    for _,ev in ipairs(events) do
+        if ev.type=="hit" or ev.type=="rescue" then self:_NeutralizeInput() end
+        Sound(ev.type)
     end
-
-    local payload = {
-        gameId     = GAME_ID,
-        difficulty = board.difficulty,
-        score      = board.score or 0,
-        result     = (board.stats.rescues > 0) and "WIN" or "LOSS",
-        stats      = {
-            levelReached  = board.level,
-            rescues       = board.stats.rescues,
-            barrelsJumped = board.stats.jumped,
-        },
-    }
-    ArcadiaNexus.Engine:Emit("GAME_RESULT", payload)
-    local isNew = payload.newHighscore == true
-
-    local R = ArcadiaNexus.BRB_Renderer
-    if R and R.OnGameOver then R:OnGameOver(board, isNew) end
+    local R=A.BRB_Renderer
+    if R and R.OnFrame then R:OnFrame(board,events) end
+    if self.board~=board or self._generation~=gen then return end
+    if self.state=="GAMEOVER" and R and R.OnGameOver then R:OnGameOver(board,board.resultData and board.resultData.newHighscore) end
 end
-
--- ============================================================
--- Eingabe (vom Renderer-KeyFrame)
--- ============================================================
+function E:_HandleGameOver(deferPresentation)
+    local board=self.board
+    if not board or board.state~="LOST" or board.resultLocked then return false end
+    board.resultLocked=true; self.state="GAMEOVER"; loop:Stop(); self:_NeutralizeInput()
+    local S=A.BRB_Settings; S:ClearProgress(self.activeSlot)
+    -- Session bleibt bis SaveAndPause/StopGame, damit der Ergebnisdialog beim Verlassen schließt.
+    local data={gameId=GAME_ID,difficulty=board.difficulty,score=board.score,ruleVersion=2,runId=board.runId,
+        result=board.stats.rescues>0 and "WIN" or "LOSS",reason=board.endCause,
+        elapsedMs=math.floor(board.time*1000+0.5),
+        stats={levelReached=board.level,rescues=board.stats.rescues,barrelsJumped=board.stats.jumped}}
+    S:SavePending(data); A.Engine:Emit("GAME_RESULT",data)
+    if data.processed then S:ClearPending(board.runId) end
+    board.resultData=data
+    if self.board~=board then return true end
+    local R=A.BRB_Renderer
+    if not deferPresentation and R and R.OnGameOver then R:OnGameOver(board,data.newHighscore) end
+    return true
+end
 function E:HandleKeyDown(key)
-    if key == "ESCAPE" then
-        if self.state ~= "IDLE" then
-            self:SaveAndPause()
-            local R = ArcadiaNexus.BRB_Renderer
-            if R and R.EnterIdleState then R:EnterIdleState() end
-        end
+    self._heldKeys,self._blockedKeys=self._heldKeys or {},self._blockedKeys or {}
+    if self._heldKeys[key] then return end
+    self._heldKeys[key]=true
+    if self._blockedKeys[key] then return end
+    if GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() then self:_NeutralizeInput(); return end
+    if key=="ESCAPE" then
+        if self.state~="IDLE" then self:StopGame() end
         return
-    end
-    if key == "P" then
-        self:TogglePause()
-        return
-    end
-    if self.state ~= "PLAYING" or not self.board then return end
-    local Logic = ArcadiaNexus.BRB_Logic
-
-    if key == "A" or key == "LEFT" then
-        Logic:Press(self.board, "left")
-    elseif key == "D" or key == "RIGHT" then
-        Logic:Press(self.board, "right")
-    elseif key == "W" or key == "UP" then
-        Logic:Press(self.board, "up")
-    elseif key == "S" or key == "DOWN" then
-        Logic:Press(self.board, "down")
-    elseif key == "SPACE" then
-        Logic:QueueJump(self.board)
-    end
+    elseif key=="P" then self:TogglePause(); return end
+    if self.state~="PLAYING" or not self.board then return end
+    local dir=({A="left",LEFT="left",D="right",RIGHT="right",W="up",UP="up",S="down",DOWN="down"})[key]
+    if dir then A.BRB_Logic:Press(self.board,dir)
+    elseif key=="SPACE" then A.BRB_Logic:QueueJump(self.board) end
 end
-
 function E:HandleKeyUp(key)
-    if not self.board then return end
-    local Logic = ArcadiaNexus.BRB_Logic
-
-    if key == "A" or key == "LEFT" then
-        Logic:Release(self.board, "left")
-    elseif key == "D" or key == "RIGHT" then
-        Logic:Release(self.board, "right")
-    elseif key == "W" or key == "UP" then
-        Logic:Release(self.board, "up")
-    elseif key == "S" or key == "DOWN" then
-        Logic:Release(self.board, "down")
+    self._heldKeys=self._heldKeys or {}; self._blockedKeys=self._blockedKeys or {}
+    self._heldKeys[key]=nil; self._blockedKeys[key]=nil
+    local dir=({A="left",LEFT="left",D="right",RIGHT="right",W="up",UP="up",S="down",DOWN="down"})[key]
+    if dir and self.board then A.BRB_Logic:Release(self.board,dir) end
+end
+function E:HandlePadButton(btn,pressed)
+    self._padHeld,self._padBlocked=self._padHeld or {},self._padBlocked or {}
+    self._padHeld[btn]=pressed or nil
+    if not pressed then self._padBlocked[btn]=nil end
+    local key=({PAD1="SPACE",PADFORWARD="P",PAD4="P",PADLEFT="LEFT",PADRIGHT="RIGHT",PADUP="UP",PADDOWN="DOWN"})[btn]
+    if not key then return end
+    if not pressed then self:HandleKeyUp(key) elseif not self._padBlocked[btn] then self:HandleKeyDown(key) end
+end
+function E:HandlePadAxis(x,y,dz)
+    dz=dz or 0.35; self._padX,self._padY=x,y
+    if math.abs(x)<=dz and math.abs(y)<=dz then self._axisBlocked=nil end
+    if self._axisBlocked then return end
+    for key,down in pairs({LEFT=x < -dz,RIGHT=x > dz,UP=y > dz,DOWN=y < -dz}) do
+        if down then self:HandleKeyDown(key) else self:HandleKeyUp(key) end
     end
 end
-
--- ============================================================
--- StopGame (Abbruch oder nach Game-Over-Dialog)
--- ============================================================
-function E:StopGame()
-    if E._sessionId then
-        ArcadiaNexus.Lifecycle:EndGame(GAME_ID, E._sessionId)
-        E._sessionId = nil
-    end
-    _timerGuard:Cancel()
-    _gameLoop:Stop()
-    self.state       = "IDLE"
-    self.board       = nil
-    self._generation = self._generation + 1
-
-    ArcadiaNexus.Engine:Emit("BRB_GAME_STOPPED")
-end
-
 function E:SaveAndPause()
-    local board = self.board
-    local S     = ArcadiaNexus.BRB_Settings
-    if board and S and self.state ~= "GAMEOVER" then
-        S:SaveProgress({
-            level = board.level,
-            score = board.score,
-            lives = board.lives,
-            diff  = board.difficulty,
-            time  = board.time,
-            stats = board.stats,
-        })
-    end
-    if E._sessionId then
-        ArcadiaNexus.Lifecycle:PauseGame(GAME_ID, E._sessionId)
-    end
-    _timerGuard:Cancel()
-    _gameLoop:Stop()
-    if E._sessionId then
-        ArcadiaNexus.Lifecycle:EndGame(GAME_ID, E._sessionId)
-        E._sessionId = nil
-    end
-    self.state       = "IDLE"
-    self.board       = nil
-    self._generation = self._generation + 1
+    local S=A.BRB_Settings
+    if self.board and (self.state=="PLAYING" or self.state=="PAUSED") then S:SaveProgress(self.board,self.activeSlot,self.state) end
+    if self._sessionId then A.Lifecycle:PauseGame(GAME_ID,self._sessionId); A.Lifecycle:EndGame(GAME_ID,self._sessionId); self._sessionId=nil end
+    loop:Stop(); self:_NeutralizeInput(); self.state="IDLE"; self.board=nil; self._generation=self._generation+1
+end
+function E:StopGame()
+    self:SaveAndPause()
+    A.Engine:Emit("BRB_GAME_STOPPED")
 end

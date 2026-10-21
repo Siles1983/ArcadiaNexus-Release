@@ -34,8 +34,8 @@ local function GetCalendarDay(timestamp)
         - 32045
 end
 
--- Alte Exporte speichern den Bonus-Anspruch noch im zurücksetzbaren Streak.
--- Der neue Anspruch gehört zur erhaltenen Gold-Bilanz und gilt pro Kalendertag.
+-- Ältere Speicherstände können den Bonus-Anspruch noch am Streak tragen.
+-- Der Anspruch gehört zur Gold-Bilanz und gilt pro Kalendertag.
 local function MigrateBonusClaim()
     local db = ArcadiaNexus.StatsStore.GetStreak()
     local gold = ArcadiaNexus.TavernGoldStore.Get()

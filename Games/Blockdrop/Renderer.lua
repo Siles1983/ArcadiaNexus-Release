@@ -217,7 +217,7 @@ function R:_CreateMainFrame()
                 E:SaveAndPause()
             end
         end)
-        if R.state == "MENU" then
+        if ArcadiaNexus.BLD_Engine.state=="IDLE" or R.state == "MENU" then
             R:EnterIdleState()
         end
     end)
@@ -538,13 +538,7 @@ function R:_BuildGrid(board)
             if btn ~= "RightButton" then return end
             local E2 = ArcadiaNexus.BLD_Engine
             if not E2 or E2.state ~= "PLAYING" then return end
-            local L2 = ArcadiaNexus.BLD_Logic
-            if L2 then L2:Rotate(E2._board) end
-            R:UpdatePiece(E2._board)
-            local S_ = ArcadiaNexus.BLD_Settings
-            if S_ and S_:Get("snd_rotate") then
-                PlaySoundFile("Interface\\AddOns\\ArcadiaNexus\\Games\\Blockdrop\\assets\\sounds\\rotate_piece.wav", "Master")
-            end
+            E2:Rotate()
         end)
         self._gridFrame = gf
     end
@@ -665,6 +659,7 @@ end
 -- EnterIdleState
 -- ============================================================
 function R:EnterIdleState()
+    if self._lineFeedback then self._lineFeedback:Hide() end; self._lineFeedbackT=nil
     self.state = "IDLE"
 
     if self._gridFrame      then self._gridFrame:Hide()      end
@@ -701,9 +696,12 @@ end
 -- EnterPlayState (vom Engine aufgerufen)
 -- ============================================================
 function R:EnterPlayState(board)
+    if self._lineFeedback then self._lineFeedback:Hide() end; self._lineFeedbackT=nil
     self.state = "PLAYING"
 
-    if self._hintFS     then self._hintFS:Hide()     end
+    if self._hintFS then
+        if board.legacyContinuation then self._hintFS:SetText(ArcadiaNexus.GetLocaleTable("BLOCKDROP").legacy_save); self._hintFS:Show() else self._hintFS:Hide() end
+    end
     if self._logoTex    then self._logoTex:Hide()     end
     if self._slotMenu   then self._slotMenu:Hide()    end
     if self.overlay     then self.overlay:Hide()      end
@@ -979,18 +977,24 @@ function R:ShowGameOver(board)
     if self._startBtn then self._startBtn:Hide() end
     if self._exitBtn  then self._exitBtn:Show()  end
 
+    local E=ArcadiaNexus.BLD_Engine
+    local data=board.resultData or {}
     UI.ShowArcadeResult(self._fieldFrame, {
         title      = _L["gameover_title"],
         titleColor = { 1, 0.3, 0.3 },
         score      = board.score,
         gameId     = "BLOCKDROP",
-        difficulty = board.difficulty,
+        difficulty = "normal",
+        xp=data.awardedXP or 0, gold=data.awardedGold or 0,
+        hideHighscore=board.legacyContinuation==true,
+        subtitle=board.legacyContinuation and _L.legacy_save or nil,
+        isCurrent=function() return E._board==board and E.state=="GAMEOVER" end,
         result     = "LOSS",
         lines      = { _L["gameover_lines"] .. (board.lines or 0) },
         L          = _L,
         onRetry    = function()
             local E = ArcadiaNexus.BLD_Engine
-            if E then E:StartGame({ mode = "new" }) end
+            if E then E:StartGame({ mode = "new",slot=E.activeSlot }) end
         end,
         onExit     = function()
             local E = ArcadiaNexus.BLD_Engine
@@ -1005,7 +1009,7 @@ end
 -- ============================================================
 function R:RefreshTheme()
     local E = ArcadiaNexus.BLD_Engine
-    if E and E.state == "PLAYING" and E._board then
+    if E and (E.state == "PLAYING" or E.state=="PAUSED") and E._board then
         self:FullRedraw(E._board)
     end
 end
@@ -1021,7 +1025,7 @@ function R:RefreshBackground()
         -- Zellen-Cache leeren für neuen BG-Aufbau
         self._builtCS  = nil
         self._builtBG  = nil
-        if E.state == "PLAYING" then
+        if E.state == "PLAYING" or E.state == "PAUSED" then
             self:_BuildGrid(E._board)
             self:FullRedraw(E._board)
         end
@@ -1042,3 +1046,27 @@ ArcadiaNexus.RegisterGame({
     logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\Blockdrop\\assets\\logo\\logo_blockdrop",
     xp        = 10,
 })
+
+function R:ShowInvalidSave()
+    local L=ArcadiaNexus.GetLocaleTable("BLOCKDROP")
+    if self._hintFS then self._hintFS:SetText(L.invalid_save); self._hintFS:Show() end
+    local UI=ArcadiaNexus.UI
+    if UI.ShowChoicePopup then
+        UI.ShowChoicePopup({parent=self.frame,title=L.invalid_save,body=L.invalid_save_body,
+            buttons={{label=L.btn_menu,onClick=function() UI.HideChoicePopup(self.frame) end}}})
+    end
+end
+function R:ShowLineFeedback(lines)
+    if not self._lineFeedback then
+        self._lineFeedback=self._fieldFrame:CreateFontString(nil,"OVERLAY","GameFontNormalLarge")
+        self._lineFeedback:SetPoint("TOP",self._fieldFrame,"TOP",0,-8)
+    end
+    local L=ArcadiaNexus.GetLocaleTable("BLOCKDROP")
+    self._lineFeedback:SetText("+"..lines.." "..L.label_lines); self._lineFeedback:Show(); self._lineFeedbackT=0.45
+end
+function R:UpdateFeedback(dt)
+    if self._lineFeedbackT then
+        self._lineFeedbackT=self._lineFeedbackT-dt
+        if self._lineFeedbackT<=0 then self._lineFeedbackT=nil; self._lineFeedback:Hide() end
+    end
+end

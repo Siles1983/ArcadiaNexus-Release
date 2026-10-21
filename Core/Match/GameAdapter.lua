@@ -98,6 +98,22 @@ function Match.HideEngineView(engine)
     end
 end
 
+function Match.ClientSettled(node)
+    if not node or node._closed then return false end
+    if not node.GetState or node:GetState() ~= "FINISHED" then return false end
+    if node._resultBusy then return false end
+    return type(node.processedResultId) == "string" and node.processedResultId ~= ""
+end
+
+function Match.ReleaseSettledClient(engine, node)
+    if not engine or engine.match ~= node or not Match.ClientSettled(node) then return false end
+    local resultId = node.processedResultId
+    if engine.match ~= node or node.processedResultId ~= resultId or node._resultBusy then return false end
+    node:Dispose({ keepTerminal = true })
+    if engine.match == node then engine.match = nil end
+    return true
+end
+
 function Match.StopEngineMatch(engine)
     local node = engine.match
     if not node then return end
@@ -106,6 +122,30 @@ function Match.StopEngineMatch(engine)
 end
 
 --- Host/Join/Rejoin. true = MP-Pfad erledigt (Caller return); false = lokales Spiel.
+local function ProtectedMatch(engine)
+    local node = engine.match
+    if not node or node._closed then
+        if node then engine.match = nil end
+        return nil
+    end
+    if Match.ClientSettled(node) then return nil end
+    return node
+end
+
+local function AttachFreshClient(engine, matchOptsFn)
+    if ProtectedMatch(engine) then return nil, "held" end
+    if not Match.HasMp() then return nil end
+    local opts = matchOptsFn(engine)
+    local node = Match.CreateGameClient(opts)
+    if not node then return nil end
+    if ProtectedMatch(engine) then
+        node:Dispose()
+        return nil, "held"
+    end
+    engine.match = node
+    return node
+end
+
 function Match.BeginNetworkedGame(engine, gameId, config, notify, matchOptsFn, hooks)
     config = config or {}
     hooks = hooks or {}
@@ -118,18 +158,38 @@ function Match.BeginNetworkedGame(engine, gameId, config, notify, matchOptsFn, h
         notify()
         return true
     end
+    -- Ein lebender Client bleibt Eigentümer von Transport und Ticket.
+    -- Ohne bestätigten MatchShell-Abschluss wird hier nicht gewechselt.
+    if ProtectedMatch(engine) then
+        return true
+    end
+    local previousMode = engine.mode
+    local sid = ArcadiaNexus.Lifecycle:ClaimRestart(gameId, engine._sessionId)
+    if not sid then
+        engine._notice = "session"
+        notify()
+        return true
+    end
+    local retiring = engine.match
+    if retiring and not Match.ReleaseSettledClient(engine, retiring) and engine.match and not engine.match._closed then
+        ArcadiaNexus.Lifecycle:EndGame(gameId, sid)
+        return true
+    end
+    engine._sessionId = sid
     engine.mode = mode
     engine._resultEmitted = false
     engine._notice = nil
     if hooks.onBefore then hooks.onBefore(engine, config) end
-    if engine.StopMatchQuiet then
-        engine:StopMatchQuiet()
-    else
-        Match.StopEngineMatch(engine)
+    local node, held = AttachFreshClient(engine, matchOptsFn)
+    if held == "held" then
+        ArcadiaNexus.Lifecycle:EndGame(gameId, sid)
+        if engine._sessionId == sid then engine._sessionId = nil end
+        engine.mode = previousMode
+        return true
     end
-    local node = Match.EnsureGameClient(engine, matchOptsFn)
     if not node then
         Match.EndGameClient(engine, gameId)
+        engine.mode = previousMode or "hotseat"
         engine._notice = "nomp"
         notify()
         return true
@@ -149,8 +209,7 @@ function Match.BeginNetworkedGame(engine, gameId, config, notify, matchOptsFn, h
             notify()
             return true
         end
-        engine._sessionId = ArcadiaNexus.Lifecycle:RestartGame(gameId, engine._sessionId)
-        if mode == "rejoin" then
+    if mode == "rejoin" then
             if not config.matchId or not node.Rejoin then
                 Match.EndGameClient(engine, gameId)
                 engine._notice = "joinhint"
@@ -173,7 +232,6 @@ function Match.BeginNetworkedGame(engine, gameId, config, notify, matchOptsFn, h
         notify()
         return true
     end
-    engine._sessionId = ArcadiaNexus.Lifecycle:RestartGame(gameId, engine._sessionId)
     if config.policy and node.SetPolicy then
         if not node:SetPolicy(config.policy, config.pin) then
             Match.EndGameClient(engine, gameId)

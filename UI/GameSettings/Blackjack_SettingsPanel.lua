@@ -63,7 +63,7 @@ local function BuildBlackjackSettingsPanel(parent)
             sections = {
                 GS.GuideSection(nil, L, {
                     "guide_1", "guide_2", "guide_3", "guide_4", "guide_5",
-                    "guide_6", "guide_7", "guide_8", "guide_9",
+                    "guide_6", "guide_7", "guide_8", "guide_9", "guide_10", "guide_11", "guide_12", "guide_13",
                 }, 15),
             },
         },

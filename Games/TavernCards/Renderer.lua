@@ -45,6 +45,8 @@ local CFG = {
     draw_btn_h    = 28,
     draw_btn_x    = -246,
     draw_btn_y    = 10,
+    action_inset  = 8,
+    action_gap    = 8,
     dd_w          = 110,
     card_w        = 52,
     card_h        = 72,
@@ -211,6 +213,7 @@ function R:Init()
     self:_CreateActionButtons()
     self:_CreateColorPicker()
     self:_CreateFlyOverlay()
+    self:_CreateSlotMenu()
     if ArcadiaNexus.TC_NpcData then
         ArcadiaNexus.TC_NpcData:WarmupCache()
     end
@@ -394,63 +397,37 @@ function R:_CreateControls()
     local ddDiff = CreateFrame("Frame", nil, pair)
     ddDiff:SetSize(CFG.dd_w, CFG.btn_h)
     ddDiff:SetPoint("LEFT", pair, "LEFT", 0, 0)
-    UI.CreateSimpleDropdown(ddDiff, 0, 0, CFG.dd_w, "", {
+    self._diffDD = UI.CreateSimpleDropdown(ddDiff, 0, 0, CFG.dd_w, "", {
         { key = "easy", label = L("diff_easy") },
         { key = "normal", label = L("diff_normal") },
         { key = "hard", label = L("diff_hard") },
-    }, function() return R._lastDiff or "easy" end, function(k) R._lastDiff = k end)
+    }, function() return ArcadiaNexus.TC_Settings:Get("difficulty") end, function(k) ArcadiaNexus.TC_Settings:Set("difficulty",k) end)
 
     local ddAi = CreateFrame("Frame", nil, pair)
     ddAi:SetSize(ddAiW, CFG.btn_h)
     ddAi:SetPoint("RIGHT", pair, "RIGHT", 0, 0)
-    UI.CreateSimpleDropdown(ddAi, 0, 0, ddAiW, "", {
+    self._aiDD = UI.CreateSimpleDropdown(ddAi, 0, 0, ddAiW, "", {
         { key = "1", label = L("ai_1") }, { key = "2", label = L("ai_2") }, { key = "3", label = L("ai_3") },
-    }, function() return tostring(R._lastAI or 1) end, function(k) R._lastAI = tonumber(k) or 1 end)
+    }, function() return tostring(ArcadiaNexus.TC_Settings:Get("aiCount")) end, function(k) ArcadiaNexus.TC_Settings:Set("aiCount",tonumber(k)) end)
 
     self._ddPair = pair
 
     self._startBtn = UI.CreateArcadiaButton(cf, L("btn_start"), CFG.btn_w, CFG.btn_h)
     self._startBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
-    self._startBtn:SetScript("OnClick", function()
-        local E = ArcadiaNexus.TC_Engine
-        if E.mode and E.mode ~= "hotseat" then
-            E:StopGame()
-            return
-        end
-        if E.state ~= "IDLE" then
-            E:StopGame()
-        elseif R:_HasPausedGame() then
-            E:ResumeGame()
-        else
-            E:StartGame({ difficulty = R._lastDiff or "easy", aiCount = R._lastAI or 1,
-                gameMode = R._lastMode or "single", pointTarget = R._lastTarget or 500 })
-        end
-    end)
-
-    self._resumeBtn = UI.CreateArcadiaButton(cf, L("btn_resume"), CFG.btn_w, CFG.btn_h)
-    self._resumeBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
-    self._resumeBtn:Hide()
-    self._resumeBtn:SetScript("OnClick", function()
-        ArcadiaNexus.TC_Engine:ResumeGame()
+    self._startBtn:SetScript("OnClick",function()
+        local E=ArcadiaNexus.TC_Engine
+        if E.state~="IDLE" then E:StopGame() else R:EnterSlotMenu() end
     end)
 
     local ddMode = CreateFrame("Frame", nil, cf)
     ddMode:SetSize(CFG.dd_w, CFG.btn_h)
     ddMode:SetPoint("CENTER", cf, "CENTER", bar.segX[3], bar.y.dropdownOfs)
     self._ddModeAnchor = ddMode
-    UI.CreateSimpleDropdown(ddMode, 0, 0, CFG.dd_w, "", {
+    self._modeDD = UI.CreateSimpleDropdown(ddMode, 0, 0, CFG.dd_w, "", {
         { key = "single", label = L("mode_single") }, { key = "multi", label = L("mode_multi") },
-    }, function() return R._lastMode or "single" end, function(k) R._lastMode = k end)
+    }, function() return ArcadiaNexus.TC_Settings:Get("gameMode") end, function(k) ArcadiaNexus.TC_Settings:Set("gameMode",k) end)
 
-    self._newGameBtn = UI.CreateArcadiaButton(cf, L("btn_new_game"), CFG.btn_w, CFG.btn_h)
-    self._newGameBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[3], bar.y.button)
-    self._newGameBtn:Hide()
-    self._newGameBtn:SetScript("OnClick", function()
-        ArcadiaNexus.TC_Engine:StartGame({
-            difficulty = R._lastDiff or "easy", aiCount = R._lastAI or 1,
-            gameMode = R._lastMode or "single", pointTarget = R._lastTarget or 500,
-        })
-    end)
+
 end
 
 function R:_CreateActionButtons()
@@ -460,15 +437,28 @@ function R:_CreateActionButtons()
     self._drawBtn = UI.CreateArcadiaButton(pf, L("btn_draw"), CFG.draw_btn_w, CFG.draw_btn_h)
     self._drawBtn:SetPoint("BOTTOMRIGHT", pf, "BOTTOMRIGHT", CFG.draw_btn_x, CFG.draw_btn_y)
     self._drawBtn:SetScript("OnClick", function() ArcadiaNexus.TC_Engine:PlayerDraw(false) end)
+    self._forfeitBtn=UI.CreateArcadiaButton(pf,L("btn_forfeit"),100,28)
+    self._forfeitBtn:SetPoint("BOTTOMLEFT",pf,"BOTTOMLEFT",CFG.action_inset,CFG.draw_btn_y)
+    self._forfeitBtn:SetScript("OnClick",function() ArcadiaNexus.TC_Engine:RequestForfeit() end)
+    self._rulesBtn=UI.CreateArcadiaButton(pf,L("box_rules"),100,28)
+    self._rulesBtn:SetPoint("BOTTOMRIGHT",pf,"BOTTOMRIGHT",-CFG.action_inset,CFG.draw_btn_y)
+    self._rulesBtn:SetScript("OnEnter",function(frame) R:ShowRulesTooltip(frame) end)
+    self._rulesBtn:SetScript("OnLeave",function() if GameTooltip then GameTooltip:Hide() end end)
+    self._pointsFS=pf:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    self._pointsFS:SetPoint("TOP",pf,"TOP",0,-4); self._pointsFS:SetWidth(560)
     self._passBtn = UI.CreateArcadiaButton(pf, L("btn_pass"), 80, 28)
-    self._passBtn:SetPoint("RIGHT", self._drawBtn, "LEFT", -8, 0)
+    -- Draw/Pass and UNO/Catch are mutually exclusive phase actions, so each pair shares a slot.
+    -- 592px field: Forfeit 8..108, UNO 116..196 / Catch 116..206,
+    -- Draw 246..346 / Pass 256..336, Rules 484..584. Minimum edge gap: 8px.
+    local decisionX=CFG.field_w+CFG.draw_btn_x-CFG.draw_btn_w/2
+    self._passBtn:SetPoint("BOTTOM",pf,"BOTTOMLEFT",decisionX,CFG.draw_btn_y)
     self._passBtn:Hide()
     self._passBtn:SetScript("OnClick", function() ArcadiaNexus.TC_Engine:PlayerPassAfterDraw() end)
     self._unoBtn = UI.CreateArcadiaButton(pf, L("btn_uno"), 80, 28)
-    self._unoBtn:SetPoint("RIGHT", self._passBtn, "LEFT", -8, 0)
+    self._unoBtn:SetPoint("BOTTOMLEFT",pf,"BOTTOMLEFT",CFG.action_inset+100+CFG.action_gap,CFG.draw_btn_y)
     self._unoBtn:SetScript("OnClick", function() ArcadiaNexus.TC_Engine:PlayerCallUno() end)
     self._catchBtn = UI.CreateArcadiaButton(pf, L("btn_catch"), 90, 28)
-    self._catchBtn:SetPoint("RIGHT", self._unoBtn, "LEFT", -8, 0)
+    self._catchBtn:SetPoint("BOTTOMLEFT",pf,"BOTTOMLEFT",CFG.action_inset+100+CFG.action_gap,CFG.draw_btn_y)
     self._catchBtn:Hide()
     self._catchBtn:SetScript("OnClick", function() ArcadiaNexus.TC_Engine:PlayerCatchUno() end)
     self._challengeBtn = UI.CreateArcadiaButton(pf, L("btn_challenge"), 90, 28)
@@ -479,6 +469,15 @@ function R:_CreateActionButtons()
     self._acceptBtn:SetPoint("LEFT", self._challengeBtn, "RIGHT", 8, 0)
     self._acceptBtn:Hide()
     self._acceptBtn:SetScript("OnClick", function() ArcadiaNexus.TC_Engine:PlayerAcceptWild4() end)
+    local tips={_drawBtn="tip_draw",_passBtn="tip_pass",_unoBtn="tip_uno",_catchBtn="tip_catch",_challengeBtn="guide_stack_challenge",_acceptBtn="tip_accept",_forfeitBtn="confirm_forfeit_body"}
+    for field,key in pairs(tips) do
+        local button=self[field]
+        button:HookScript("OnEnter",function(frame)
+            if not GameTooltip then return end
+            GameTooltip:SetOwner(frame,"ANCHOR_RIGHT"); GameTooltip:SetText(L(key),1,1,1,1,true); GameTooltip:Show()
+        end)
+        button:HookScript("OnLeave",function() if GameTooltip then GameTooltip:Hide() end end)
+    end
 end
 
 function R:_CreateColorPicker()
@@ -531,75 +530,42 @@ function R:_HasPausedGame()
 end
 
 function R:_UpdateControlsBar()
-    local E = ArcadiaNexus.TC_Engine
-    local mp = E and E.mode and E.mode ~= "hotseat"
-    local playing = E and E.state ~= "IDLE"
-    local paused = self:_HasPausedGame()
+    self:RefreshDisplayOptions()
+    local E,S=ArcadiaNexus.TC_Engine,ArcadiaNexus.TC_Settings
+    local mp=E.mode~="hotseat"; local playing=E.state~="IDLE"
+    for _,dd in ipairs({self._diffDD,self._aiDD,self._modeDD}) do dd:SetEnabled(not playing); dd:RefreshDisplay() end
     if self._ddPair then self._ddPair:SetShown(not mp) end
-    if self._ddModeAnchor then
-        self._ddModeAnchor:SetShown(not mp and (not paused or playing))
-    end
-    if self._startBtn then
-        if mp then
-            local loc = ArcadiaNexus.GetLocaleTable("TAVERNCARDS") or {}
-            self._startBtn:SetLabel(loc.btn_exit or L("btn_stop"))
-            self._startBtn:SetShown(true)
-        elseif playing then
-            self._startBtn:SetLabel(L("btn_stop"))
-            self._startBtn:SetShown(true)
-        elseif paused then
-            self._startBtn:SetLabel(L("btn_resume"))
-            self._startBtn:SetShown(true)
-        else
-            self._startBtn:SetLabel(L("btn_start"))
-            self._startBtn:SetShown(true)
-        end
-    end
-    if self._newGameBtn then
-        self._newGameBtn:SetShown((not mp) and paused and not playing)
-    end
-    if self._resumeBtn then
-        self._resumeBtn:Hide()
-    end
+    if self._ddModeAnchor then self._ddModeAnchor:SetShown(not mp) end
+    if self._startBtn then self._startBtn:SetLabel(playing and L("btn_exit") or L("btn_start")); self._startBtn:Show() end
+    if self._forfeitBtn then self._forfeitBtn:SetShown(not mp and E.gameState~=nil and E.gameState.phase~="FINISHED" and E.gameState.phase~="RESULT_PENDING") end
 end
-
-function R:HideStartPopup()
-    if self.frame and ArcadiaNexus.UI then
-        ArcadiaNexus.UI.HideChoicePopup(self.frame)
-    end
-end
-
-function R:ShowStartPopup()
-    if not self.frame then return end
-    local UI = ArcadiaNexus.UI
-    if not UI or not UI.ShowChoicePopup then return end
-    UI.ShowChoicePopup({
-        parent = self.frame,
-        title = L("popup_start_title"),
-        titleColor = { 1, 0.82, 0 },
-        buttons = {
-            {
-                label = L("btn_new_game"),
-                onClick = function()
-                    R:HideStartPopup()
-                    ArcadiaNexus.TC_Engine:StartGame({
-                        difficulty = R._lastDiff or "easy", aiCount = R._lastAI or 1,
-                        gameMode = R._lastMode or "single", pointTarget = R._lastTarget or 500,
-                    })
-                end,
-            },
-            {
-                label = L("btn_resume"),
-                onClick = function()
-                    R:HideStartPopup()
-                    ArcadiaNexus.TC_Engine:ResumeGame()
-                end,
-            },
-        },
+function R:_CreateSlotMenu()
+    local S=ArcadiaNexus.TC_Settings
+    self._slotMenu=ArcadiaNexus.UI.CreateSaveSlotMenu({parent=self._canvas,maxSlots=3,L=ArcadiaNexus.GetLocaleTable("TAVERNCARDS"),title=L("game_title"),
+        onCancel=function() R:EnterIdleState() end,
+        loadSlot=function(slot) return S:LoadSlot(slot) end,
+        deleteSlot=function(slot) S:DeleteSlot(slot) end,
+        canContinue=function(save) return ArcadiaNexus.TC_Engine:CanContinueSave(save) end,
+        isPaused=function(save) return ArcadiaNexus.TC_Engine:CanContinueSave(save) end,
+        formatInfo=function(save) if not ArcadiaNexus.TC_Logic:ValidateSave(save) then return L("slot_unavailable") end; return L("diff_"..save.difficulty).." · "..L("mode_"..save.gameMode).." · "..L("lbl_round").." "..tostring(save.roundNumber)..(save.phase=="FINISHED" and " · "..L("slot_completed") or "") end,
+        onNewGame=function(slot) R._menuOpen=false; ArcadiaNexus.TC_Engine:StartGame({slot=slot,overwrite=true}) end,
+        onContinue=function(slot) R._menuOpen=false; ArcadiaNexus.TC_Engine:StartGame({slot=slot,mode="continue"}) end,
     })
+    self._legacySaveFS=self._slotMenu.frame:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    self._legacySaveFS:SetPoint("BOTTOM",self._slotMenu.frame,"BOTTOM",0,90)
+    self._legacySaveFS:SetWidth(540); self._legacySaveFS:SetTextColor(1,0.82,0); self._legacySaveFS:Hide()
+end
+function R:EnterSlotMenu()
+    if ArcadiaNexus.TC_Engine.gameState then return end
+    self._menuOpen=true; self._logo:Hide(); self._playfield:Hide(); self._slotMenu:Show()
+    local db=ArcadiaNexus.Persistence:GetGameSettings("TAVERNCARDS")
+    self._legacySaveFS:SetText(L("legacy_save_preserved")); self._legacySaveFS:SetShown(db.pausedState~=nil)
+    self._startBtn:SetLabel(L("btn_exit"))
+    self._startBtn:SetScript("OnClick",function() if R._menuOpen then R:EnterIdleState() else local E=ArcadiaNexus.TC_Engine; if E.state~="IDLE" then E:StopGame() else R:EnterSlotMenu() end end end)
 end
 
 function R:EnterIdleState()
+    self._menuOpen=false; if self._slotMenu then self._slotMenu:Hide() end
     self:CancelModelRefresh()
     if self._playfield and ArcadiaNexus.UI then
         ArcadiaNexus.UI.HideResultDialog(self._playfield)
@@ -621,6 +587,7 @@ function R:OnStateChanged(state)
 end
 
 function R:OnGameStarted(gs)
+    self._menuOpen=false; if self._slotMenu then self._slotMenu:Hide() end
     self._startActive = true
     if self._logo then self._logo:Hide() end
     if self._borderFrame then self._borderFrame:Show() end
@@ -903,13 +870,16 @@ function R:_LayoutPlayerHand(hand, gs, theme, isHumanTurn)
             cf:SetPoint("BOTTOM", anchor, "BOTTOM", posX, rowY)
             cf:SetFrameLevel(baseLevel + j)
             self:_SetCardTexture(cf._tex, entry.card, theme)
-            local playable = Rules:CanPlay(entry.card, gs) and isHumanTurn and not gs.pendingColorPick and not gs.unoWindow
+            local playable = ArcadiaNexus.TC_Logic:CanPlayIndex(gs,gs.localSeat or 1,entry.idx) and isHumanTurn and ArcadiaNexus.TC_Engine.state=="PLAYING"
             cf._tex:SetAlpha(playable and 1 or 0.55)
             local idx = entry.idx
             cf:SetScript("OnClick", function()
                 if playable then ArcadiaNexus.TC_Engine:PlayerPlayCard(idx, nil) end
             end)
             self:_ApplyHandCardHover(cf, anchor, baseLevel + j)
+            local hover=cf:GetScript("OnEnter"); local leave=cf:GetScript("OnLeave")
+            cf:SetScript("OnEnter",function(frame) if hover then hover(frame) end; R:ShowCardTooltip(frame,entry.card,playable) end)
+            cf:SetScript("OnLeave",function(frame) if leave then leave(frame) end; if GameTooltip then GameTooltip:Hide() end end)
             cf:Show()
             self._cardFrames.player[#self._cardFrames.player + 1] = cf
         end
@@ -1028,7 +998,14 @@ function R:UpdateBoard(gs)
         local other = gs.players[gs.currentPlayer]
         status = string.format(L("lbl_wait_turn"), (other and other.name) or "")
     end
+    local color=ac and L("color_"..ac) or "–"
+    status=status.." · "..L("lbl_active_color")..": "..color
+    if (gs.pendingDraw or 0)>0 then status=status.." · +"..gs.pendingDraw end
     self._statusFS:SetText(status)
+    if self._pointsFS then
+        local entries={}; for _,p in ipairs(gs.players) do entries[#entries+1]=p.name..": "..p.score end
+        self._pointsFS:SetText(gs.gameMode=="multi" and (L("lbl_round").." "..gs.roundNumber.." · "..L("lbl_target").." "..gs.pointTarget.."\n"..table.concat(entries," · ")) or "")
+    end
     local pSlot = self._charSlots.player
     if pSlot and human.charDef then
         pSlot.nameFS:SetText(human.name)
@@ -1068,11 +1045,11 @@ function R:UpdateBoard(gs)
     if self._catchBtn then self._catchBtn:SetShown(showCatch) end
     if self._drawBtn then
         local canDraw = isHumanTurn and not gs.pendingColorPick and not gs.unoWindow
-            and not gs.hasDrawnThisTurn and not gs.drawnThisTurn
+            and not gs.hasDrawnThisTurn and not gs.drawnThisTurn and not gs.wild4Challengable and ArcadiaNexus.TC_Engine.state=="PLAYING"
         self._drawBtn:SetShown(canDraw)
     end
     if self._passBtn then
-        self._passBtn:SetShown(isHumanTurn and gs.hasDrawnThisTurn and not gs.pendingColorPick and not gs.unoWindow)
+        self._passBtn:SetShown(isHumanTurn and gs.drawnThisTurn~=nil and not gs.pendingColorPick and not gs.unoWindow)
     end
     if self._colorPicker then
         if gs.pendingColorPick and gs.pendingColorPick.playerIndex == localSeat then self._colorPicker:Show()
@@ -1101,15 +1078,17 @@ end
 function R:ShowGameEnd(gs, winnerIndex, roundPts, gameWinner)
     local UI = ArcadiaNexus.UI
     local parent = self._playfield
-    local win = (winnerIndex == 1 or gameWinner == 1)
+    local win = gs.result=="WIN"
     UI.ShowArcadeResult(parent, {
-        gameId = "TAVERNCARDS", difficulty = gs.difficulty,
+        gameId = "TAVERNCARDS", difficulty = "solo_"..gs.difficulty,
+        xp=ArcadiaNexus.TC_Engine._lastResult and ArcadiaNexus.TC_Engine._lastResult.awardedXP or 0,
+        gold=ArcadiaNexus.TC_Engine._lastResult and ArcadiaNexus.TC_Engine._lastResult.awardedGold or 0,
         result = win and "WIN" or "LOSS", hideHighscore = true,
-        subtitle = gs.players[winnerIndex].name .. " +" .. tostring(roundPts or 0),
+        subtitle = gs.forfeited and L("result_forfeit") or gs.players[winnerIndex].name .. " +" .. tostring(roundPts or 0),
         L = ArcadiaNexus.GetLocaleTable("TAVERNCARDS"),
         onRetry = function()
             ArcadiaNexus.TC_Engine:StopGame()
-            ArcadiaNexus.TC_Engine:StartGame({ difficulty = gs.difficulty, aiCount = gs.aiCount, gameMode = gs.gameMode, pointTarget = gs.pointTarget })
+            R:EnterSlotMenu()
         end,
         onExit = function() ArcadiaNexus.TC_Engine:StopGame() end,
     })
@@ -1128,4 +1107,40 @@ end
 
 function R:Hide()
     if self.frame then self.frame:Hide() end
+end
+
+function R:RefreshDisplayOptions()
+    local S=ArcadiaNexus.TC_Settings
+    if self._rulesBtn then self._rulesBtn:SetShown(S:Get("showHouseRulesButton")~=false) end
+    local owner=GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner()
+    if owner and ((S:Get("showCardTooltips")==false and owner==self._cardTooltipOwner)
+        or (S:Get("showHouseRulesButton")==false and owner==self._rulesBtn)) then GameTooltip:Hide() end
+end
+function R:ShowCardTooltip(frame,card,playable)
+    if not GameTooltip or ArcadiaNexus.TC_Settings:Get("showCardTooltips")==false then return end
+    self._cardTooltipOwner=frame
+    GameTooltip:SetOwner(frame,"ANCHOR_RIGHT")
+    GameTooltip:SetText(playable and L("tooltip_playable") or L("tooltip_unavailable"),1,0.82,0)
+    GameTooltip:Show()
+end
+function R:ShowRulesTooltip(frame)
+    if not GameTooltip or ArcadiaNexus.TC_Settings:Get("showHouseRulesButton")==false then return end
+    local gs=ArcadiaNexus.TC_Engine:GetBoardState(); if not gs then return end
+    GameTooltip:SetOwner(frame,"ANCHOR_RIGHT"); GameTooltip:SetText(L("box_rules"))
+    local labels={stackDraw2="rule_stack2",stackDraw4="rule_stack4",playDrawn="rule_play_drawn",unoCallRule="rule_uno",challengeDraw4="rule_challenge"}
+    for _,key in ipairs({"stackDraw2","stackDraw4","playDrawn","unoCallRule","challengeDraw4"}) do GameTooltip:AddLine(L(labels[key])..": "..L(gs.rules[key] and "rule_on" or "rule_off"),1,1,1,true) end
+    GameTooltip:AddLine(L("guide_stack_challenge"),1,1,1,true); GameTooltip:Show()
+end
+function R:ConfirmForfeit(sid,runId)
+    local UI=ArcadiaNexus.UI
+    UI.ShowChoicePopup({parent=self._playfield,title=L("confirm_forfeit"),body=L("confirm_forfeit_body"),buttons={
+        {label=L("btn_forfeit"),onClick=function() UI.HideChoicePopup(R._playfield); ArcadiaNexus.TC_Engine:ConfirmForfeit(sid,runId) end},
+        {label=L("btn_cancel"),onClick=function() UI.HideChoicePopup(R._playfield) end},
+    }})
+end
+function R:ShowResultPending()
+    ArcadiaNexus.UI.ShowArcadeResult(self._playfield,{title=L("result_pending"),hideHighscore=true,buttons={
+        {label=L("btn_retry"),onClick=function() ArcadiaNexus.TC_Engine:RetryResult() end},
+        {label=L("btn_exit"),onClick=function() ArcadiaNexus.TC_Engine:SaveAndPause() end},
+    }})
 end

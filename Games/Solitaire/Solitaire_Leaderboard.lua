@@ -1,16 +1,7 @@
---[[
-    ArcadiaNexus - Solitaire Leaderboard-Schema
-    Games/Solitaire/Solitaire_Leaderboard.lua
-]]
-
-local LR = ArcadiaNexus.LeaderboardRegistry
-local S  = LR.SECTION
-
-ArcadiaNexus.RegisterLeaderboard({
-    gameId = "SOLITAIRE",
-    difficulties = {
-        { id = "1card", labelKey = "lb_diff_1card" },
-        { id = "3card", labelKey = "lb_diff_3card" },
-    },
-    sections = { S.TopScores(3), S.StatsWL() },
-})
+-- New win-only action scores are kept outside the untouched historical scores.
+local LR=ArcadiaNexus.LeaderboardRegistry; if not LR or not LR.SECTION then return end
+local S=LR.SECTION
+local current=S.TopScores(3); current.titleKey="lb_current_scores"; current.field="winScores"
+current.resultField="newScore"; current.result="WIN"; current.order="desc"
+local legacy=S.TopScores(3); legacy.titleKey="lb_legacy_scores"
+ArcadiaNexus.RegisterLeaderboard({gameId="SOLITAIRE",difficulties={"1card","3card"},sections={current,S.StatsWL(),legacy}})

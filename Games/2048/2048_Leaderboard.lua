@@ -9,6 +9,11 @@ local S  = LR.SECTION
 
 ArcadiaNexus.RegisterLeaderboard({
     gameId = "2048",
-    difficulties = { "easy", "normal", "hard" },
+    difficulties = {
+        { id = "easy", labelKey = "size_small" },
+        { id = "normal", labelKey = "size_normal" },
+        { id = "hard", labelKey = "size_large" },
+        { id = "default", labelKey = "lb_legacy" },
+    },
     sections = { S.TopScores(3), S.StatsPlayed() },
 })

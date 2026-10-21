@@ -38,8 +38,28 @@ end
 --- Eigene laufende Session sauber ersetzen, ohne spielabhängige StopGame-
 --- Nebenwirkungen (Save-Loeschung, Ergebnisverbuchung, UI-Reset) auszuloesen.
 --- Eine fremde aktive Session wird in Begin() über StopActiveGame beendet.
+function LC:ClaimRestart(gameId, previousSessionId)
+    local sid = self:RestartGame(gameId, previousSessionId)
+    if type(sid) ~= "number" then return nil end
+    local cur = GS():GetCurrent()
+    if not cur or cur.gameId ~= gameId or cur.sessionId ~= sid then return nil end
+    return sid
+end
+
 function LC:RestartGame(gameId, previousSessionId)
-    if previousSessionId and GS():IsCurrent(gameId, previousSessionId) then
+    local gs = GS()
+    local GR = ArcadiaNexus.GameRegistry
+    if GR and GR.HasPendingCleanup and GR.HasPendingCleanup() then
+        return nil
+    end
+    local cur = gs:GetCurrent()
+    if previousSessionId and gs:ResumeSaveBlocked(previousSessionId) then
+        return nil
+    end
+    if cur and cur.gameId == gameId and gs:ResumeSaveBlocked(cur.sessionId) then
+        return nil
+    end
+    if previousSessionId and gs:IsCurrent(gameId, previousSessionId) then
         self:EndGame(gameId, previousSessionId)
     end
     return self:BeginGame(gameId)
@@ -132,6 +152,7 @@ end
 
 SLASH_ANLIFECYCLE1 = "/anlifecycle"
 SlashCmdList["ANLIFECYCLE"] = function()
+    if not ArcadiaNexus.RequireDevMode() then return end
     local stats = LC:GetStats()
     print("|cff7ec8e3[GH Lifecycle]|r Aktiv: " ..
         (stats.activeGame and ("|cff00ff88" .. stats.activeGame .. "|r") or "|cffaaaaaa-|r"))

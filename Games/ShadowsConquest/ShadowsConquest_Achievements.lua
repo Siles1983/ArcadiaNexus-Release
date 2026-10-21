@@ -49,17 +49,10 @@ ArcadiaNexus.RegisterAchievements({
         icon     = 136206, -- Spell_Shadow_ShadowWordDominate
         condition = function(data, db)
             if data.gameId ~= "SHADOWSCONQUEST" then return 0 end
-            if data._retroactive then
-                local entry = db.leaderboard and db.leaderboard["SHADOWSCONQUEST"]
-                local h = entry and (entry["hard"] or entry["HARD"]) or {}
-                return h.wins or 0
-            end
-            if data.result == "WIN" and (data.difficulty == "hard" or data.difficulty == "HARD") then
-                local entry = db.leaderboard and db.leaderboard["SHADOWSCONQUEST"]
-                local h = entry and (entry["hard"] or entry["HARD"]) or {}
-                return h.wins or 0
-            end
-            return 0
+            local entries=db.leaderboard and db.leaderboard.SHADOWSCONQUEST or {}
+            local total=0
+            for _,key in ipairs({'hard','HARD','v2_free_hard','v2_limit_hard'}) do total=total+((entries[key] or {}).wins or 0) end
+            return total
         end,
         tiers = {
             { id="SC_HARD_BRONZE", tierName="Bronze", target=1,  xp=25, desc_de="Löse 1 schweres Rätsel.",   desc_en="Solve 1 hard puzzle."    },
@@ -70,6 +63,9 @@ ArcadiaNexus.RegisterAchievements({
 
     {
         id       = "SC_SCORE",
+        retired=true, retiredVersion=6, gameLabel="Shadows Conquest",
+        retiredReason_de="Die ursprüngliche Punkteformel wurde durch die M7-Leistungswertung ersetzt.",
+        retiredReason_en="The original score formula was replaced by the M7 performance rating.",
         gameId   = "SHADOWSCONQUEST",
         category = "RAETSEL",
         title_de = "Arkaner Lichtbogen",
@@ -92,3 +88,18 @@ ArcadiaNexus.RegisterAchievements({
         },
     },
 })
+
+ArcadiaNexus.RegisterAchievements({{
+    id="SC_OPTIMAL",gameId="SHADOWSCONQUEST",category="RAETSEL",title_de="Licht in Perfektion",title_en="Perfect Light",
+    desc_de="Löse verschiedene Rätsel mit den bewiesenen Mindestzügen.",desc_en="Solve different puzzles in the proven minimum number of moves.",icon=135732,
+    condition=function(data,db)
+        if data.gameId~="SHADOWSCONQUEST" then return 0 end
+        local st=db.gameSettings and db.gameSettings.SHADOWSCONQUEST and db.gameSettings.SHADOWSCONQUEST.modern
+        local count=0; for _,v in pairs(st and st.uniqueOptimal or {}) do if v==true then count=count+1 end end return count
+    end,
+    tiers={
+        {id="SC_OPTIMAL_BRONZE",tierName="Bronze",target=1,xp=20,desc_de="Löse 1 Rätsel optimal.",desc_en="Solve 1 puzzle optimally."},
+        {id="SC_OPTIMAL_SILBER",tierName="Silber",target=10,xp=40,desc_de="Löse 10 verschiedene Rätsel optimal.",desc_en="Solve 10 different puzzles optimally."},
+        {id="SC_OPTIMAL_GOLD",tierName="Gold",target=30,xp=65,desc_de="Löse 30 verschiedene Rätsel optimal.",desc_en="Solve 30 different puzzles optimally."}
+    }
+}})

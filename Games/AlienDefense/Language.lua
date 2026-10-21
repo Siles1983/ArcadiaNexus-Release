@@ -70,7 +70,7 @@ ArcadiaNexus.RegisterLocale("ALIENDEFENSE", "deDE", {
     guide_1             = "A / Linkspfeil: Schiff nach links",
     guide_2             = "D / Rechtspfeil: Schiff nach rechts",
     guide_3             = "Leertaste (halten): Feuer",
-    guide_4             = "W / S: Waffe wechseln",
+    guide_4             = "W / S: Einzelschuss / zuletzt eingesammelte Waffe umschalten",
     guide_5             = "Enter: Pause / Fortsetzen",
     guide_6             = "Besiege alle Aliens bevor sie die Basis erreichen.",
     guide_7             = "Eingesammelte Waffendrops sind 15 Sekunden aktiv.",
@@ -87,6 +87,15 @@ ArcadiaNexus.RegisterLocale("ALIENDEFENSE", "deDE", {
     popup_play_again    = "Nochmal",
     popup_next_wave     = "Nächste Welle",
     popup_exit          = "Beenden",
+
+    btn_endless         = "Endlos weiterspielen",
+    state_victory       = "Alle 30 Wellen überstanden!",
+    state_endless_end   = "Endloslauf beendet – Sieg bleibt erhalten",
+    legacy_restart      = "Altstand: Wellenneustart",
+    guide_8             = "Startleben: Einfach 5 / Normal 3 / Schwer 1.",
+    guide_9             = "Schadensfreie Welle: +500 Punkte. Invasion beendet den Lauf sofort.",
+    guide_10            = "Nach 30 Wellen: Sieg; Endlos nur als bewusste Fortsetzung, ohne zweite Belohnung.",
+    guide_11            = "Pause/Beenden speichert den Lauf. Alte Teilstände starten die ausgewiesene Welle neu.",
 
     -- Reset
     btn_reset           = "Reset",
@@ -158,7 +167,7 @@ ArcadiaNexus.RegisterLocale("ALIENDEFENSE", "enUS", {
     guide_1             = "A / Left Arrow: Move ship left",
     guide_2             = "D / Right Arrow: Move ship right",
     guide_3             = "Space (hold): Fire",
-    guide_4             = "W / S: Cycle weapon",
+    guide_4             = "W / S: Toggle single / last collected weapon",
     guide_5             = "Enter: Pause / Resume",
     guide_6             = "Defeat all aliens before they reach the base.",
     guide_7             = "Collected weapon drops are active for 15 seconds.",
@@ -175,6 +184,15 @@ ArcadiaNexus.RegisterLocale("ALIENDEFENSE", "enUS", {
     popup_play_again    = "Play Again",
     popup_next_wave     = "Next Wave",
     popup_exit          = "Exit",
+
+    btn_endless         = "Continue in endless mode",
+    state_victory       = "All 30 waves survived!",
+    state_endless_end   = "Endless run ended – victory retained",
+    legacy_restart      = "Legacy save: wave restart",
+    guide_8             = "Starting lives: Easy 5 / Normal 3 / Hard 1.",
+    guide_9             = "Damage-free wave: +500 points. Invasion ends the run immediately.",
+    guide_10            = "After 30 waves: victory; choose endless continuation without a second reward.",
+    guide_11            = "Pause/exit saves the run. Legacy partial saves restart the displayed wave.",
 
     -- Reset
     btn_reset           = "Reset",

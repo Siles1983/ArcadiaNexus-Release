@@ -1,458 +1,176 @@
--- ============================================================
---  Solitaire – Engine.lua
---  Spielfluss, State-Machine, Timer, Auto-Complete.
---  KEIN UI-Code, KEINE Spielregeln hier.
---
---  State-Machine:
---    IDLE → PLAYING → WIN
---                   ↘ GAMEOVER (keine Züge mehr)
---
---  Regeln:
---  - TimerGuard (Core/TimerGuard) für Elapsed-Timer
---  - OnHide → SaveAndPause (laufendes Spiel wird gespeichert)
---  - GAME_RESULT erst bei echtem Spielende (WIN/GAMEOVER)
---  - Spielregeln NUR in Logic.lua, UI NUR in Renderer.lua
--- ============================================================
-
-local ArcadiaNexus = _G.ArcadiaNexus
-ArcadiaNexus.SOL_Engine = {}
-local E = ArcadiaNexus.SOL_Engine
-
-E._sessionId = nil
-
-E.state     = "IDLE"
-E.gameState = nil
-E._autoRunning = false
-
-local _timerGuard = ArcadiaNexus.TimerGuard.New()
-local _autoGuard  = ArcadiaNexus.TimerGuard.New()
-
--- ── Sound-Konstanten ──────────────────────────────────────────
-local SND_PATH = "Interface\\AddOns\\ArcadiaNexus\\Games\\Solitaire\\Assets\\sounds\\"
-local SND = {
-    deal       = SND_PATH .. "select_card.wav",
-    place      = SND_PATH .. "select_card.wav",
-    foundation = SND_PATH .. "select_card.wav",
-    invalid    = SND_PATH .. "missmatch.wav",
-    win        = SND_PATH .. "win.wav",
-    undo       = SND_PATH .. "select_card.wav",
-}
-
--- ── Hilfsfunktionen ───────────────────────────────────────────
-local function GetLogic()    return ArcadiaNexus.SOL_Logic    end
-local function GetRenderer() return ArcadiaNexus.SOL_Renderer end
-local function GetSettings() return ArcadiaNexus.SOL_Settings end
-
+-- Session-owned Klondike. Pause is not defeat; explicit confirmed give-up is LOSS.
+local A=_G.ArcadiaNexus
+local E={state="IDLE"}; A.SOL_Engine=E
+local auto=A.TimerGuard.New(); E._autoGuard=auto
+local clock=A.GameLoop.Create("ArcadiaNexus_SOL_Clock")
+local function Render(method,...) local R=A.SOL_Renderer; if R and R[method] then R[method](R,...) end end
 function E:_PlaySound(key)
-    local S = GetSettings()
-    if not S or not S:Get("soundEnabled") then return end
-    local keyMap = {
-        deal      = "soundOnDeal",
-        place     = "soundOnPlace",
-        foundation = "soundOnFnd",
-        invalid   = "soundOnInval",
-        win       = "soundOnWin",
-        undo      = "soundOnUndo",
-    }
-    local settingKey = keyMap[key]
-    if settingKey and not S:Get(settingKey) then return end
-    local path = SND[key]
-    if path then PlaySoundFile(path, "Master") end
+    local S=A.SOL_Settings
+    local keys={deal="soundOnDeal",place="soundOnPlace",foundation="soundOnFnd",invalid="soundOnInval",win="soundOnWin",undo="soundOnUndo"}
+    local names={deal="select_card",place="select_card",foundation="select_card",invalid="missmatch",win="win",undo="select_card"}
+    if S:Get("soundEnabled") and S:Get(keys[key]) and names[key] then
+        PlaySoundFile("Interface\\AddOns\\ArcadiaNexus\\Games\\Solitaire\\Assets\\sounds\\"..names[key]..".wav","SFX")
+    end
 end
-
--- ── Timer (C_Timer Generation-Pattern) ───────────────────────
+function E:_AccumulateTime()
+    local gs=self.gameState; if not gs or not self._timeAnchor then return end
+    local now=GetTime(); local delta=math.max(0,(now-self._timeAnchor)*1000)+(self._timeRemainder or 0)
+    local whole=math.floor(delta); self._timeRemainder=delta-whole
+    gs.elapsedMs=math.min(2147483647,gs.elapsedMs+whole)
+    self._timeAnchor=now; A.SOL_Logic:Sync(gs)
+end
 function E:_StartTimer()
-    _timerGuard:Cancel()
-    _timerGuard:EveryAfter(1, function()
-        if E.state ~= "PLAYING" then return false end
-        local gs = E.gameState
-        if gs then
-            gs.elapsed = gs.elapsed + 1
-            local R = GetRenderer()
-            if R and R.UpdateHUD then R:UpdateHUD(gs) end
-        end
-        return true
-    end)
+    self._timeAnchor=GetTime(); self._timeRemainder=0; local sid,gs=self._sessionId,self.gameState
+    clock:Start(function()
+        E:_AccumulateTime(); Render("UpdateHUD",gs)
+    end,{stateCheck=function() return A.GameSession:IsSession(E,sid) and E.gameState==gs and (E.state=="PLAYING" or E.state=="AUTO") end})
 end
-
-function E:_StopTimer()
-    _timerGuard:Cancel()
+function E:_StopTimer() self:_AccumulateTime(); clock:Stop(); self._timeAnchor=nil end
+function E:_Snapshot() if self.gameState then A.SOL_Settings:SaveGame(self.gameState) end end
+function E:_Refresh()
+    local gs=self.gameState; self.state=gs.phase; self:_Snapshot()
+    Render("SetState",self.state); Render("Refresh",gs); Render("UpdateHUD",gs)
+    Render("SetAutoCompleteVisible",self.state=="PLAYING" and A.SOL_Logic:CanAutoComplete(gs))
 end
-
--- ── Spielstart ────────────────────────────────────────────────
-function E:StartGame(mode, fromSave)
-    local L = GetLogic()
-    local S = GetSettings()
-    if not L or not S then return end
-
-    local config = mode
-    if type(mode) ~= "table" then
-        config = {
-            slot = S:GetActiveSlot(),
-            mode = fromSave and "continue" or "new",
-            cardMode = mode,
-        }
-    end
-    local slot = config.slot or S:GetActiveSlot()
-    if slot < 1 or slot > S.MAX_SLOTS then return end
-    local startMode = config.mode or "new"
-    S:SetActiveSlot(slot)
-    self.activeSlot = slot
-
-    E._sessionId = ArcadiaNexus.Lifecycle:RestartGame("SOLITAIRE", E._sessionId)
-
-    _timerGuard:Cancel()
-    _autoGuard:Cancel()
-    E._autoRunning = false
-
-    if startMode == "continue" and S:HasSavedGame(slot) then
-        local saved = S:LoadGame(slot)
-        E.gameState = L:NewGameState(saved.mode)
-        E.gameState.stock      = saved.stock
-        E.gameState.waste      = saved.waste
-        E.gameState.foundation = saved.foundation
-        E.gameState.tableau    = saved.tableau
-        E.gameState.score      = saved.score
-        E.gameState.elapsed    = saved.elapsed
-        E.gameState.wastePass  = saved.wastePass
-        E.gameState.undoStack  = {}
+function E:CanContinueSave(save)
+    local gs=type(save)=="table" and save.midGame
+    if not A.SOL_Logic:ValidateSave(gs) or gs.phase=="WIN" or gs.phase=="LOSS" then return false end
+    local serial=A.LocalResults:GetSerial("SOLITAIRE",gs.runId)
+    if not serial then return false end
+    local j,r=A.LocalResults:GetJournal(),A.LocalResults:GetReceipt(gs.runId)
+    if not r and not j.issued[gs.runId] and serial<=j.retiredThrough then return false end
+    if r and (gs.phase~="RESULT_PENDING" or r.gameId~="SOLITAIRE" or r.difficulty~=gs.mode or r.result~=gs.result
+        or r.score~=gs.score or r.elapsedMs~=gs.elapsedMs or r.scoreVersion~=gs.scoreVersion or r.undoUsed~=gs.undoUsed or r.wastePass~=gs.wastePass) then return false end
+    return true
+end
+function E:StartGame(config,fromSave)
+    if self.gameState then return false end
+    local S,L=A.SOL_Settings,A.SOL_Logic; S:EnsureSaves()
+    if type(config)~="table" then config={cardMode=config,mode=fromSave and "continue" or "new"} end
+    local slot=config.slot or S:GetActiveSlot(); local mode=config.mode or "new"
+    if type(slot)~="number" or slot~=math.floor(slot) or slot<1 or slot>3 or mode~="new" and mode~="continue" then return false end
+    local save=S:LoadSlot(slot); local gs
+    if mode=="continue" then
+        if not self:CanContinueSave(save) then return false end
+        gs=S:LoadGame(slot); if gs.phase=="AUTO" then gs.phase="PLAYING" end
     else
-        S:ResetSlot(slot)
-        E.gameState = L:NewGameState(config.cardMode or S:Get("mode"))
-        S:SaveGame(E.gameState)
+        local cardMode=config.cardMode or S:Get("mode")
+        if not L:IsMode(cardMode) or save and not config.overwrite then return false end
+        gs=L:NewGameState(cardMode)
     end
-
-    E.state = "PLAYING"
-
-    local R = GetRenderer()
-    if R then
-        R:Refresh(E.gameState)
-        R:UpdateHUD(E.gameState)
-        R:SetState("PLAYING")
-    end
-
-    E:_StartTimer()
-    E:_PlaySound("deal")
-    E:_CheckPostMove(E.gameState)
+    local sid=A.Lifecycle:ClaimRestart("SOLITAIRE",self._sessionId)
+    if not sid then return false end
+    if mode~="continue" then gs.runId=A.LocalResults:NewRun("SOLITAIRE") end
+    self.gameState,self.activeSlot,self._lastResult=gs,slot,nil; S:SetActiveSlot(slot)
+    self._sessionId=sid; auto:Cancel(); self._autoRunning=false
+    self:_Refresh()
+    if gs.phase=="RESULT_PENDING" then self:RetryResult() else self:_StartTimer() end
+    A.LocalResults:Prune(); return true
 end
-
--- ── Spielende ─────────────────────────────────────────────────
-function E:_Win()
-    if E.state ~= "PLAYING" then return end
-    E:_StopTimer()
-    E.state = "WIN"
-
-    local gs = E.gameState
-    local L  = GetLogic()
-    L:ApplyTimeBonus(gs)
-
-    local R = GetRenderer()
-    if R then
-        R:Refresh(gs)
-        R:UpdateHUD(gs)
-        R:SetState("WIN")
-        R:ShowResult("WIN", gs.score)
-    end
-
-    E:_PlaySound("win")
-
-    local S = GetSettings()
-    if S then S:ClearSave() end
-
-    if ArcadiaNexus.Engine then
-        ArcadiaNexus.Engine:Emit("GAME_RESULT", {
-            gameId     = "SOLITAIRE",
-            difficulty = gs.mode,
-            score      = gs.score,
-            result     = "WIN",
-        })
-    end
+function E:CanInteract() return self.state=="PLAYING" and self.gameState and self.gameState.phase=="PLAYING" and A.GameSession:IsSession(self,self._sessionId) or false end
+function E:_AfterAction()
+    self:_AccumulateTime()
+    if A.SOL_Logic:IsWin(self.gameState) then return self:_Finish("WIN") end
+    self:_Refresh(); return true
 end
-
-function E:_GameOver()
-    if E.state ~= "PLAYING" then return end
-    E:_StopTimer()
-    E.state = "GAMEOVER"
-
-    local gs = E.gameState
-    local R  = GetRenderer()
-    if R then
-        R:Refresh(gs)
-        R:SetState("GAMEOVER")
-        R:ShowResult("GAMEOVER", gs.score)
-    end
-
-    local S = GetSettings()
-    if S then S:ClearSave() end
-
-    if ArcadiaNexus.Engine then
-        ArcadiaNexus.Engine:Emit("GAME_RESULT", {
-            gameId     = "SOLITAIRE",
-            difficulty = gs.mode,
-            score      = gs.score,
-            result     = "LOSS",
-        })
-    end
-end
-
--- ── Eingabe-Handler (werden vom Renderer aufgerufen) ──────────
-
--- Klick auf Stock
 function E:OnStockClick()
-    if E.state ~= "PLAYING" then return end
-    local gs = E.gameState
-    local L  = GetLogic()
-    local ok, action = L:DrawFromStock(gs)
-    if ok then
-        E:_PlaySound("deal")
-        local R = GetRenderer()
-        if R then R:Refresh(gs) end
-        E:_CheckPostMove(gs)
-    end
+    if not self:CanInteract() then return false end
+    local ok=A.SOL_Logic:DrawFromStock(self.gameState); if not ok then return false end
+    self:_PlaySound("deal"); return self:_AfterAction()
 end
-
--- Klick auf Karte (Klick-Klick-System)
-function E:OnCardClick(zone, idx, cardIdx)
-    if E.state ~= "PLAYING" then return end
-    local gs = E.gameState
-    local L  = GetLogic()
-    local R  = GetRenderer()
-
-    -- Stock-Klick separater Handler
-    if zone == "stock" then
-        E:OnStockClick()
-        return
-    end
-
+function E:OnCardClick(zone,index,cardIndex)
+    if not self:CanInteract() then return false end
+    if zone=="stock" then return self:OnStockClick() end
+    local gs,L=self.gameState,A.SOL_Logic
     if gs.selected then
-        local src = gs.selected
-        local ok, delta = L:TryMove(gs, src, { zone=zone, index=idx, cardIndex=cardIdx })
-        gs.selected = nil
-        if ok then
-            E:_PlaySound(zone == "foundation" and "foundation" or "place")
-            if R then R:Refresh(gs) end
-            E:_CheckPostMove(gs)
-        else
-            -- Ungültiger Zug: prüfen ob neue Selektion
-            if L:IsSelectable(gs, zone, idx, cardIdx) then
-                gs.selected = { zone=zone, index=idx, cardIndex=cardIdx }
-                E:_PlaySound("invalid")
-                if R then R:Refresh(gs) end
-            else
-                E:_PlaySound("invalid")
-                if R then R:Refresh(gs) end
-            end
-        end
-    else
-        if L:IsSelectable(gs, zone, idx, cardIdx) then
-            gs.selected = { zone=zone, index=idx, cardIndex=cardIdx }
-            if R then R:Refresh(gs) end
-        end
+        local ok=L:TryMove(gs,gs.selected,{zone=zone,index=index,cardIndex=cardIndex}); gs.selected=nil
+        if ok then self:_PlaySound(zone=="foundation" and "foundation" or "place"); return self:_AfterAction() end
     end
+    if L:IsSelectable(gs,zone,index,cardIndex) then gs.selected={zone=zone,index=index,cardIndex=cardIndex} end
+    Render("Refresh",gs); return true
 end
-
--- Doppelklick → Auto-Move zur Foundation, sonst Tableau
-function E:OnCardDoubleClick(zone, idx, cardIdx)
-    if E.state ~= "PLAYING" then return end
-    local gs = E.gameState
-    local L  = GetLogic()
-    local R  = GetRenderer()
-    if not L:IsSelectable(gs, zone, idx, cardIdx) then return end
-    gs.selected = nil
-
-    -- 1. Versuch: Foundation
-    local ok = L:TryMoveToFoundation(gs, zone, idx, cardIdx)
-    if ok then
-        E:_PlaySound("foundation")
-        if R then R:Refresh(gs) end
-        E:_CheckPostMove(gs)
-        return
-    end
-
-    -- 2. Versuch: passendes Tableau
-    ok = L:TryMoveToTableau(gs, zone, idx, cardIdx)
-    if ok then
-        E:_PlaySound("place")
-        if R then R:Refresh(gs) end
-        E:_CheckPostMove(gs)
-        return
-    end
-
-    if L:IsSelectable(gs, zone, idx, cardIdx) then
-        gs.selected = { zone=zone, index=idx, cardIndex=cardIdx }
-        if R then R:Refresh(gs) end
-    end
+function E:OnCardDoubleClick(zone,index,cardIndex)
+    if not self:CanInteract() then return false end
+    local gs,L=self.gameState,A.SOL_Logic; gs.selected=nil
+    local ok=L:TryMoveToFoundation(gs,zone,index,cardIndex)
+    if not ok then ok=L:TryMoveToTableau(gs,zone,index,cardIndex) end
+    if not ok then Render("Refresh",gs); return false end
+    self:_PlaySound("place"); return self:_AfterAction()
 end
-
--- Drag abgeschlossen (Live-Ghost im Renderer)
-function E:OnDragDrop(src, dst)
-    if E.state ~= "PLAYING" then return end
-    local gs = E.gameState
-    local L  = GetLogic()
-    local R  = GetRenderer()
-    gs.selected = nil
-    if not dst then
-        if R then R:Refresh(gs) end
-        return
-    end
-    local ok = L:TryMove(gs, src, dst)
-    if ok then
-        E:_PlaySound(dst.zone == "foundation" and "foundation" or "place")
-        if R then R:Refresh(gs) end
-        E:_CheckPostMove(gs)
-    else
-        if R then R:Refresh(gs) end
-    end
+function E:OnDragDrop(src,dst)
+    if not self:CanInteract() then return false end
+    local gs=self.gameState; gs.selected=nil
+    local ok=A.SOL_Logic:TryMove(gs,src,dst)
+    if not ok then Render("Refresh",gs); return false end
+    self:_PlaySound("place"); return self:_AfterAction()
 end
-
--- Undo
 function E:OnUndo()
-    if E.state ~= "PLAYING" then return end
-    local gs = E.gameState
-    local L  = GetLogic()
-    local ok = L:Undo(gs)
-    if ok then
-        E:_PlaySound("undo")
-        local R = GetRenderer()
-        if R then
-            R:Refresh(gs)
-            R:UpdateHUD(gs)
-        end
-    end
+    if not self:CanInteract() or not A.SOL_Logic:Undo(self.gameState) then return false end
+    self:_PlaySound("undo"); self:_AccumulateTime(); self:_Refresh(); return true
 end
-
--- Auto-Complete auslösen
 function E:OnAutoComplete()
-    if E.state ~= "PLAYING" then return end
-    -- Bereits aktiv: zweiten Klick ignorieren (verhindert timerGen-Invalidierung)
-    if E._autoRunning then return end
-    local gs = E.gameState
-    local L  = GetLogic()
-    if not L:CanAutoComplete(gs) then
-        local R = GetRenderer()
-        if R and R.SetAutoCompleteVisible then R:SetAutoCompleteVisible(false) end
-        return
-    end
-
-    -- Move-Queue einmalig berechnen (Simulation kennt den vollständigen Lösungsweg)
-    local queue = L:AutoBuildMoveQueue(gs)
-    if not queue or #queue == 0 then
-        local R = GetRenderer()
-        if R and R.SetAutoCompleteVisible then R:SetAutoCompleteVisible(false) end
-        return
-    end
-
-    E._autoRunning = true
-    _timerGuard:Cancel()
-    local idx = 1
-
-    local function step()
-        if not E._autoRunning then return end
-        if E.state ~= "PLAYING" then E._autoRunning = false; return end
-
-        if idx > #queue then
-            E._autoRunning = false
-            local R = GetRenderer()
-            if R then R:Refresh(gs) end
-            E:_CheckPostMove(gs)
+    if not self:CanInteract() then return false end
+    local gs=self.gameState; local queue=A.SOL_Logic:AutoBuildMoveQueue(gs)
+    if not queue or #queue==0 then Render("SetAutoCompleteVisible",false); return false end
+    gs.selected=nil; gs.phase="AUTO"; self._autoRunning=true; Render("EndDrag"); self:_Refresh()
+    local sid,idx=self._sessionId,1
+    local function Step()
+        if not A.GameSession:IsSession(E,sid) or E.gameState~=gs or E.state~="AUTO" then return end
+        local move=queue[idx]
+        if not move then
+            E._autoRunning=false; gs.phase="PLAYING"
+            if A.SOL_Logic:IsWin(gs) then E:_Finish("WIN") else E:_Refresh() end
             return
         end
-
-        local move = queue[idx]
-        idx = idx + 1
-
-        -- Move auf echtem Spielzustand ausführen
-        if move.type == "foundation" then
-            local col  = gs.tableau[move.fromCol]
-            local card = col[#col]
-            if card then
-                local fKey = move.toKey or L:FindFoundationKey(gs, card)
-                if fKey then
-                    table.remove(col)
-                    gs.foundation[fKey][#gs.foundation[fKey]+1] = card
-                    card.faceUp = true
-                    gs.score = math.max(0, gs.score + (L.SCORE and L.SCORE.TABLEAU_TO_FOUND or 10))
-                    E:_PlaySound("foundation")
-                end
-            end
-        elseif move.type == "tableau" then
-            local fromCol = gs.tableau[move.fromCol]
-            local toCol   = gs.tableau[move.toCol]
-            local card    = fromCol[#fromCol]
-            if card then
-                table.remove(fromCol)
-                toCol[#toCol+1] = card
-            end
+        local cards=A.SOL_Logic:GetSelectedCards(gs,move.src.zone,move.src.index,move.src.cardIndex)
+        if not cards or cards[1].rank~=move.rank or cards[1].suit~=move.suit or not A.SOL_Logic:TryMove(gs,move.src,move.dst) then
+            E._autoRunning=false; gs.phase="PLAYING"; E:_Refresh(); return
         end
-
-        local R = GetRenderer()
-        if R then R:Refresh(gs) end
-
-        if move.type == "foundation" and L:IsWin(gs) then
-            E._autoRunning = false
-            E:_Win()
-            return
-        end
-
-        _autoGuard:After(0.08, step)
+        idx=idx+1; E:_AccumulateTime(); E:_PlaySound("foundation")
+        if A.SOL_Logic:IsWin(gs) then E:_Finish("WIN"); return end
+        E:_Refresh(); auto:After(0.08,Step)
     end
-    step()
+    auto:After(0.08,Step); return true
 end
-
--- ── Post-Move Prüfungen ───────────────────────────────────────
-function E:_CheckPostMove(gs)
-    local L = GetLogic()
-    -- Win?
-    if L:IsWin(gs) then
-        E:_Win()
-        return
-    end
-    -- Auto-Complete möglich?
-    local R = GetRenderer()
-    if R and L:CanAutoComplete(gs) then
-        if R.SetAutoCompleteVisible then R:SetAutoCompleteVisible(true) end
-    end
-    -- No-Move?
-    if not L:HasValidMoves(gs) then
-        -- kurze Verzögerung damit Renderer zuerst aktualisiert
-        _timerGuard:After(0.5, function()
-            if E.state == "PLAYING" then
-                E:_GameOver()
-            end
-        end)
-    end
+function E:RequestForfeit()
+    if not self:CanInteract() then return false end
+    Render("ConfirmForfeit",self._sessionId,self.gameState.runId); return true
 end
-
--- ── SaveAndPause ──────────────────────────────────────────────
+function E:ConfirmForfeit(sid,runId)
+    if not self:CanInteract() or self._sessionId~=sid or self.gameState.runId~=runId then return false end
+    return self:_Finish("LOSS")
+end
+function E:_Finish(result)
+    local gs=self.gameState; if not gs or self.state~="PLAYING" and self.state~="AUTO" then return false end
+    if result=="WIN" and not A.SOL_Logic:IsWin(gs) then return false end
+    self:_StopTimer(); auto:Cancel(); self._autoRunning=false
+    gs.selected=nil; gs.phase="RESULT_PENDING"; gs.result=result; self:_Refresh(); return self:RetryResult()
+end
+function E:RetryResult()
+    local gs=self.gameState; if not gs or gs.phase~="RESULT_PENDING" then return false end
+    local data={gameId="SOLITAIRE",difficulty=gs.mode,runId=gs.runId,result=gs.result,score=gs.score,
+        newScore=gs.scoreVersion==2 and gs.score or nil,scoreVersion=gs.scoreVersion,skipHighscores=true,
+        elapsedMs=gs.elapsedMs,undoUsed=gs.undoUsed,wastePass=gs.wastePass}
+    A.Engine:Emit("GAME_RESULT",data)
+    if not data.processed then self:_Snapshot(); Render("ShowResultPending",gs); return false end
+    self._lastResult=data; gs.phase=gs.result; self:_Refresh()
+    if not data.localReplay and gs.result=="WIN" then self:_PlaySound("win") end
+    Render("ShowResult",gs.result,gs.score); return true
+end
 function E:SaveAndPause()
-    if E._sessionId then
-        ArcadiaNexus.Lifecycle:PauseGame("SOLITAIRE", E._sessionId)
+    self:_StopTimer(); auto:Cancel(); self._autoRunning=false; Render("EndDrag")
+    if self.gameState then
+        if self.gameState.phase=="AUTO" then self.gameState.phase="PLAYING" end
+        self.gameState.selected=nil; self:_Snapshot()
     end
-    E:_StopTimer()
-    _autoGuard:Cancel()
-    E._autoRunning = false
-    if E.state == "PLAYING" and E.gameState then
-        local S = GetSettings()
-        if S then S:SaveGame(E.gameState) end
+    if self._sessionId then
+        A.Lifecycle:PauseGame("SOLITAIRE",self._sessionId); A.Lifecycle:EndGame("SOLITAIRE",self._sessionId); self._sessionId=nil
     end
-    if E._sessionId then
-        ArcadiaNexus.Lifecycle:EndGame("SOLITAIRE", E._sessionId)
-        E._sessionId = nil
-    end
-    E.state = "IDLE"
+    self.state="IDLE"; self.gameState,self.activeSlot,self._lastResult=nil,nil,nil
+    Render("SetState","IDLE"); return true
 end
-
--- ── StopGame ──────────────────────────────────────────────────
-function E:StopGame()
-    if E._sessionId then
-        ArcadiaNexus.Lifecycle:EndGame("SOLITAIRE", E._sessionId)
-        E._sessionId = nil
-    end
-    E:_StopTimer()
-    _autoGuard:Cancel()
-    E._autoRunning = false
-    E.state     = "IDLE"
-    E.gameState = nil
-    local R = GetRenderer()
-    if R then R:SetState("IDLE") end
+function E:StopGame() return self:SaveAndPause() end
+function E:SetMode(mode)
+    if self.gameState or not A.SOL_Logic:IsMode(mode) then return false end
+    A.SOL_Settings:_SetMode(mode); return true
 end

@@ -25,6 +25,7 @@ local function BuildWhackAMoleSettingsPanel(parent)
             items = {
                 { key = "soundOnHit",  label = L.sound_hit  },
                 { key = "soundOnBomb", label = L.sound_bomb },
+                { key = "soundOnRound", label = L.sound_round },
             },
         },
         guide = {

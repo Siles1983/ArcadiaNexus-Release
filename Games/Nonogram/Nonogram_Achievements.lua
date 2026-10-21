@@ -53,12 +53,16 @@ ArcadiaNexus.RegisterAchievements({
             if data._retroactive then
                 local entry = db.leaderboard and db.leaderboard["NONOGRAM"]
                 local h = entry and (entry["hard"] or entry["HARD"]) or {}
-                return h.wins or 0
+                local count=h.wins or 0
+                for key,value in pairs(entry or {}) do if type(key)=="string" and key:match("^v2_.*_hard$") then count=count+(value.wins or 0) end end
+                return count
             end
             if data.result == "WIN" and (data.difficulty == "hard" or data.difficulty == "HARD") then
                 local entry = db.leaderboard and db.leaderboard["NONOGRAM"]
                 local h = entry and (entry["hard"] or entry["HARD"]) or {}
-                return h.wins or 0
+                local count=h.wins or 0
+                for key,value in pairs(entry or {}) do if type(key)=="string" and key:match("^v2_.*_hard$") then count=count+(value.wins or 0) end end
+                return count
             end
             return 0
         end,

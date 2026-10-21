@@ -38,5 +38,11 @@ function Engine:Off(event, callback)
 end
 
 function Engine:Emit(event, ...)
+    local LR = ArcadiaNexus.LocalResults
+    if LR and LR:BufferEvent(event, ...) then return end
+    local GRP = ArcadiaNexus.GameResultProcessor
+    if GRP and GRP.BufferEvent and GRP:BufferEvent(event, ...) then return end
+    local AM = ArcadiaNexus.AchievementManager
+    if AM and AM.BufferEvent and AM:BufferEvent(event, ...) then return end
     ArcadiaNexus.EventBus:Emit(event, ...)
 end

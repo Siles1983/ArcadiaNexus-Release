@@ -32,16 +32,17 @@ ArcadiaNexus.RegisterAchievements({
       icon="Interface\\Icons\\Spell_Holy_BorrowedTime",
       condition = function(data, db)
           if data.gameId ~= "REACTIONSTRIKE" or data.result ~= "WIN" then return 0 end
-          local score = data.score or 0
-          if score >= 950 then return 3 end
-          if score >= 800 then return 2 end
-          if score >= 600 then return 1 end
+          local ms=data.reactionMs
+          if type(ms)~="number" then return 0 end
+          if ms < 50 then return 3 end
+          if ms < 200 then return 2 end
+          if ms < 400 then return 1 end
           return 0
       end,
       tiers = {
-          { id="RS_SPEED_BRONZE", tierName="Bronze", target=1, xp=20, desc_de="600+ Punkte (<400ms).",  desc_en="600+ points (<400ms)."  },
-          { id="RS_SPEED_SILBER", tierName="Silber", target=2, xp=45, desc_de="800+ Punkte (<200ms).",  desc_en="800+ points (<200ms)."  },
-          { id="RS_SPEED_GOLD",   tierName="Gold",   target=3, xp=75, desc_de="950+ Punkte (<50ms)!",   desc_en="950+ points (<50ms)!"   },
+          { id="RS_SPEED_BRONZE", tierName="Bronze", target=1, xp=20, desc_de="Reagiere in unter 400 ms.", desc_en="React in under 400 ms." },
+          { id="RS_SPEED_SILBER", tierName="Silber", target=2, xp=45, desc_de="Reagiere in unter 200 ms.", desc_en="React in under 200 ms." },
+          { id="RS_SPEED_GOLD", tierName="Gold", target=3, xp=75, desc_de="Reagiere in unter 50 ms!", desc_en="React in under 50 ms!" },
       },
     },
 
@@ -50,12 +51,9 @@ ArcadiaNexus.RegisterAchievements({
       desc_de="Lass dich nicht von Fakeout-Orbs täuschen.", desc_en="Survive fakeout orbs.",
       icon="Interface\\Icons\\Spell_Fire_FlameBolt",
       condition = function(data, db)
-          if data.gameId ~= "REACTIONSTRIKE" then return 0 end
-          local survived = data.stats and data.stats.fakeoutsSurvived or 0
-          if survived <= 0 then return 0 end
-          local prog = db.achievements and db.achievements.progress
-                       and db.achievements.progress["RS_FAKEOUT"]
-          return (prog and prog.current or 0) + survived
+          if data.gameId ~= "REACTIONSTRIKE" or not data.fakeoutEvent then return nil end
+          local settings=db.gameSettings and db.gameSettings.REACTIONSTRIKE
+          return settings and settings.fakeoutsSurvived or 0
       end,
       tiers = {
           { id="RS_FAKEOUT_BRONZE", tierName="Bronze", target=5,  xp=20, desc_de="5 Fakeouts.",   desc_en="5 fakeouts."   },

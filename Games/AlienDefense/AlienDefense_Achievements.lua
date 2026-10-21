@@ -20,7 +20,7 @@ ArcadiaNexus.RegisterAchievements({
         icon     = 7554216, -- INV_12_DH_Void_Ability_StarFragments
         condition = function(data, db)
             if data.gameId ~= "ALIENDEFENSE" then return 0 end
-            local wave = data.stats and data.stats.waveReached or 0
+            local wave = data.stats and data.stats.clearedWave or 0
             return wave
         end,
         tiers = {
@@ -41,7 +41,7 @@ ArcadiaNexus.RegisterAchievements({
         icon     = "Interface\\Icons\\Ability_Marksmanship",
         condition = function(data, db)
             if data.gameId ~= "ALIENDEFENSE" then return 0 end
-            local kills = data.stats and data.stats.enemiesKilled or 0
+            local kills = data.killDelta or (data.stats and data.stats.enemiesKilled) or 0
             if kills <= 0 then return 0 end
             local prog = db.achievements and db.achievements.progress
                          and db.achievements.progress["AD_KILLS"]

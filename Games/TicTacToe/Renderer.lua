@@ -1,7 +1,7 @@
 -- ============================================================
 --  ArcadiaNexus
 --  Games/TicTacToe/Renderer.lua
---  Version: 3.0.0  (Blueprint v2 – nach Match-3/Memory-Muster)
+--  Version: 3.0.0  (gemeinsames Blueprint-v2-Layout)
 --
 --  Layout-Strategie:
 --    - self.frame bleibt der panelgroße Lifecycle-Container
@@ -97,7 +97,7 @@ local CFG = {
     hud_turn_x     = -150,
     hud_turn_y     = 228,
     hud_turn_alpha = 0.75,
-    hud_series_w     = 124,
+    hud_series_w     = 180,
     hud_series_h     = 26,
     hud_series_x     = 196,
     hud_series_y     = 228,
@@ -429,7 +429,8 @@ function R:_RefreshSeriesHud()
     end
     local s = E:GetSeries()
     if self._seriesFS and s then
-        self._seriesFS:SetText(string.format("%d : %d", s.you or 0, s.opp or 0))
+        local L=ArcadiaNexus.GetLocaleTable("TICTACTOE")
+        self._seriesFS:SetText(string.format(L.hud_series_detail,s.you or 0,s.opp or 0,s.draws or 0))
     end
     self._seriesBox:Show()
 end
@@ -513,7 +514,7 @@ function R:_SyncWinLengthOptions()
         self._ddWin:RefreshDisplay()
     end
     if self._ddWin and self._ddWin.SetEnabled then
-        self._ddWin:SetEnabled(size > 3)
+        self._ddWin:SetEnabled(size > 3 and not ArcadiaNexus.TTT_Engine.activeConfig)
     end
 end
 
@@ -544,7 +545,7 @@ function R:_CreateControls()
     end
 
     local ddGridAnchor = DdAnchor(1)
-    UI.CreateSimpleDropdown(
+    self._ddGrid=UI.CreateSimpleDropdown(
         ddGridAnchor,
         0, 0,
         CFG.dd_w,
@@ -558,6 +559,7 @@ function R:_CreateControls()
             return tostring(R._lastGridSize or 3)
         end,
         function(key)
+            if ArcadiaNexus.TTT_Engine.activeConfig then return end
             R._lastGridSize = tonumber(key) or 3
             R:_SyncWinLengthOptions()
         end,
@@ -578,6 +580,7 @@ function R:_CreateControls()
             return tostring(R._lastWinLength or 3)
         end,
         function(key)
+            if ArcadiaNexus.TTT_Engine.activeConfig then return end
             R._lastWinLength = tonumber(key) or 3
         end,
         { title = L["tip_win_title"] or L["lbl_win_length"], text = L["tip_win"] }
@@ -589,6 +592,11 @@ function R:_CreateControls()
     startBtn:SetScript("OnClick", function()
         local E = ArcadiaNexus.TTT_Engine
         if not E then return end
+        if E.mode=="hotseat" and E.activeGame then
+            if E.state=="RESULT" and E:IsSeriesOver() then E:StartGame(R:_HotseatConfig())
+            else R:RequestExit() end
+            return
+        end
         if R.state == "PLAYING" and E.mode and E.mode ~= "hotseat" then
             local Shell = ArcadiaNexus.MatchShell
             if Shell and Shell.ShowEndRoundConfirm then
@@ -608,7 +616,7 @@ function R:_CreateControls()
     self._startBtn = startBtn
 
     local ddDiffAnchor = DdAnchor(4)
-    UI.CreateSimpleDropdown(
+    self._ddDiff=UI.CreateSimpleDropdown(
         ddDiffAnchor,
         0, 0,
         CFG.dd_w,
@@ -622,13 +630,14 @@ function R:_CreateControls()
             return R._lastDifficulty or "easy"
         end,
         function(key)
+            if ArcadiaNexus.TTT_Engine.activeConfig then return end
             R._lastDifficulty = key
         end,
         { title = L["tip_diff_title"] or L["lbl_difficulty"], text = L["tip_diff"] }
     )
 
     local ddStarterAnchor = DdAnchor(5)
-    UI.CreateSimpleDropdown(
+    self._ddStarter=UI.CreateSimpleDropdown(
         ddStarterAnchor,
         0, 0,
         CFG.dd_w,
@@ -642,12 +651,67 @@ function R:_CreateControls()
             return R._lastStarter or "you"
         end,
         function(key)
+            if ArcadiaNexus.TTT_Engine.activeConfig then return end
             R._lastStarter = key
         end,
         { title = L["tip_start_title"], text = L["tip_start"] }
     )
 
     self._setupFrames = { ddGridAnchor, ddWinAnchor, ddDiffAnchor, ddStarterAnchor }
+end
+
+function R:RefreshConfiguration()
+    local cfg=ArcadiaNexus.TTT_Engine.activeConfig
+    if cfg then
+        self._lastGridSize,self._lastWinLength=cfg.boardSize,cfg.winLength
+        self._lastDifficulty,self._lastStarter=cfg.aiDifficulty,cfg.firstPlayer
+    end
+    for _,dd in ipairs({self._ddGrid,self._ddWin,self._ddDiff,self._ddStarter}) do
+        dd:SetEnabled(not cfg); dd:RefreshDisplay()
+    end
+    self:_SyncWinLengthOptions()
+end
+
+function R:RequestExit()
+    local E,UI=ArcadiaNexus.TTT_Engine,ArcadiaNexus.UI
+    if E.mode~="hotseat" then
+        local Shell=ArcadiaNexus.MatchShell
+        if Shell and Shell.ShowEndRoundConfirm then Shell.ShowEndRoundConfirm(function() E:StopGame() end,self._fieldFrame)
+        else E:StopGame() end
+        return
+    end
+    if not E.activeGame or E:IsSeriesOver() then E:StopGame(); return end
+    local game,sid=E.activeGame,E._sessionId
+    local L=ArcadiaNexus.GetLocaleTable("TICTACTOE")
+    local GR=ArcadiaNexus.GameRegistry
+    if GR and GR._confirm and GR._confirm.gameId=="TICTACTOE" and GR._confirm.sessionId==sid then
+        GR._confirm.parent=self._fieldFrame
+    end
+    local owner={gameId="TICTACTOE",sessionId=sid,identity=game}
+    UI.ShowChoicePopup({parent=self._fieldFrame,owner=owner,title=L.confirm_exit,body=L.confirm_exit_body,buttons={
+        {label=L.btn_exit,onClick=function()
+            local current=UI.ChoicePopupOwner and UI.ChoicePopupOwner(R._fieldFrame)
+            if current and (current.sessionId~=sid or current.identity~=game) then return end
+            UI.HideChoicePopup(R._fieldFrame)
+            if E.activeGame==game and E._sessionId==sid and GR and GR.AcceptClose then GR.AcceptClose("TICTACTOE",sid,game) end
+        end},
+        {label=L.btn_cancel,onClick=function()
+            local current=UI.ChoicePopupOwner and UI.ChoicePopupOwner(R._fieldFrame)
+            if current and (current.sessionId~=sid or current.identity~=game) then return end
+            UI.HideChoicePopup(R._fieldFrame)
+            if GR and GR.DeclineClose then GR.DeclineClose("TICTACTOE",sid) end
+            if E.activeGame==game and E._sessionId==sid and E.state=="RESULT" then R:ShowGameOver(game.result) end
+        end},
+    }})
+end
+
+function R:ShowResultPending()
+    local E,UI=ArcadiaNexus.TTT_Engine,ArcadiaNexus.UI
+    local game,sid=E.activeGame,E._sessionId
+    local L=ArcadiaNexus.GetLocaleTable("TICTACTOE")
+    UI.ShowResultDialog({parent=self._fieldFrame,title=L.result_pending,hideHighscore=true,buttons={
+        {label=L.btn_retry,onClick=function() if E.activeGame==game and E._sessionId==sid then E:RetryResult() end end},
+    }})
 end
 
 function R:_EnsureCellPool()
@@ -667,6 +731,8 @@ end
 -- ============================================================
 function R:EnterIdleState()
     self.state = "IDLE"
+    self:RefreshConfiguration()
+    ArcadiaNexus.UI.HideChoicePopup(self._fieldFrame)
 
     self:_ClearBoardCells()
 
@@ -740,6 +806,7 @@ end
 -- EVENT-HANDLER: Spiel gestartet
 -- ============================================================
 function R:OnGameStarted(board)
+    self:RefreshConfiguration()
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     if self._hintFS  then self._hintFS:Hide()  end
     if self._logoTex then self._logoTex:Hide() end
@@ -927,13 +994,14 @@ function R:ShowGameOver(result)
     local UI = ArcadiaNexus.UI
     local E  = ArcadiaNexus.TTT_Engine
     local mp = E and E.mode and E.mode ~= "hotseat"
+    local dialogSession,dialogGame=E._sessionId,E.activeGame
     self.state      = "GAMEOVER"
     self.lastResult = result
 
     for _, btn in ipairs(self.buttons) do btn:Disable() end
 
     if self._startBtn then
-        self._startBtn:SetLabel(L["btn_start"])
+        self._startBtn:SetLabel(not mp and E:IsSeriesOver() and L.btn_new_series or L.btn_exit)
     end
     if self._turnBox then self._turnBox:Hide() end
     self:_RefreshSeriesHud()
@@ -976,23 +1044,25 @@ function R:ShowGameOver(result)
             lines = {
                 L["result_series_bestof"] or "Best of 3",
                 string.format("%d : %d", s.you or 0, s.opp or 0),
+                string.format(L.hud_series_detail,s.you or 0,s.opp or 0,s.draws or 0),
+                L[result=="WIN" and "lbl_win" or result=="LOSS" and "lbl_loss" or "lbl_draw"],
             }
         else
             lines = {
-                string.format(L["hud_series"] or "Serie %d : %d", s.you or 0, s.opp or 0),
+                string.format(L.hud_series_detail,s.you or 0,s.opp or 0,s.draws or 0),
             }
             local UILoc = ArcadiaNexus.GetLocaleTable("UI") or {}
             buttons = {
                 {
                     label = L["btn_next_round"] or UILoc.btn_next_round or "Nächste Runde",
                     onClick = function()
-                        E:StartGame(R:_HotseatConfig({ seriesContinue = true }))
+                        E:StartGame({seriesContinue=true})
                     end,
                 },
                 {
                     label = L["btn_exit"] or UILoc.btn_exit or "Beenden",
                     onClick = function()
-                        E:StopGame()
+                        R:RequestExit()
                     end,
                 },
             }
@@ -1001,7 +1071,12 @@ function R:ShowGameOver(result)
 
     UI.ShowArcadeResult(self._fieldFrame, {
         gameId     = "TICTACTOE",
-        difficulty = mp and "normal" or (self._lastDifficulty or "easy"),
+        difficulty = mp and "normal" or E.activeConfig.aiDifficulty,
+        score      = not mp and E.resultData and E.resultData.score or nil,
+        xp         = not mp and E.resultData and E.resultData.awardedXP or nil,
+        gold       = not mp and E.resultData and E.resultData.awardedGold or nil,
+        hideHighscore=true,
+        isCurrent=function() return E._sessionId==dialogSession and E.activeGame==dialogGame end,
         result     = dialogResult,
         lines      = lines,
         titleKeys  = titleKeys,
@@ -1018,14 +1093,15 @@ function R:ShowGameOver(result)
                 if Shell and Shell.Rematch then Shell.Rematch("TICTACTOE") end
                 return
             end
-            E:StartGame(R:_HotseatConfig({ seriesContinue = not seriesOver }))
+            E:StartGame(seriesOver and R:_HotseatConfig() or {seriesContinue=true})
         end,
         onExit = function()
-            if E then E:StopGame() end
+            if mp then E:StopGame() else R:RequestExit() end
         end,
         buttons = buttons,
     })
-    PlayGameSound(result)
+    local soundKey=mp and E.match or E._runId
+    if self._resultSoundKey~=soundKey then self._resultSoundKey=soundKey; PlayGameSound(result) end
 end
 
 -- ============================================================

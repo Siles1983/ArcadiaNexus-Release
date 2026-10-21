@@ -10,5 +10,8 @@ local S  = LR.SECTION
 ArcadiaNexus.RegisterLeaderboard({
     gameId = "ARCADIASECHO",
     difficulties = { "easy", "normal", "hard" },
-    sections = { S.TopScores(3), S.StatsLossesPlayed() },
+    sections = {
+        S.TopScores(3), S.StatsLossesPlayed(),
+        {type="top_scores", titleKey="lb_legacy_rules", field="legacyHighscores", count=3, hideIfEmpty=true},
+    },
 })

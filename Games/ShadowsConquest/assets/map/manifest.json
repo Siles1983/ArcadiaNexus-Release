@@ -1,0 +1,172 @@
+{
+  "game": "Shadows Conquest",
+  "date": "2026-10-07",
+  "status": "art-exported-file-verified-and-runtime-integrated; client-acceptance-pending",
+  "generator": "built-in image_gen",
+  "artReference": "Arcane Barrage",
+  "difficulties": [
+    "easy",
+    "normal",
+    "hard"
+  ],
+  "levelCountPerDifficulty": 50,
+  "exportSize": [
+    1024,
+    1024
+  ],
+  "basePrompt": "Use case: stylized-concept. Create ONE square 1024x1024 full-bleed opaque production campaign-map background for Shadows Conquest, a WoW lights-out puzzle minigame. Hand-painted polished fantasy terrain, high oblique/isometric camera, atmospheric depth, readable at 512px. Visual identity: light illuminating darkness, deep navy and violet shadows, restrained cyan and warm amber light. This is scenic campaign art, not a puzzle board. A wide continuous winding stone or earth route crosses the scene from lower left through center to upper right, with quiet broad stretches for ten native level nodes. No painted markers, circles, buttons, text, lettering, numbers, stars, padlocks, UI, logo, border, people, characters, runestone puzzle pieces or new mechanics. Peripheral architecture and terrain may be detailed; the route must be uncluttered, matte and calm. Upper 10% and bottom 12% should be dark and low-contrast for native title/footer overlays, keep bright focal architecture away from those areas. ",
+  "pages": [
+    {
+      "page": 1,
+      "firstLevel": 1,
+      "lastLevel": 10,
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "png": "page_01_twilight_gate.png",
+      "tga": "page_01_twilight_gate.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\ShadowsConquest\\assets\\map\\page_01_twilight_gate",
+      "prompt": "Page 01, levels 1-10 in each difficulty: twilight valley with distant ancient stone gateways, shadowed pine-covered cliffs, a modest river below, broad winding route with occasional small warm light sources at its edges. Welcoming deep blue dusk, restrained cyan glimmer in the distant sky. Low dense landscape composition, not jewel crystals or lava.",
+      "styleReference": "Games/BubbleShooter/assets/map/page_01_leyline_origin.tga",
+      "styleReferencePrompt": "Reference input: the supplied Arcane Barrage map is a painterly campaign-art STYLE REFERENCE ONLY. Match its terrain polish and depth, but build the newly described landscape. Do not reproduce its crystals, glowing leyline rivers, layout or exact architecture.",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "56b87ab8f5ca76f9d0b0fddaadc3fef520b7d9084c52fcbfa83c5e8892af92ba",
+      "tgaSha256": "55836d956bff6274be0b6fcadf199d6120edf27cda2bf4228a6176b7a5c445cd",
+      "bytes": 4194348
+    },
+    {
+      "page": 2,
+      "firstLevel": 11,
+      "lastLevel": 20,
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "png": "page_02_moonlit_aqueduct.png",
+      "tga": "page_02_moonlit_aqueduct.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\ShadowsConquest\\assets\\map\\page_02_moonlit_aqueduct",
+      "prompt": "Page 02, levels 11-20 in each difficulty: moonlit aqueduct terraces. Weathered arched stone water channels, deep blue reflective pools, broad traversable stone embankments linked by low bridges, distant mountains. Soft cyan moonlight and sparse amber lamps, quiet route clearings. Composition dominated by horizontal water terraces, not a copy of page 01.",
+      "styleReference": "page_01_twilight_gate.png",
+      "styleReferencePrompt": "The supplied Twilight Gate image is a STYLE REFERENCE ONLY for this set: preserve the painterly finish, light-versus-shadow palette, low-contrast top/bottom margins and broad matte traversal route. Create the distinct region described here, with a new terrain composition rather than recoloring that valley.",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "aa94ffb28d6bca46c11154ed306430152e4be885a6f314b2df6790811f670ee4",
+      "tgaSha256": "64faaac2a2f1ea9f447894693b9a3740540d5fd4d0b1221d625351ca83c3e74f",
+      "bytes": 4194348
+    },
+    {
+      "page": 3,
+      "firstLevel": 21,
+      "lastLevel": 30,
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "png": "page_03_luminous_gardens.png",
+      "tga": "page_03_luminous_gardens.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\ShadowsConquest\\assets\\map\\page_03_luminous_gardens",
+      "prompt": "Page 03, levels 21-30 in each difficulty: luminous night gardens. Dark silver-leaf trees, terraced gardens with small pale glowing flowers at their edges, broad winding earth-and-stone trail, still pond and distant low ruins. Indigo shade punctuated by gentle cyan and amber pools of light. Botanical landscape, no crystals or jewel valley.",
+      "styleReference": "page_01_twilight_gate.png",
+      "styleReferencePrompt": "The supplied Twilight Gate image is a STYLE REFERENCE ONLY for this set: preserve the painterly finish, light-versus-shadow palette, low-contrast top/bottom margins and broad matte traversal route. Create the distinct region described here, with a new terrain composition rather than recoloring that valley.",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "15be611ed8166214cf91ee4bbad9a44888bbc9e43a93330343e0d17be48be7e9",
+      "tgaSha256": "e86a49e296253f558776eebbf4571f515993c71b4011961983984862cbe78566",
+      "bytes": 4194348
+    },
+    {
+      "page": 4,
+      "firstLevel": 31,
+      "lastLevel": 40,
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "png": "page_04_eclipse_observatory.png",
+      "tga": "page_04_eclipse_observatory.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\ShadowsConquest\\assets\\map\\page_04_eclipse_observatory",
+      "prompt": "Page 04, levels 31-40 in each difficulty: isolated mountain observatory beneath a dim starry sky with an eclipsed moon as a subtle small feature. Weathered bronze astronomical structures on peripheral cliffs, broad stone switchbacks through shadowed terraces. Restrained amber and cyan lights on structures, quiet navy center route, no inscriptions, no giant bright celestial object in title zone.",
+      "styleReference": "page_01_twilight_gate.png",
+      "styleReferencePrompt": "The supplied Twilight Gate image is a STYLE REFERENCE ONLY for this set: preserve the painterly finish, light-versus-shadow palette, low-contrast top/bottom margins and broad matte traversal route. Create the distinct region described here, with a new terrain composition rather than recoloring that valley.",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "2fcae62efe060706c77df7ae1faa418c52b85e8bf010206d53bd579c87614df8",
+      "tgaSha256": "48b236ca92682d2537af701c7ac3a08b5959f166d19b871bb032cbe624f12771",
+      "bytes": 4194348
+    },
+    {
+      "page": 5,
+      "firstLevel": 41,
+      "lastLevel": 50,
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "png": "page_05_dawn_beacon.png",
+      "tga": "page_05_dawn_beacon.tga",
+      "luaTexture": "Interface\\AddOns\\ArcadiaNexus\\Games\\ShadowsConquest\\assets\\map\\page_05_dawn_beacon",
+      "prompt": "Page 05, levels 41-50 in each difficulty: mountain beacon landscape at the first hint of dawn. A distant elegant light tower off to the upper right below the top overlay margin, cool blue mountain ridges, a broad continuous winding stone ascent with ten calm stopping stretches. A warm restrained beacon lights mist and dark terrain; sky remains dark navy fading toward subdued mauve. No final level marker, no palace, no crystals.",
+      "styleReference": "page_01_twilight_gate.png",
+      "styleReferencePrompt": "The supplied Twilight Gate image is a STYLE REFERENCE ONLY for this set: preserve the painterly finish, light-versus-shadow palette, low-contrast top/bottom margins and broad matte traversal route. Create the distinct region described here, with a new terrain composition rather than recoloring that valley.",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceMode": "RGB",
+      "exportSize": [
+        1024,
+        1024
+      ],
+      "pngSha256": "1e3f9700ee3cee348dbe38ff490dd95f8b3583e6756c550117d50c8c4831aaec",
+      "tgaSha256": "9a08c7b83642c5303c81e436303c85756d95a3cc64b1e3e20da2f8ee538b5ce0",
+      "bytes": 4194348
+    }
+  ],
+  "modes": [
+    "free",
+    "limit"
+  ],
+  "preservedTrio": {
+    "Games/ShadowsConquest/assets/background/bg_sc.tga": "0395e8a200991dbdf5edc7f9fccaab13a59caf6eae34c92412c18e06c8369645",
+    "Games/ShadowsConquest/assets/border/border_sc.tga": "69894c2e1154a5994d2ddd2d517e537534dd1f070513258c9fb13ed6232fdd82",
+    "Games/ShadowsConquest/assets/logo/logo_sc.tga": "9bfd26b34fe784acb1c242f2fb816625c44a261d7c2b1debbf923baaefe3176e"
+  },
+  "runtimeIntegrated": true,
+  "clientAccepted": false,
+  "presentationData": "Games/ShadowsConquest/CampaignMap.lua"
+}

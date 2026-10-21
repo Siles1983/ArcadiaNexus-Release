@@ -39,6 +39,7 @@ function L:NewBoard(config)
         symbolCount  = diff.grid * diff.grid,
         sequence     = {},
         round        = 0,
+        completedLength = 0,
         inputPos     = 0,
         -- Geschwindigkeit: startet bei 0.85s, minimum = maxSpeed aus Theme
         baseSpeed    = 0.85,
@@ -57,7 +58,7 @@ end
 function L:NextRound(board)
     board.round    = board.round + 1
     -- Geschwindigkeit reduzieren
-    local newSpeed = board.speed - board.speedStep
+    local newSpeed = board.baseSpeed - (board.round - 1) * board.speedStep
     if newSpeed < board.minSpeed then newSpeed = board.minSpeed end
     board.speed    = newSpeed
     -- Zufälligen Symbol-Index hinzufügen (1..symbolCount)
@@ -73,17 +74,20 @@ end
 -- Gibt zurück: "correct"|"wrong"|"round_complete"
 -- ============================================================
 function L:HandleInput(board, symIdx)
-    if board.state ~= "input" then return "wrong" end
+    if board.state ~= "input" or type(symIdx) ~= "number" or symIdx ~= math.floor(symIdx)
+        or symIdx < 1 or symIdx > board.symbolCount then return "invalid" end
 
     board.inputPos = board.inputPos + 1
     local expected = board.sequence[board.inputPos]
 
     if symIdx ~= expected then
+        board.expectedSymbol, board.chosenSymbol = expected, symIdx
         board.state = "lost"
         return "wrong"
     end
 
     if board.inputPos >= board.round then
+        board.completedLength = board.round
         board.state = "showing"
         return "round_complete"
     end
@@ -100,8 +104,8 @@ function L:SetInputPhase(board)
 end
 
 -- ============================================================
--- GetHighscore – höchste erreichte Runde = board.round
+-- GetScore – längste vollständig gemeisterte Sequenz
 -- ============================================================
 function L:GetScore(board)
-    return board.round
+    return board.completedLength or 0
 end

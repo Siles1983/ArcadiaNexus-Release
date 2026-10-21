@@ -17,7 +17,7 @@ function A.BG_Match.Options(engine, rng)
         isFinished = function(s) return s.winner ~= 0 end,
         onState = function(node, state) if engine then engine:OnMatchState(node, state) end end,
         onPublic = function(node) if engine then engine:OnMatchPublic(node) end end,
-        onResult = function(node, id) if engine then engine:OnMatchResult(node, id) end end,
+        onResult = function(node, id) if engine then return engine:OnMatchResult(node, id) end end,
         onReject = function(node, fields) if engine then engine:OnMatchReject(fields, node) end end,
     }
 end

@@ -99,10 +99,6 @@ function R:ApplyCardEffect(gs, card, chosenColor)
         end
     end
 
-    gs.stats = gs.stats or {}
-    if card.type == "WILD4" and gs.currentPlayer == 1 then
-        gs.stats.wild4Played = (gs.stats.wild4Played or 0) + 1
-    end
 end
 
 function R:PlayerHadPlayableBeforeWild4(gs, playerIndex)
@@ -114,22 +110,6 @@ function R:PlayerHadPlayableBeforeWild4(gs, playerIndex)
         end
     end
     return false
-end
-
-function R:ResolveChallenge(gs, challengerWins)
-    local drawer = gs.wild4PlayedBy
-    local challenger = gs.currentPlayer
-    if challengerWins then
-        gs.pendingDraw = 4
-        gs.pendingType = "PENALTY"
-        gs.forceDrawPlayer = drawer
-    else
-        gs.pendingDraw = 6
-        gs.pendingType = "PENALTY"
-        gs.forceDrawPlayer = challenger
-    end
-    gs.wild4Challengable = false
-    gs.wild4Context = nil
 end
 
 function R:NextPlayerIndex(gs, steps)

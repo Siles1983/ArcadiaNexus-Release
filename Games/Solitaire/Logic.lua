@@ -1,690 +1,243 @@
--- ============================================================
---  Solitaire – Logic.lua
---  Reine Spielregeln: Deck, Zug-Validierung, Undo, Scoring.
---  KEIN UI-Code hier.
---  Namespace: SOL_
--- ============================================================
-
-local ArcadiaNexus = _G.ArcadiaNexus
-ArcadiaNexus.SOL_Logic = {}
-local Logic = ArcadiaNexus.SOL_Logic
-
--- ── Kartendefinition ──────────────────────────────────────────
-local SUITS = { "herz", "karo", "kreuz", "pik" }
-local RANKS = { "A","2","3","4","5","6","7","8","9","10","J","Q","K" }
-
--- Farb-Gruppierung: Rot = herz/karo, Schwarz = kreuz/pik
-local RED_SUITS  = { herz=true, karo=true }
-local BLACK_SUITS = { kreuz=true, pik=true }
-
--- Rang-Reihenfolge (1=2 ... 13=A)
-local RANK_ORDER = {}
-for i, r in ipairs(RANKS) do RANK_ORDER[r] = i end
-
--- Foundation-Keys pro Farbe (intern: H,D,C,S)
--- herz=H, karo=D, kreuz=C, pik=S
-local SUIT_KEY = { herz="H", karo="D", kreuz="C", pik="S" }
-
--- Foundation-Slots (intern C/D/H/S). Farbe liegt nicht fest in einem Slot:
--- Asse dürfen auf jeden leeren Stapel, Folgekarten folgen dem Ass.
-local FND_KEYS = { "C", "D", "H", "S" }
-
--- ── Score-Konstanten ──────────────────────────────────────────
-local SCORE = {
-    WASTE_TO_TABLEAU   =  5,
-    WASTE_TO_FOUND     = 10,
-    TABLEAU_TO_FOUND   = 10,
-    FLIP_CARD          =  5,
-    FOUND_TO_TABLEAU   = -15,
-    UNDO_PENALTY       = -15,
-    WASTE_PASS_PENALTY = -20,   -- pro Karte im Waste ab 4. Durchlauf (3-Karten-Modus)
-}
-
--- ── Hilfsfunktionen ───────────────────────────────────────────
-function Logic:IsRed(card)
-    return RED_SUITS[card.suit] == true
+-- Klondike rules, shared move execution and durable 20-action undo history.
+local A=_G.ArcadiaNexus
+local L={}; A.SOL_Logic=L
+local SUITS={"herz","karo","kreuz","pik"}
+local RANKS={"A","2","3","4","5","6","7","8","9","10","J","Q","K"}
+local KEYS={"C","D","H","S"}
+local VALUES={}; for i,r in ipairs(RANKS) do VALUES[r]=i end
+L.SCORE={WASTE_TO_TABLEAU=5,WASTE_TO_FOUND=10,TABLEAU_TO_FOUND=10,FLIP_CARD=5,FOUND_TO_TABLEAU=-15,UNDO_PENALTY=-15,WASTE_PASS_PENALTY=-20}
+-- Confirmed: flat 20-point recycle penalty from pass 4 in draw-three mode.
+L.RECYCLE_POLICY="flat"
+function L:DeepCopy(v)
+    if type(v)~="table" then return v end
+    local out={}; for k,x in pairs(v) do out[k]=self:DeepCopy(x) end; return out
 end
-
-function Logic:IsBlack(card)
-    return BLACK_SUITS[card.suit] == true
+function L:IsMode(mode) return mode=="1card" or mode=="3card" end
+function L:IsRed(card) return card and (card.suit=="herz" or card.suit=="karo") or false end
+function L:IsBlack(card) return card and (card.suit=="kreuz" or card.suit=="pik") or false end
+function L:RankValue(card) return card and VALUES[card.rank] or 0 end
+function L:SuitKey(suit) return ({herz="H",karo="D",kreuz="C",pik="S"})[suit] end
+function L:NewDeck()
+    local deck={}; for _,s in ipairs(SUITS) do for _,r in ipairs(RANKS) do deck[#deck+1]={suit=s,rank=r,faceUp=false} end end
+    return A.ArrayUtils.Shuffle(deck)
 end
-
-function Logic:RankValue(card)
-    return RANK_ORDER[card.rank] or 0
+function L:Sync(gs) gs.score=math.max(0,gs.actionScore-15*gs.undoUsed); gs.elapsed=gs.elapsedMs/1000 end
+function L:NewGameState(mode)
+    local deck=self:NewDeck()
+    local gs={mode=mode or "1card",stock={},waste={},foundation={C={},D={},H={},S={}},tableau={{},{},{},{},{},{},{}},
+        actionScore=0,undoUsed=0,elapsedMs=0,wastePass=1,undoStack={},phase="PLAYING",saveVersion=2,ruleVersion=2,scoreVersion=2}
+    for col=1,7 do for row=1,col do
+        local card=table.remove(deck); card.faceUp=row==col; gs.tableau[col][row]=card
+    end end
+    gs.stock=deck; self:Sync(gs); return gs
 end
-
-function Logic:SuitKey(suit)
-    return SUIT_KEY[suit] or suit
+function L:CanPlaceOnTableau(card,top)
+    if not card or not card.faceUp then return false end
+    if not top then return card.rank=="K" end
+    return top.faceUp and self:IsRed(card)~=self:IsRed(top) and self:RankValue(top)-self:RankValue(card)==1
 end
-
--- ── Deck & Start-Verteilung ───────────────────────────────────
-function Logic:NewDeck()
-    local deck = {}
-    for _, suit in ipairs(SUITS) do
-        for _, rank in ipairs(RANKS) do
-            deck[#deck+1] = { suit=suit, rank=rank, faceUp=false }
+function L:CanPlaceOnFoundation(card,pile)
+    if not card or not card.faceUp or type(pile)~="table" then return false end
+    if #pile==0 then return card.rank=="A" end
+    local top=pile[#pile]; return card.suit==top.suit and self:RankValue(card)==#pile+1
+end
+function L:FindFoundationKey(gs,card)
+    for _,key in ipairs(KEYS) do if self:CanPlaceOnFoundation(card,gs.foundation[key]) then return key end end
+end
+local function Key(index) return type(index)=="number" and KEYS[index] or index end
+function L:GetSelectedCards(gs,zone,index,cardIndex)
+    local pile,start
+    if zone=="waste" then
+        pile=gs.waste; if index~=#pile or cardIndex and cardIndex~=#pile then return nil end; start=#pile
+    elseif zone=="foundation" then
+        pile=gs.foundation[Key(index)]; if not pile or cardIndex and cardIndex~=#pile then return nil end; start=#pile
+    elseif zone=="tableau" then pile=gs.tableau[index]; start=cardIndex or (pile and #pile)
+    else return nil end
+    if not pile or type(start)~="number" or start~=math.floor(start) or start<1 or start>#pile then return nil end
+    local cards={}
+    for i=start,#pile do
+        local card=pile[i]; if not card.faceUp then return nil end
+        if i>start and not self:CanPlaceOnTableau(card,pile[i-1]) then return nil end
+        cards[#cards+1]=card
+    end
+    return cards,start,pile
+end
+function L:IsSelectable(gs,zone,index,cardIndex) return self:GetSelectedCards(gs,zone,index,cardIndex)~=nil end
+function L:CanMove(gs,src,dst)
+    if type(src)~="table" or type(dst)~="table" then return false end
+    local cards,start,pile=self:GetSelectedCards(gs,src.zone,src.index,src.cardIndex)
+    if not cards then return false end
+    local target
+    if dst.zone=="foundation" then
+        if src.zone=="foundation" or #cards~=1 then return false end
+        target=gs.foundation[Key(dst.index)]
+        if not self:CanPlaceOnFoundation(cards[1],target) then return false end
+    elseif dst.zone=="tableau" then
+        target=gs.tableau[dst.index]
+        if not target or target==pile or not self:CanPlaceOnTableau(cards[1],target[#target]) then return false end
+    else return false end
+    return true,cards,start,pile,target
+end
+function L:SnapshotState(gs)
+    return {stock=self:DeepCopy(gs.stock),waste=self:DeepCopy(gs.waste),foundation=self:DeepCopy(gs.foundation),
+        tableau=self:DeepCopy(gs.tableau),actionScore=gs.actionScore,wastePass=gs.wastePass}
+end
+function L:PushUndo(gs)
+    if #gs.undoStack>=20 then table.remove(gs.undoStack,1) end
+    gs.undoStack[#gs.undoStack+1]=self:SnapshotState(gs)
+end
+function L:TryMove(gs,src,dst,simulation)
+    local ok,cards,start,pile,target=self:CanMove(gs,src,dst); if not ok then return false end
+    if not simulation then self:PushUndo(gs) end
+    for i=1,#cards do table.remove(pile,start) end
+    for _,card in ipairs(cards) do target[#target+1]=card end
+    local flipped=false
+    if src.zone=="tableau" and pile[#pile] and not pile[#pile].faceUp then pile[#pile].faceUp=true; flipped=true end
+    local delta=dst.zone=="foundation" and 10 or (src.zone=="waste" and 5 or src.zone=="foundation" and -15 or 0)
+    if flipped then delta=delta+5 end
+    gs.actionScore=math.max(0,gs.actionScore+delta); gs.selected=nil; self:Sync(gs)
+    return true,delta
+end
+function L:TryMoveToFoundation(gs,zone,index,cardIndex)
+    local cards=self:GetSelectedCards(gs,zone,index,cardIndex)
+    if not cards or #cards~=1 then return false end
+    local key=self:FindFoundationKey(gs,cards[1]); if not key then return false end
+    return self:TryMove(gs,{zone=zone,index=index,cardIndex=cardIndex},{zone="foundation",index=key})
+end
+function L:TryMoveToTableau(gs,zone,index,cardIndex)
+    for pass=1,2 do for col=1,7 do
+        if (#gs.tableau[col]>0)==(pass==1) then
+            local ok,delta=self:TryMove(gs,{zone=zone,index=index,cardIndex=cardIndex},{zone="tableau",index=col})
+            if ok then return true,delta end
         end
-    end
-    -- Fisher-Yates Shuffle
-    ArcadiaNexus.ArrayUtils.Shuffle(deck)
-    return deck
-end
-
-function Logic:NewGameState(mode)
-    local deck = self:NewDeck()
-    local state = {
-        mode       = mode or "1card",
-        stock      = {},
-        waste      = {},
-        foundation = { C={}, D={}, H={}, S={} },
-        tableau    = { {},{},{},{},{},{},{} },
-        score      = 0,
-        elapsed    = 0,
-        wastePass  = 0,
-        undoStack  = {},
-        selected   = nil,
-    }
-    -- Tableau befüllen: T1=1, T2=2, ... T7=7 Karten
-    for col = 1, 7 do
-        for row = 1, col do
-            local card = table.remove(deck)
-            card.faceUp = (row == col)  -- nur letzte Karte aufgedeckt
-            state.tableau[col][row] = card
-        end
-    end
-    -- Rest → Stock (verdeckt)
-    for _, card in ipairs(deck) do
-        card.faceUp = false
-        state.stock[#state.stock+1] = card
-    end
-    return state
-end
-
--- ── Zug-Validierung ───────────────────────────────────────────
-function Logic:CanPlaceOnTableau(card, targetTop)
-    if targetTop == nil then
-        return card.rank == "K"
-    end
-    local altColor  = self:IsRed(card) ~= self:IsRed(targetTop)
-    local descend   = self:RankValue(targetTop) - self:RankValue(card) == 1
-    return altColor and descend
-end
-
-function Logic:CanPlaceOnFoundation(card, foundation)
-    if #foundation == 0 then
-        return card.rank == "A"
-    end
-    local top = foundation[#foundation]
-    return top.suit == card.suit and
-           self:RankValue(card) - self:RankValue(top) == 1
-end
-
--- Welcher Foundation-Slot nimmt diese Karte? Zuerst Stapel mit derselben Farbe, sonst leerer Slot (Ass).
-function Logic:FindFoundationKey(state, card)
-    for _, key in ipairs(FND_KEYS) do
-        local fnd = state.foundation[key]
-        if fnd and #fnd > 0 and self:CanPlaceOnFoundation(card, fnd) then
-            return key
-        end
-    end
-    for _, key in ipairs(FND_KEYS) do
-        local fnd = state.foundation[key]
-        if fnd and #fnd == 0 and self:CanPlaceOnFoundation(card, fnd) then
-            return key
-        end
-    end
-    return nil
-end
-
--- Kann Karte irgendwo hin (Tableau oder Foundation)?
-function Logic:CanPlaceAnywhere(state, card)
-    if self:FindFoundationKey(state, card) then
-        return true
-    end
-    -- Tableau prüfen
-    for i = 1, 7 do
-        local col = state.tableau[i]
-        local top = col[#col]
-        if self:CanPlaceOnTableau(card, top) then
-            return true
-        end
-    end
+    end end
     return false
 end
-
--- Ist eine Karte selektierbar?
-function Logic:IsSelectable(state, zone, index, cardIdx)
-    if zone == "stock" then return true end
-    if zone == "waste" then
-        return #state.waste > 0 and index == #state.waste
-    end
-    if zone == "foundation" then
-        -- Nur oberste Karte der Foundation selektierbar
-        local keys = {"C","D","H","S"}
-        local fnd = state.foundation[keys[index]]
-        return fnd and #fnd > 0
-    end
-    if zone == "tableau" then
-        local col = state.tableau[index]
-        if not col or #col == 0 then return false end
-        -- cardIdx ist optional: wenn übergeben, muss genau diese Karte faceUp sein
-        -- Verhindert dass verdeckte Karten gegriffen werden können
-        if cardIdx then
-            local card = col[cardIdx]
-            return card ~= nil and card.faceUp == true
+function L:DrawFromStock(gs)
+    if #gs.stock==0 and #gs.waste==0 then return false end
+    self:PushUndo(gs); gs.selected=nil
+    if #gs.stock==0 then
+        gs.wastePass=gs.wastePass+1
+        if gs.mode=="3card" and gs.wastePass>=4 then
+            local penalty=20
+            gs.actionScore=math.max(0,gs.actionScore-penalty)
         end
-        -- Fallback ohne cardIdx: erste aufgedeckte Karte von oben
-        for i = 1, #col do
-            if col[i].faceUp then return true end
-        end
-        return false
+        for i=#gs.waste,1,-1 do local card=table.remove(gs.waste); card.faceUp=false; gs.stock[#gs.stock+1]=card end
+        self:Sync(gs); return true,"recycle"
     end
-    return false
+    for i=1,(gs.mode=="3card" and 3 or 1) do
+        local card=table.remove(gs.stock); if not card then break end
+        card.faceUp=true; gs.waste[#gs.waste+1]=card
+    end
+    self:Sync(gs); return true,"draw"
 end
-
--- Gibt die Karte(n) zurück die bei Selektion von zone/index bewegt werden
--- Für Tableau: alle Karten ab dem Index der ausgewählten Karte
-function Logic:GetSelectedCards(state, zone, index, cardIndex)
-    if zone == "waste" then
-        return { state.waste[#state.waste] }, #state.waste
-    end
-    if zone == "foundation" then
-        local keys = {"C","D","H","S"}
-        local fnd = state.foundation[keys[index]]
-        if fnd and #fnd > 0 then
-            return { fnd[#fnd] }, #fnd
-        end
-    end
-    if zone == "tableau" then
-        local col = state.tableau[index]
-        if not col or #col == 0 then return nil end
-        local startIdx = cardIndex or #col
-        -- Alle Karten ab startIdx
-        local cards = {}
-        for i = startIdx, #col do
-            cards[#cards+1] = col[i]
-        end
-        return cards, startIdx
-    end
-    return nil
+function L:RestoreSnapshot(gs,snapshot)
+    for _,key in ipairs({"stock","waste","foundation","tableau","actionScore","wastePass"}) do gs[key]=self:DeepCopy(snapshot[key]) end
+    gs.selected=nil; self:Sync(gs)
 end
-
--- ── Zug-Ausführung ────────────────────────────────────────────
--- Gibt score-delta zurück (oder false bei ungültigem Zug)
-function Logic:TryMove(state, src, dst)
-    -- src/dst: { zone, index, cardIndex }
-    local srcZone  = src.zone
-    local srcIdx   = src.index
-    local srcCardI = src.cardIndex
-    local dstZone  = dst.zone
-    local dstIdx   = dst.index
-
-    -- Karten holen
-    local cards, startIdx = self:GetSelectedCards(state, srcZone, srcIdx, srcCardI)
-    if not cards or #cards == 0 then return false end
-    local topCard = cards[1]
-
-    -- Ziel: Foundation
-    if dstZone == "foundation" then
-        if #cards ~= 1 then return false end
-        local keys = {"C","D","H","S"}
-        local fKey
-        if type(dstIdx) == "number" then
-            fKey = keys[dstIdx]
-        else
-            fKey = dstIdx
-        end
-        local fnd = state.foundation[fKey]
-        if not self:CanPlaceOnFoundation(topCard, fnd) then return false end
-
-        self:PushUndo(state)
-        -- Karte entfernen
-        self:_RemoveFromSource(state, srcZone, srcIdx, startIdx, 1)
-        -- Auf Foundation legen
-        fnd[#fnd+1] = topCard
-        topCard.faceUp = true
-        -- Evtl. nächste Karte im Tableau aufdecken
-        local flipped = self:_FlipTop(state, srcZone, srcIdx)
-        -- Score
-        local delta = 0
-        if srcZone == "waste" then
-            delta = SCORE.WASTE_TO_FOUND
-        elseif srcZone == "tableau" then
-            delta = SCORE.TABLEAU_TO_FOUND
-            if flipped then delta = delta + SCORE.FLIP_CARD end
-        elseif srcZone == "foundation" then
-            delta = SCORE.FOUND_TO_TABLEAU  -- wird negativ
-        end
-        state.score = math.max(0, state.score + delta)
-        return true, delta
-
-    -- Ziel: Tableau
-    elseif dstZone == "tableau" then
-        local col = state.tableau[dstIdx]
-        local targetTop = col[#col]  -- nil wenn leer
-        if not self:CanPlaceOnTableau(topCard, targetTop) then return false end
-        -- Foundation → Tableau Penalty
-        if srcZone == "foundation" then
-            if #cards ~= 1 then return false end
-        end
-
-        self:PushUndo(state)
-        -- Karten entfernen
-        local moveCount = #cards
-        self:_RemoveFromSource(state, srcZone, srcIdx, startIdx, moveCount)
-        -- Ans Ziel anhängen
-        for _, card in ipairs(cards) do
-            card.faceUp = true
-            col[#col+1] = card
-        end
-        -- Karte aufdecken
-        local flipped = self:_FlipTop(state, srcZone, srcIdx)
-        -- Score
-        local delta = 0
-        if srcZone == "waste" then
-            delta = SCORE.WASTE_TO_TABLEAU
-        elseif srcZone == "foundation" then
-            delta = SCORE.FOUND_TO_TABLEAU
-        elseif srcZone == "tableau" and flipped then
-            delta = SCORE.FLIP_CARD
-        end
-        state.score = math.max(0, state.score + delta)
-        return true, delta
-    end
-
-    return false
+function L:Undo(gs)
+    if #gs.undoStack==0 then return false end
+    local snap=table.remove(gs.undoStack); gs.undoUsed=gs.undoUsed+1; self:RestoreSnapshot(gs,snap); return true
 end
-
--- Karten aus Quelle entfernen
-function Logic:_RemoveFromSource(state, zone, idx, startIdx, count)
-    if zone == "waste" then
-        for i = 1, count do table.remove(state.waste) end
-    elseif zone == "foundation" then
-        local keys = {"C","D","H","S"}
-        local fnd = state.foundation[keys[idx]]
-        for i = 1, count do table.remove(fnd) end
-    elseif zone == "tableau" then
-        local col = state.tableau[idx]
-        for i = 1, count do table.remove(col, startIdx) end
-    end
+function L:IsWin(gs)
+    for _,key in ipairs(KEYS) do if #gs.foundation[key]~=13 then return false end end
+    return #gs.stock==0 and #gs.waste==0
 end
-
--- Oberste Karte im Tableau aufdecken wenn verdeckt
-function Logic:_FlipTop(state, zone, idx)
-    if zone ~= "tableau" then return false end
-    local col = state.tableau[idx]
-    if #col == 0 then return false end
-    local top = col[#col]
-    if not top.faceUp then
-        top.faceUp = true
-        return true
-    end
-    return false
+function L:GetSources(gs)
+    local sources={}
+    if #gs.waste>0 then sources[#sources+1]={zone="waste",index=#gs.waste} end
+    for i=1,4 do if #gs.foundation[KEYS[i]]>0 then sources[#sources+1]={zone="foundation",index=i} end end
+    for i=1,7 do for j=1,#gs.tableau[i] do if gs.tableau[i][j].faceUp then sources[#sources+1]={zone="tableau",index=i,cardIndex=j} end end end
+    return sources
 end
-
--- Direkt zur Foundation versuchen (Doppelklick)
-function Logic:TryMoveToFoundation(state, zone, idx, cardIdx)
-    if zone == "stock" or zone == "foundation" then return false end
-    local cards, startIdx = self:GetSelectedCards(state, zone, idx, cardIdx)
-    if not cards or #cards ~= 1 then return false end
-    local card = cards[1]
-    local fKey = self:FindFoundationKey(state, card)
-    if not fKey then return false end
-    local fnd = state.foundation[fKey]
-
-    self:PushUndo(state)
-    self:_RemoveFromSource(state, zone, idx, startIdx, 1)
-    fnd[#fnd+1] = card
-    card.faceUp = true
-    local flipped = self:_FlipTop(state, zone, idx)
-    local delta = (zone == "waste") and SCORE.WASTE_TO_FOUND or SCORE.TABLEAU_TO_FOUND
-    if flipped then delta = delta + SCORE.FLIP_CARD end
-    state.score = math.max(0, state.score + delta)
-    return true
+function L:HasValidMoves(gs)
+    if #gs.stock>0 or #gs.waste>0 then return true end -- draw or unlimited recycle
+    for _,src in ipairs(self:GetSources(gs)) do
+        for i=1,7 do if self:CanMove(gs,src,{zone="tableau",index=i}) then return true end end
+        for i=1,4 do if self:CanMove(gs,src,{zone="foundation",index=i}) then return true end end
+    end
+    return false -- advisory only; never a proof of defeat
 end
-
--- Versucht die Karte auf eine passende Tableau-Spalte zu legen (Doppelklick-Fallback)
-function Logic:TryMoveToTableau(state, zone, idx, cardIdx)
-    if zone == "stock" then return false end
-    local cards, startIdx = self:GetSelectedCards(state, zone, idx, cardIdx)
-    if not cards or #cards == 0 then return false end
-    local topCard = cards[1]
-    -- Nur faceUp-Karten
-    if not topCard.faceUp then return false end
-
-    -- Passende Tableau-Spalte suchen (Präferenz: nicht-leere Spalten zuerst)
-    for pass = 1, 2 do
-        for i = 1, 7 do
-            -- Quelle nicht als Ziel
-            if not (zone == "tableau" and idx == i) then
-                local col = state.tableau[i]
-                local targetTop = col[#col]
-                -- Pass 1: nicht-leere Spalten; Pass 2: leere Spalten (für König)
-                local isEmpty = (#col == 0)
-                if (pass == 1 and not isEmpty) or (pass == 2 and isEmpty) then
-                    if self:CanPlaceOnTableau(topCard, targetTop) then
-                        self:PushUndo(state)
-                        local moveCount = #cards
-                        self:_RemoveFromSource(state, zone, idx, startIdx, moveCount)
-                        for _, card in ipairs(cards) do
-                            card.faceUp = true
-                            col[#col+1] = card
-                        end
-                        local flipped = self:_FlipTop(state, zone, idx)
-                        local delta = 0
-                        if zone == "waste" then
-                            delta = SCORE.WASTE_TO_TABLEAU
-                        elseif flipped then
-                            delta = SCORE.FLIP_CARD
-                        end
-                        state.score = math.max(0, state.score + delta)
-                        return true
-                    end
-                end
-            end
-        end
-    end
-    return false
-end
-
--- ── Stock / Waste ─────────────────────────────────────────────
-function Logic:DrawFromStock(state)
-    -- Stock-Zug als eigenen Undo-Schritt speichern
-    self:PushUndo(state)
-    if #state.stock == 0 then
-        -- Waste umdrehen → neuer Stock
-        state.wastePass = state.wastePass + 1
-        -- 3-Karten-Modus Penalty ab 4. Durchlauf
-        if state.mode == "3card" and state.wastePass >= 4 then
-            local penalty = #state.waste * SCORE.WASTE_PASS_PENALTY
-            state.score   = math.max(0, state.score + penalty)
-        end
-        for j = #state.waste, 1, -1 do
-            local card = table.remove(state.waste, j)
-            card.faceUp = false
-            state.stock[#state.stock+1] = card
-        end
-        return true, "recycle"
-    end
-
-    local count = state.mode == "1card" and 1 or 3
-    for i = 1, count do
-        if #state.stock == 0 then break end
-        local card = table.remove(state.stock)
-        card.faceUp = true
-        state.waste[#state.waste+1] = card
-    end
-    return true, "draw"
-end
-
--- ── Undo-System ───────────────────────────────────────────────
-function Logic:PushUndo(state)
-    if #state.undoStack >= 3 then
-        table.remove(state.undoStack, 1)
-    end
-    state.undoStack[#state.undoStack+1] = self:SnapshotState(state)
-end
-
-function Logic:Undo(state)
-    if #state.undoStack == 0 then return false end
-    local snap = table.remove(state.undoStack)
-    self:RestoreSnapshot(state, snap)
-    state.score = math.max(0, state.score + SCORE.UNDO_PENALTY)
-    return true
-end
-
-function Logic:SnapshotState(state)
-    return {
-        stock      = self:DeepCopy(state.stock),
-        waste      = self:DeepCopy(state.waste),
-        foundation = self:DeepCopy(state.foundation),
-        tableau    = self:DeepCopy(state.tableau),
-        score      = state.score,
-        wastePass  = state.wastePass,
-    }
-end
-
-function Logic:RestoreSnapshot(state, snap)
-    state.stock      = self:DeepCopy(snap.stock)
-    state.waste      = self:DeepCopy(snap.waste)
-    state.foundation = self:DeepCopy(snap.foundation)
-    state.tableau    = self:DeepCopy(snap.tableau)
-    state.score      = snap.score
-    state.wastePass  = snap.wastePass
-    state.selected   = nil
-end
-
-function Logic:DeepCopy(orig)
-    if type(orig) ~= "table" then return orig end
-    local copy = {}
-    for k, v in pairs(orig) do
-        copy[k] = self:DeepCopy(v)
-    end
-    return copy
-end
-
--- ── Win-Prüfung ───────────────────────────────────────────────
-function Logic:IsWin(state)
-    for _, fnd in pairs(state.foundation) do
-        if #fnd ~= 13 then return false end
-    end
-    return true
-end
-
--- ── No-Move-Erkennung ─────────────────────────────────────────
-function Logic:HasValidMoves(state)
-    -- Stock nicht leer → Karte ziehen ist immer ein Zug
-    if #state.stock > 0 then return true end
-
-    -- Waste-Karte prüfen: nur wenn legbar (Stock leer = kein Recycle-Zug mehr)
-    if #state.waste > 0 then
-        local top = state.waste[#state.waste]
-        if self:CanPlaceAnywhere(state, top) then return true end
-    end
-
-    -- Tableau: oberste Karte jeder Spalte prüfen (col[#col] ist spielbar)
-    -- Stapel-Züge: alle aufgedeckten Karten von oben prüfen
-    for i = 1, 7 do
-        local col = state.tableau[i]
-        for j = #col, 1, -1 do
-            if col[j].faceUp then
-                if self:CanPlaceAnywhere(state, col[j]) then return true end
-            else
-                break  -- verdeckte Karte erreicht, darunter nichts mehr prüfen
-            end
-        end
-    end
-
-    return false
-end
-
--- ── Auto-Complete ─────────────────────────────────────────────
-local function SimPilesFromState(state)
-    local piles = {}
-    for _, key in ipairs(FND_KEYS) do
-        local pile = state.foundation[key] or {}
-        piles[key] = {
-            count = #pile,
-            suit  = pile[1] and pile[1].suit or nil,
-        }
-    end
-    return piles
-end
-
-local function SimFindPile(piles, card)
-    for _, key in ipairs(FND_KEYS) do
-        local p = piles[key]
-        if p.suit == card.suit and RANK_ORDER[card.rank] == p.count + 1 then
-            return key
-        end
-    end
-    if card.rank == "A" then
-        for _, key in ipairs(FND_KEYS) do
-            if piles[key].count == 0 then return key end
-        end
-    end
-    return nil
-end
-
--- Alle Karten aufgedeckt?
-function Logic:CanAutoComplete(state)
-    -- Vorbedingungen: kein Stock, kein Waste, alle Karten face-up
-    if #state.stock > 0 then return false end
-    if #state.waste  > 0 then return false end
-    for i = 1, 7 do
-        for _, card in ipairs(state.tableau[i]) do
-            if not card.faceUp then return false end
-        end
-    end
-
-    local piles = SimPilesFromState(state)
-    local tab = {}
-    for i = 1, 7 do
-        tab[i] = {}
-        for j, card in ipairs(state.tableau[i]) do
-            tab[i][j] = card
-        end
-    end
-
-    local total = 52
-    for _, pile in pairs(state.foundation) do
-        total = total - #pile
-    end
-
-    local maxIter = total * total
-    local iter = 0
-    local moved = true
-    while moved and total > 0 and iter < maxIter do
-        moved = false
-        iter = iter + 1
-        for i = 1, 7 do
-            if #tab[i] > 0 then
-                local card = tab[i][#tab[i]]
-                local key = SimFindPile(piles, card)
+function L:AutoBuildMoveQueue(gs)
+    if #gs.stock>0 or #gs.waste>0 then return nil end
+    for i=1,7 do for _,card in ipairs(gs.tableau[i]) do if not card.faceUp then return nil end end end
+    local sim=self:DeepCopy(gs); local queue={}
+    for step=1,52 do
+        if self:IsWin(sim) then return queue end
+        local moved=false
+        for col=1,7 do
+            local pile=sim.tableau[col]; local card=pile[#pile]
+            if card then
+                local key=self:FindFoundationKey(sim,card)
                 if key then
-                    local p = piles[key]
-                    p.count = p.count + 1
-                    p.suit = card.suit
-                    table.remove(tab[i])
-                    total = total - 1
-                    moved = true
+                    local src={zone="tableau",index=col,cardIndex=#pile}; local dst={zone="foundation",index=key}
+                    if not self:TryMove(sim,src,dst,true) then return nil end
+                    queue[#queue+1]={src=src,dst=dst,rank=card.rank,suit=card.suit}; moved=true; break
                 end
             end
         end
+        if not moved then return nil end
     end
-    return total == 0
+    return self:IsWin(sim) and queue or nil
 end
-
--- Baut eine vollständige Move-Queue für Auto-Complete.
--- Gibt eine Liste von {type, fromCol, toCol, toKey, card} zurück ODER nil wenn nicht lösbar.
--- type = "foundation" | "tableau"
--- Voraussetzung: CanAutoComplete(state) == true
-function Logic:AutoBuildMoveQueue(state)
-    local piles = SimPilesFromState(state)
-    local tab = {}
-    for i = 1, 7 do
-        tab[i] = {}
-        for j, card in ipairs(state.tableau[i]) do
-            tab[i][j] = card
-        end
+function L:CanAutoComplete(gs) local queue=self:AutoBuildMoveQueue(gs); return queue~=nil and #queue>0 end
+local function Int(n,max) return type(n)=="number" and n==math.floor(n) and n>=0 and n<=(max or 2147483647) end
+local function Array(value, max)
+    if type(value)~="table" or #value>(max or 52) then return false end
+    local n=#value; local count=0
+    for key in pairs(value) do
+        if type(key)~="number" or key~=math.floor(key) or key<1 or key>n then return false end
+        count=count+1
     end
-
-    local function canTableau(card, targetTop)
-        if targetTop == nil then return card.rank == "K" end
-        local altColor = (RED_SUITS[card.suit] == true) ~= (RED_SUITS[targetTop.suit] == true)
-        return altColor and (RANK_ORDER[targetTop.rank] - RANK_ORDER[card.rank] == 1)
-    end
-
-    local queue = {}
-    local total = 0
-    for i = 1, 7 do total = total + #tab[i] end
-
-    local maxIter = (total + 1) * (total + 1)
-    local iter = 0
-
-    while total > 0 and iter < maxIter do
-        iter = iter + 1
-        local madeMove = false
-
-        -- Priorität 1: direkte Foundation-Moves
-        for i = 1, 7 do
-            if not madeMove and #tab[i] > 0 then
-                local card = tab[i][#tab[i]]
-                local key = SimFindPile(piles, card)
-                if key then
-                    local p = piles[key]
-                    p.count = p.count + 1
-                    p.suit = card.suit
-                    table.remove(tab[i])
-                    total = total - 1
-                    queue[#queue+1] = { type="foundation", fromCol=i, toKey=key, card=card }
-                    madeMove = true
-                end
-            end
-        end
-
-        -- Priorität 2: Tableau-Move der eine Foundation-fähige Karte freilegt
-        if not madeMove then
-            for i = 1, 7 do
-                if not madeMove and #tab[i] >= 2 then
-                    local cardOnTop = tab[i][#tab[i]]
-                    local cardBelow = tab[i][#tab[i]-1]
-                    if SimFindPile(piles, cardBelow) then
-                        for j = 1, 7 do
-                            if not madeMove and j ~= i then
-                                local targetTop = #tab[j] > 0 and tab[j][#tab[j]] or nil
-                                if canTableau(cardOnTop, targetTop) then
-                                    table.remove(tab[i])
-                                    tab[j][#tab[j]+1] = cardOnTop
-                                    queue[#queue+1] = { type="tableau", fromCol=i, toCol=j, card=cardOnTop }
-                                    madeMove = true
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-
-        -- Priorität 3: beliebiger sinnvoller Tableau-Move
-        if not madeMove then
-            for i = 1, 7 do
-                if not madeMove and #tab[i] > 0 then
-                    local card = tab[i][#tab[i]]
-                    for j = 1, 7 do
-                        if not madeMove and j ~= i then
-                            local targetTop = #tab[j] > 0 and tab[j][#tab[j]] or nil
-                            if canTableau(card, targetTop) then
-                                table.remove(tab[i])
-                                tab[j][#tab[j]+1] = card
-                                queue[#queue+1] = { type="tableau", fromCol=i, toCol=j, card=card }
-                                madeMove = true
-                            end
-                        end
-                    end
-                end
-            end
-        end
-
-        if not madeMove then break end
-    end
-
-    if total == 0 then
-        return queue
-    else
-        return nil
-    end
+    return count==n
 end
-
--- ── Zeit-Bonus (WIN) ──────────────────────────────────────────
-function Logic:ApplyTimeBonus(state)
-    if state.elapsed > 30 then
-        local bonus = math.floor(700000 / state.elapsed)
-        state.score = state.score + bonus
-        return bonus
+function L:ValidateBoard(gs)
+    if type(gs)~="table" or not Array(gs.stock) or not Array(gs.waste) or type(gs.foundation)~="table" or not Array(gs.tableau,7) or #gs.tableau~=7 then return false end
+    for key in pairs(gs.foundation) do if key~="C" and key~="D" and key~="H" and key~="S" then return false end end
+    local seen,total={},0
+    local function Card(card,up)
+        if type(card)~="table" or not VALUES[card.rank] or not L:SuitKey(card.suit) or type(card.faceUp)~="boolean" or up~=nil and card.faceUp~=up then return false end
+        local key=card.suit..card.rank; if seen[key] then return false end
+        seen[key]=true; total=total+1; return true
     end
-    return 0
+    for _,card in ipairs(gs.stock) do if not Card(card,false) then return false end end
+    for _,card in ipairs(gs.waste) do if not Card(card,true) then return false end end
+    local suits={}
+    for _,key in ipairs(KEYS) do
+        local pile=gs.foundation[key]; if not Array(pile,13) then return false end
+        for i,card in ipairs(pile) do
+            if not Card(card,true) or L:RankValue(card)~=i or i>1 and card.suit~=pile[1].suit then return false end
+        end
+        if #pile>0 then if suits[pile[1].suit] then return false end; suits[pile[1].suit]=true end
+    end
+    for i=1,7 do
+        local pile=gs.tableau[i]; if not Array(pile) then return false end
+        local open=false
+        for j,card in ipairs(pile) do
+            if not Card(card) or open and not card.faceUp then return false end
+            if card.faceUp and open and not L:CanPlaceOnTableau(card,pile[j-1]) then return false end
+            open=open or card.faceUp
+        end
+        if #pile>0 and not pile[#pile].faceUp then return false end
+    end
+    return total==52
 end
-
--- ── Score-Konstanten exportieren (für Renderer-Tooltips) ──────
-Logic.SCORE = SCORE
+function L:ValidateSave(gs)
+    if not self:ValidateBoard(gs) or not self:IsMode(gs.mode) or gs.saveVersion~=2 or gs.ruleVersion~=2
+        or (gs.scoreVersion~=1 and gs.scoreVersion~=2) or type(gs.runId)~="string"
+        or not Int(gs.actionScore) or not Int(gs.undoUsed) or not Int(gs.elapsedMs) or not Int(gs.wastePass) or gs.wastePass<1
+        or gs.score~=math.max(0,gs.actionScore-15*gs.undoUsed) or gs.elapsed~=gs.elapsedMs/1000
+        or not Array(gs.undoStack,20) then return false end
+    if gs.phase~="PLAYING" and gs.phase~="AUTO" and gs.phase~="RESULT_PENDING" and gs.phase~="WIN" and gs.phase~="LOSS" then return false end
+    if gs.scoreVersion==2 and gs.actionScore>745 then return false end
+    for _,snap in ipairs(gs.undoStack) do
+        if not self:ValidateBoard(snap) or not Int(snap.actionScore) or gs.scoreVersion==2 and snap.actionScore>745 or not Int(snap.wastePass) or snap.wastePass<1 then return false end
+    end
+    local result=gs.phase=="WIN" or gs.phase=="LOSS" or gs.phase=="RESULT_PENDING"
+    if result then
+        if gs.result~="WIN" and gs.result~="LOSS" then return false end
+        if gs.result=="WIN" and not self:IsWin(gs) then return false end
+        if gs.phase~="RESULT_PENDING" and gs.phase~=gs.result then return false end
+    elseif gs.result or self:IsWin(gs) then return false end
+    return true
+end

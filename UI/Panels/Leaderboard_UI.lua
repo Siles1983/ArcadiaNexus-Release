@@ -309,12 +309,12 @@ local function SectionDiffs(section, diffs)
     if section and section.scope == "global" then
         return { { id = "_global", labelKey = nil } }
     end
-    return diffs
+    return section and section.difficulties or diffs
 end
 
 local function SectionDiffCount(section, diffs)
     if section and section.scope == "global" then return 1 end
-    return #diffs
+    return #SectionDiffs(section,diffs)
 end
 
 -- ── Sektion: Top Scores ─────────────────────────────────────
@@ -335,7 +335,7 @@ local function RenderTopScores(box, section, gameId, diffs, SM)
 
     for i, diff in ipairs(diffs) do
         local entry = GetScoreEntry(SM, gameId, diff.id)
-        local hs = entry.highscores or {}
+        local hs = entry[section.field or "highscores"] or {}
 
         if multi then
             local dlbl = AcquireDifficultyLabel(box)
@@ -359,7 +359,8 @@ local function RenderTopScores(box, section, gameId, diffs, SM)
             val:SetWidth(0)
             val:SetJustifyH("RIGHT")
             if hs[rank] then
-                val:SetText(LR.FormatValue(hs[rank], { format = "score" }))
+                local value=section.resultField and hs[rank].value or hs[rank]
+                val:SetText(LR.FormatValue(value, { format = section.format or "score" }))
                 local c = RANK_COLORS[rank]
                 val:SetTextColor(c[1], c[2], c[3])
             else
@@ -518,6 +519,14 @@ function LB.ShowGame(gameId)
             boxHeight = 0
         end
 
+        if section.hideIfEmpty then
+            local hasData = false
+            for _, diff in ipairs(secDiffs) do
+                local entry = GetScoreEntry(SM, gameId, diff.id)
+                if #(entry[section.field or "highscores"] or {}) > 0 then hasData = true end
+            end
+            if not hasData then boxHeight = 0 end
+        end
         if boxHeight > 0 then
             local box = MakeBox(sc, yOff, boxHeight)
             box._gameId = gameId

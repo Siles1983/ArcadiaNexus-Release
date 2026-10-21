@@ -102,7 +102,8 @@ Logic.DIFFICULTY_DEFS = {
 }
 
 -- ── NewState ──────────────────────────────────────────────────
-function Logic:NewState(diff, savedProgress, startEndless)
+function Logic:NewState(diff, savedProgress)
+    diff = self.DIFFICULTY_DEFS[diff] and diff or "easy"
     local def = self.DIFFICULTY_DEFS[diff] or self.DIFFICULTY_DEFS.easy
     local s = {
         difficulty       = diff,
@@ -117,7 +118,11 @@ function Logic:NewState(diff, savedProgress, startEndless)
         wave             = 1,
         highScore        = 0,
         elapsedSecs      = 0,
-        endlessMode      = startEndless and true or false,
+        endlessMode      = false,
+        clearedWave      = 0,
+        totalWavesCleared = 0,
+        waveId           = 1,
+        simRemainder     = 0,
         endlessSpeedBonus = 0,
         perfectWave      = true,   -- kein Leben verloren in aktueller Welle
 
@@ -174,12 +179,73 @@ function Logic:NewState(diff, savedProgress, startEndless)
 end
 
 -- ── Wave-Beschleunigung ────────────────────────────────────────
+function Logic:_RefreshTempo(s)
+    local waveBonus = (s.wave - 1) * s.accelPerWave + (s.endlessSpeedBonus or 0)
+    local killBonus = s.totalAliens > 0 and s.killedCount / s.totalAliens * 0.80 or 0
+    s.stepRate = math.max(0.05, s.baseStepRate * (1 - waveBonus) * (1 - killBonus))
+    s.alienFireRate = math.max(0.20, s.baseAlienFire * (1 - waveBonus))
+end
+
 function Logic:_ApplyWaveAccel(s)
-    local waveBonus = (s.wave - 1) * s.accelPerWave + s.endlessSpeedBonus
-    s.stepRate      = math.max(0.05, s.baseStepRate  * (1.0 - waveBonus))
-    s.alienFireRate = math.max(0.20, s.baseAlienFire * (1.0 - waveBonus))
-    s.stepTimer     = s.stepRate
-    s.alienFireTimer = s.alienFireRate
+    self:_RefreshTempo(s)
+    s.stepTimer, s.alienFireTimer = s.stepRate, s.alienFireRate
+end
+
+-- Serializable state only; UI effects and held input never belong to a save.
+function Logic:Copy(value)
+    if type(value) ~= "table" then return value end
+    local out = {}
+    for k,v in pairs(value) do out[k] = self:Copy(v) end
+    return out
+end
+
+function Logic:Neutralize(s)
+    s.keyLeft, s.keyRight, s.keyFire = false, false, false
+end
+
+function Logic:AssignIds(s)
+    s.entitySerial = s.entitySerial or 0
+    for _,key in ipairs({"aliens", "playerShots", "alienShots", "weaponDrops"}) do
+        for _,entity in ipairs(s[key]) do
+            if not entity.id then
+                s.entitySerial = s.entitySerial + 1
+                entity.id = s.entitySerial
+            end
+        end
+    end
+end
+
+function Logic:Snapshot(s)
+    if not s or s.gameOver or s.runClosed then return nil end
+    local state = self:Copy(s)
+    self:Neutralize(state)
+    state.resultData = nil
+    return {version=2, runId=s.runId, wave=s.wave, score=s.score,
+        lives=s.lives, diff=s.difficulty, state=state}
+end
+
+function Logic:Restore(save)
+    if type(save) ~= "table" or save.version ~= 2 or type(save.state) ~= "table" then return nil end
+    local s = self:Copy(save.state)
+    if not self.DIFFICULTY_DEFS[s.difficulty] or s.gameOver or s.runClosed
+        or type(s.runId) ~= "string" or s.runId ~= save.runId then return nil end
+    local function number(n) return type(n)=="number" and n==n and n>-math.huge and n<math.huge end
+    for _,key in ipairs({"wave","waveId","clearedWave","lives","score","playerX","elapsedSecs",
+        "fireCooldown","playerBoomT","invulnT","weaponTimer","stepTimer","stepRate",
+        "alienFireTimer","alienFireRate","killedCount","totalKillsAllWaves","totalWavesCleared","simRemainder","entitySerial"}) do
+        if not number(s[key]) then return nil end
+    end
+    if s.wave<1 or s.wave~=math.floor(s.wave) or s.clearedWave<0 or s.clearedWave>s.wave
+        or s.score<0 or s.lives<=0 or s.stepRate<0.05 or s.alienFireRate<0.20
+        or not self.WEAPON_FIRE_RATES[s.activeWeapon] then return nil end
+    for _,key in ipairs({"aliens","playerShots","alienShots","weaponDrops"}) do
+        if type(s[key])~="table" then return nil end
+        for _,entity in ipairs(s[key]) do
+            if type(entity)~="table" or not number(entity.x) or not number(entity.y) then return nil end
+        end
+    end
+    self:Neutralize(s)
+    return s
 end
 
 -- ── ParseWave ─────────────────────────────────────────────────
@@ -236,11 +302,29 @@ function Logic:ParseWave(s)
     s.keyRight = false
     s.keyFire  = false
     s.fireCooldown = 0
+    self:AssignIds(s)
 end
 
 -- ── Tick (Haupt-Loop) ─────────────────────────────────────────
 -- Gibt actions-Tabelle zurück.
+-- Fixed, bounded steps preserve timer phase across variable frame rates and saves.
+Logic.SIM_STEP = 1 / 120
 function Logic:Tick(s, dt)
+    local actions = {}
+    if s.gameOver or s.waveWon then return actions end
+    dt = math.max(0, math.min(0.1, tonumber(dt) or 0))
+    s.simRemainder = (s.simRemainder or 0) + dt
+    for _ = 1, 12 do
+        if s.simRemainder + 1e-9 < self.SIM_STEP then break end
+        s.simRemainder = math.max(0, s.simRemainder - self.SIM_STEP)
+        for _,act in ipairs(self:_Step(s, self.SIM_STEP)) do actions[#actions+1] = act end
+        self:AssignIds(s)
+        if s.gameOver or s.waveWon then break end
+    end
+    return actions
+end
+
+function Logic:_Step(s, dt)
     local actions = {}
     if s.gameOver then return actions end
 
@@ -252,13 +336,6 @@ function Logic:Tick(s, dt)
     if (s.invulnT or 0) > 0 then
         s.invulnT = math.max(0, s.invulnT - dt)
     end
-    if s.pendingGameOver and (s.playerBoomT or 0) <= 0 then
-        s.gameOver = true
-        s.pendingGameOver = nil
-        actions[#actions + 1] = { type = "game_over", reason = "lives" }
-        return actions
-    end
-
     -- 1. Spieler-Bewegung
     self:_MovePlayer(s, dt)
 
@@ -268,18 +345,22 @@ function Logic:Tick(s, dt)
 
     -- 3. Alien-Formation
     s.stepTimer = s.stepTimer - dt
-    if s.stepTimer <= 0 then
-        s.stepTimer = s.stepRate
+    if s.stepTimer <= 1e-9 then
         self:_MoveFormation(s, actions)
+        s.stepTimer = s.stepTimer + s.stepRate
     end
+
+    self:_CheckInvasion(s, actions)
+    if s.gameOver then return actions end
 
     -- 4. Alien-Schüsse
     s.alienFireTimer = s.alienFireTimer - dt
-    if s.alienFireTimer <= 0 then
-        s.alienFireTimer = s.alienFireRate
+    if s.alienFireTimer <= 1e-9 then
+        s.alienFireTimer = s.alienFireTimer + s.alienFireRate
         self:_AlienFire(s, actions)
     end
     self:_MoveAlienShots(s, dt, actions)
+    if s.gameOver then return actions end
 
     -- 5. Waffen-Drops
     self:_MoveDrops(s, dt, actions)
@@ -310,10 +391,10 @@ end
 
 -- ── Feuer ─────────────────────────────────────────────────────
 function Logic:_HandleFire(s, dt, actions)
-    s.fireCooldown = s.fireCooldown - dt
+    s.fireCooldown = math.max(-dt, s.fireCooldown - dt)
     if (s.playerBoomT or 0) > 0 then return end
-    if s.keyFire and s.fireCooldown <= 0 then
-        s.fireCooldown = self.WEAPON_FIRE_RATES[s.activeWeapon] or 0.25
+    if s.keyFire and s.fireCooldown <= 1e-9 then
+        s.fireCooldown = s.fireCooldown + (self.WEAPON_FIRE_RATES[s.activeWeapon] or 0.25)
         self:_SpawnPlayerShots(s, actions)
     end
 end
@@ -381,10 +462,10 @@ function Logic:_SpawnPlayerShots(s, actions)
                 end
             end
         end
-        -- Laser-Schuss für Renderer (visuell) — lebt 3 Ticks für sichtbaren Effekt
+        -- Laser-Schuss für Renderer: feste 0,05 Sekunden Darstellungszeit.
         s.playerShots[#s.playerShots + 1] = {
             x = laserX, y = 0, isLaser = true, height = self.PLAYER_Y,
-            _laserTicks = 3,
+            laserT = 0.05,
         }
         actions[#actions + 1] = { type = "player_shoot", weapon = "LASER", laserFlash = true }
     end
@@ -394,9 +475,9 @@ end
 function Logic:_MovePlayerShots(s, dt, actions)
     local toRemove = {}
     for i, shot in ipairs(s.playerShots) do
-        if shot._laserTicks ~= nil then
-            shot._laserTicks = shot._laserTicks - 1
-            if shot._laserTicks <= 0 then
+        if shot.laserT ~= nil then
+            shot.laserT = shot.laserT - dt
+            if shot.laserT <= 1e-9 then
                 toRemove[#toRemove + 1] = i
             end
             -- Laser-Kollision bereits in _SpawnPlayerShots aufgelöst — nichts mehr zu tun
@@ -482,15 +563,7 @@ function Logic:_MoveFormation(s, actions)
         end
     end
 
-    -- Beschleunigung: stepRate sinkt je mehr Aliens besiegt wurden
-    local totalAliens = s.totalAliens
-    if totalAliens > 0 then
-        local killFrac = s.killedCount / totalAliens
-        -- Je mehr getötet: stepRate gegen baseStepRate * 0.2 (80% schneller max)
-        local speedBonus = killFrac * 0.80
-        s.stepRate = math.max(0.05, s.baseStepRate * (1.0 - speedBonus)
-            * (1.0 - (s.wave - 1) * s.accelPerWave))
-    end
+    self:_RefreshTempo(s)
 
     actions[#actions + 1] = { type = "formation_step" }
 end
@@ -558,7 +631,10 @@ function Logic:_MoveAlienShots(s, dt, actions)
                     toRemove[#toRemove + 1] = i
                     actions[#actions + 1] = { type = "player_hit", livesLeft = s.lives }
                     if s.lives <= 0 then
-                        s.pendingGameOver = "lives"
+                        s.gameOver, s.endReason = true, "lives"
+                        self:Neutralize(s)
+                        actions[#actions+1] = {type="game_over", reason="lives"}
+                        break
                     end
                 end
             end
@@ -607,18 +683,26 @@ function Logic:_MoveDrops(s, dt, actions)
 end
 
 -- ── Gewinn-/Verlust-Bedingung ──────────────────────────────────
-function Logic:_CheckConditions(s, actions)
-    if s.gameOver then return end
+function Logic:_CheckInvasion(s, actions)
+    if s.gameOver or s.waveWon then return end
 
     -- Invasion: Alien hat FIELD_BOTTOM erreicht
     for _, alien in ipairs(s.aliens) do
         if alien.alive and (alien.y + self.ALIEN_H) >= self.FIELD_BOTTOM then
             s.gameOver = true
             s.invaded  = true
+            s.endReason = "invasion"
+            self:Neutralize(s)
             actions[#actions + 1] = { type = "game_over", reason = "invasion" }
             return
         end
     end
+end
+
+function Logic:_CheckConditions(s, actions)
+    if s.gameOver or s.waveWon then return end
+    self:_CheckInvasion(s, actions)
+    if s.gameOver then return end
 
     -- Alle Aliens besiegt → Welle gewonnen
     if s.pendingGameOver or (s.playerBoomT or 0) > 0 then return end
@@ -628,6 +712,10 @@ function Logic:_CheckConditions(s, actions)
     end
 
     if aliveCount == 0 then
+        s.waveWon = true
+        s.clearedWave = s.wave
+        s.totalWavesCleared = s.totalWavesCleared + 1
+        self:Neutralize(s)
         -- Perfekt-Bonus
         if s.perfectWave then
             s.score = s.score + 500
@@ -638,7 +726,11 @@ function Logic:_CheckConditions(s, actions)
 end
 
 -- ── Nächste Welle vorbereiten ─────────────────────────────────
-function Logic:AdvanceWave(s)
+function Logic:AdvanceWave(s, allowEndless)
+    if not s.waveWon or s.gameOver or s.runClosed then return false end
+    if s.wave == 30 and not s.endlessMode and not allowEndless then return false end
+    s.waveWon = false
+    s.waveId = (s.waveId or s.wave) + 1
     local Levels = ArcadiaNexus.AD_Levels
     local maxWaves = Levels and #Levels or 1
     s.wave = s.wave + 1
@@ -654,6 +746,7 @@ function Logic:AdvanceWave(s)
     s.weaponTimer  = 0
 
     self:ParseWave(s)
+    return true
 end
 
 -- ── Hilfsfunktionen ───────────────────────────────────────────

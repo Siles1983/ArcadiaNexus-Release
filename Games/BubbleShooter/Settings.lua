@@ -11,7 +11,7 @@ S.MAX_SLOTS = 3
 S.DB_KEY = "BUBBLESHOOTER"
 -- Bump when a campaign board layout changes in a way that makes paused
 -- snapshots incompatible with the authored/generated level definition.
-S.CAMPAIGN_VERSION = 2
+S.CAMPAIGN_VERSION = 3
 
 S.Defaults = {
     difficulty       = "easy",
@@ -41,14 +41,20 @@ function S:Get(key)
     return self.Defaults[key]
 end
 
+function S:IsConfigLocked()
+    local E=ArcadiaNexus.BS_Engine
+    return E and E.gameState and E.state~="IDLE"
+end
+
 function S:Set(key, value)
+    if (key=="mode" or key=="difficulty") and self:IsConfigLocked() then return false end
     P:SetGameSetting(S.DB_KEY, key, value)
 end
 
 function S:Reset()
     local db = GetDB()
     for k in pairs(self.Defaults) do
-        db[k] = nil
+        if (k~="mode" and k~="difficulty") or not self:IsConfigLocked() then db[k] = nil end
     end
 end
 
@@ -130,8 +136,54 @@ function S:PackProgress(state, extra)
         midGame      = mid,
         stars        = extra.stars or {},
         campaignVersion = extra.campaignVersion or S.CAMPAIGN_VERSION,
+        layoutVersion = S.CAMPAIGN_VERSION,
+        runId = state and state.runId,
+        levelBests = extra.levelBests,
         clearedLevel = extra.clearedLevel or 0,
         timestamp    = (time and time()) or 0,
         paused       = paused,
     }
+end
+
+-- This step runs inside LocalResults' staged transaction, before achievements.
+function S:ApplyResult(data)
+    if data.localReplay then return end
+    local st=data.stats
+    if data.playMode=="shot" and data.result=="WIN" then self:AddStat("totalLevels",1) end
+    self:AddStat("totalPowerUsed",st.powerUsed or 0)
+    self:AddStat("totalOvercharge",st.overchargeCount or 0)
+    if (st.maxCombo or 1)>=5 then self:AddStat("totalCombo5",1) end
+    if (st.maxDrop or 0)>0 then self:AddStat("totalDrops",1) end
+    if data.playMode=="shot" then
+        local progress=self:LoadSlot(data.slot) or {}
+        local bests=progress.levelBests or {}; progress.levelBests=bests
+        bests[3]=bests[3] or {}; bests[3][data.aiDifficulty]=bests[3][data.aiDifficulty] or {}
+        if data.result=="WIN" then
+            local best,_,gained=ArcadiaNexus.CampaignProgress.RecordLevel(progress,data.levelIndex,data.stars,
+                {levelCount=100,maxStars=3})
+            self:AddStat("totalStars",gained)
+            local old=bests[3][data.aiDifficulty][data.levelIndex] or {}
+            old.score=math.max(old.score or 0,data.score)
+            old.shots=math.min(old.shots or st.shotsUsed,st.shotsUsed)
+            old.maxCombo=math.max(old.maxCombo or 1,st.maxCombo)
+            old.maxDrop=math.max(old.maxDrop or 0,st.maxDrop)
+            old.stars=math.max(old.stars or 0,data.stars)
+            bests[3][data.aiDifficulty][data.levelIndex]=old
+            progress.currentLevel=math.min(100,data.levelIndex+1)
+        else progress.currentLevel=data.levelIndex end
+        progress.score=0; progress.midGame=nil; progress.runId=nil; progress.paused=false
+        progress.diff=data.aiDifficulty; progress.layoutVersion=3
+        self:SaveSlot(data.slot,progress)
+    end
+end
+
+function S:QueueResult(data)
+    local db=GetDB(); db.pendingResults=db.pendingResults or {}; db.pendingResults[data.runId]=data
+end
+function S:FlushResults()
+    local db=GetDB()
+    for id,data in pairs(db.pendingResults or {}) do
+        ArcadiaNexus.Engine:Emit("GAME_RESULT",data)
+        if data.processed then db.pendingResults[id]=nil end
+    end
 end

@@ -302,5 +302,6 @@ end
 
 SLASH_LOA1 = "/loa"
 SlashCmdList["LOA"] = function(msg)
+    if not ArcadiaNexus.RequireDevMode() then return end
     ArcadiaNexus.LOA_Debug:HandleCommand(msg)
 end

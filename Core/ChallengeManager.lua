@@ -43,7 +43,7 @@ local DAILY_POOL = {
       goal=1,  metric="wins",         reward={xp=25,  gold=2} },
 
     { id="d_hang_win",   diff="EASY",   gameId="HANGMAN",   title_de="Wortfinder",           title_en="Word Finder",
-      desc_de="Gewinne 1x Galgenmännchen",                    desc_en="Win 1 game of Hangman",
+      desc_de="Gewinne 1x Nether Bound",                    desc_en="Win 1 game of Nether Bound",
       goal=1,  metric="wins",         reward={xp=25,  gold=2} },
 
     { id="d_soli_win",   diff="EASY",   gameId="SOLITAIRE", title_de="Kartenleger",          title_en="Card Layer",
@@ -74,10 +74,6 @@ local DAILY_POOL = {
     { id="d_win3",       diff="MEDIUM", gameId=nil,         title_de="Siegesserie",          title_en="Winning Streak",
       desc_de="Gewinne 3x beliebige Spiele",                  desc_en="Win 3 games of any type",
       goal=3,  metric="wins",         reward={xp=40,  gold=3} },
-
-    { id="d_match3_1500",diff="MEDIUM", gameId="MATCH3",    title_de="Match-Meister",        title_en="Match Master",
-      desc_de="Erreiche 1500 Punkte in Match-3",              desc_en="Reach 1500 points in Match-3",
-      goal=1500, metric="score",      reward={xp=50,  gold=3} },
 
     { id="d_hard_win",   diff="MEDIUM", gameId=nil,         title_de="Herausforderung",      title_en="Challenge Accepted",
       desc_de="Gewinne 1x auf Schwer",                        desc_en="Win 1 game on Hard",
@@ -188,13 +184,9 @@ local DAILY_POOL = {
       desc_de="Erreiche 1000 Punkte in Barrel Brawl",         desc_en="Reach 1000 points in Barrel Brawl",
       goal=1000, metric="score",      reward={xp=70,  gold=7} },
 
-    { id="d_words_win",  diff="HARD",   gameId="AZEROTHWORDS", title_de="Wortschatz",        title_en="Word Hoard",
-      desc_de="Gewinne 1x Azeroth Words",                     desc_en="Win 1 game of Azeroth Words",
-      goal=1,  metric="wins",         reward={xp=70,  gold=7} },
-
     { id="d_echo_win",   diff="HARD",   gameId="ARCADIASECHO", title_de="Echo",              title_en="Echo",
-      desc_de="Gewinne 1x Arcadia's Echo",                    desc_en="Win 1 game of Arcadia's Echo",
-      goal=1,  metric="wins",         reward={xp=70,  gold=7} },
+      desc_de="Meistere eine Sequenz aus 8 Symbolen in einem Lauf", desc_en="Master a sequence of 8 symbols in one run",
+      goal=8,  metric="score",        reward={xp=70,  gold=7} },
 
     { id="d_pets_win",   diff="HARD",   gameId="AZEROTHTINYGUARDIANS", title_de="Winzige Wächter", title_en="Tiny Guardians",
       desc_de="Gewinne 1x Azeroth's Tiny Guardians",          desc_en="Win 1 game of Azeroth's Tiny Guardians",
@@ -378,12 +370,24 @@ function CM:HandleGameResult(data)
         CM:_UpdateProgress(data)
     end)
     if not ok then
+        local LR = ArcadiaNexus.LocalResults
+        local booked = ArcadiaNexus.GameResultProcessor
+        if (LR and LR:IsPreparing()) or (booked and booked:IsBooking()) then error(err) end
         GH_LogError("ChallengeManager", "HandleGameResult: " .. tostring(err))
     end
 end
 
 function CM:_ResetIfNeeded()
     local db    = ArcadiaNexus.StatsStore.GetChallenges()
+    for _, ch in ipairs(db.daily and db.daily.active or {}) do
+        if ch.id == "d_echo_win" and ch.metric == "wins" then
+            ch.metric, ch.goal = "score", 8
+            ch.desc_de = "Meistere eine Sequenz aus 8 Symbolen in einem Lauf"
+            ch.desc_en = "Master a sequence of 8 symbols in one run"
+            -- Claimed historical tasks remain claimed; no migration reward.
+            if not ch.claimed then ch.progress = 0 end
+        end
+    end
     local today = self:_DateInt()
     local week  = self:_WeekInt()
     local dayTs = self:_GetDayTimestamp()
@@ -512,7 +516,11 @@ function CM:_UpdateProgress(data)
 
             -- Fertig?
             if ch.progress >= ch.goal then
-                pcall(function() CM:_Complete(ch) end)
+                local LR = ArcadiaNexus.LocalResults
+                local booked = ArcadiaNexus.GameResultProcessor
+                if (LR and LR:IsPreparing()) or (booked and booked:IsBooking()) then
+                    CM:_Complete(ch)
+                else pcall(function() CM:_Complete(ch) end) end
             end
         end
     end

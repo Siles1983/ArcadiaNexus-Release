@@ -24,7 +24,7 @@ ArcadiaNexus.RegisterAchievements({
     {
         id="BRB_WINS", gameId="BARREL_BRAWL", category="ARCADE",
         title_de="Gnomenheld", title_en="Gnomish Hero",
-        desc_de="Rette die Prinzessin in Barrel Brawl.", desc_en="Rescue the princess in Barrel Brawl.",
+        desc_de="Beende erfolgreiche Läufe mit mindestens einer Rettung.", desc_en="Finish successful runs with at least one rescue.",
         icon="Interface\\Icons\\Achievement_Character_Gnome_Male",
         condition = function(data, db)
             if data.gameId ~= "BARREL_BRAWL" then return 0 end

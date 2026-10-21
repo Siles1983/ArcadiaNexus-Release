@@ -1,3 +1,233 @@
+### Arcadia Nexus 1.2.4 Changelog
+
+### English
+
+- Mosaic of Azeroth: the preview button opens the movable preview again.
+- Azeroth Jewels, BlockBreaker and Shadows Conquest: campaign-map tiles are round. New Shadows Conquest campaigns open on page 1 instead of jumping to a later page.
+- Arcadia Rows: restored sound-setting labels and fixed the “Stellungskenner” achievement unlocking after unrelated games.
+- Azeroth Jewels: effect sounds play again and respect the sound settings.
+- Codebreaker and Azeroth Conquest: Start begins a new round; Continue resumes the saved round. Save-slot selection has been removed. Codebreaker’s loss screen now uses the board’s symbol colours.
+- Fixed result dialogs remaining open after leaving Codebreaker, Nether Bound, Barrel Brawl, Snake, BlockDrop, Darkmoon Pinball and Gallywix – Wheel of Fortune.
+- Improved instructions, text sizing and missing characters in several games. Darkmoon Pinball’s status tooltip opens again, and BlockDrop’s guide explains its score multiplier.
+- Tavern Cards: clearer settings layout and a Random entry in the character selection. Barrel Brawl’s idle screen no longer shows the playfield shadow or description.
+- Ludo of Azeroth: a larger animated red arrow marks the landing square. Azeroth Intelligence’s dictionary now has back and forward arrows beside Close.
+- Arcane Barrage, BlockBreaker, Shadows Conquest, Alchemist’s Sort and Azeroth Jewels: completed levels offer Next Level, Level Select, Replay Level and Exit. Losses omit Next Level; Jewels offers Endless after level 100. Result dialogs fit all buttons.
+- BlockBreaker: replay cleared levels without affecting your scored run. The map shows each cleared level’s best time; Continue resumes the saved run.
+- Achievements: fixed repeated weekly progress for Perseverance. “Your Casino. My Winnings.” in Gallywix now counts only your own spins.
+- Added a tavern illustration to the multiplayer game selection and a shrine floor behind Snake’s board. Nonogram’s board is centred, with Time, Errors and Fill below it.
+- Switching tabs or closing the hub saves games that support continuation. If saving fails, you stay in the current game. Logout preserves the option to rejoin a multiplayer match.
+- Multiplayer results and rewards recover more reliably after interruptions, including at the next login without rejoining the match. Fixed cases of missing or duplicate rewards and achievement rewards.
+- Improved the transfer of older saves, settings and records, including Reaction Strike times, Argus Orbit Defense records and Ludo visibility preferences. Damaged save data is checked before changes are made.
+- Azeroth Intelligence, Solo: completed games block further moves and keep their result visible until you leave. Cancelling Exit returns to the result; the confirmation supports mouse and gamepad.
+
+### Deutsch
+
+- Mosaic of Azeroth: Der Vorschau-Button öffnet die verschiebbare Vorschau wieder.
+- Azeroth Jewels, BlockBreaker und Shadows Conquest: Die Kacheln der Kampagnenkarten sind rund. Neue Shadows-Conquest-Kampagnen öffnen Seite 1, statt auf eine spätere Seite zu springen.
+- Arcadia Rows: Fehlende Beschriftungen der Sound-Einstellungen ergänzt. Der Erfolg „Stellungskenner“ wird nicht mehr nach anderen Spielen ausgelöst.
+- Azeroth Jewels: Effektsounds werden wieder abgespielt und beachten die Sound-Einstellungen.
+- Codebreaker und Azeroth Conquest: Start beginnt eine neue Runde; Weiterspielen setzt die gespeicherte Runde fort. Die Auswahl von Spielstandplätzen entfällt. Codebreakers Niederlagenanzeige verwendet jetzt die Symbolfarben des Bretts.
+- Ergebnisdialoge bleiben nach dem Verlassen von Codebreaker, Nether Bound, Barrel Brawl, Snake, BlockDrop, Darkmoon Pinball und Gallywix – Wheel of Fortune nicht mehr stehen.
+- Anleitungen, Textgrößen und fehlende Zeichen in mehreren Spielen korrigiert. Darkmoon Pinballs Status-Tooltip öffnet sich wieder; BlockDrops Anleitung erklärt den Punktefaktor.
+- Tavern Cards: Übersichtlichere Einstellungen und ein Zufallseintrag in der Charakterauswahl. Barrel Brawls Startansicht zeigt keinen Spielfeldschatten und keine zusätzliche Beschreibung mehr.
+- Ludo of Azeroth: Ein größerer animierter roter Pfeil markiert das Landefeld. Im Wörterbuch von Azeroth Intelligence stehen Rückwärts- und Vorwärtspfeile neben Schließen.
+- Arcane Barrage, BlockBreaker, Shadows Conquest, Alchemist’s Sort und Azeroth Jewels: Geschaffte Level bieten Nächstes Level, Levelauswahl, Level wiederholen und Beenden. Bei Niederlagen entfällt Nächstes Level; Jewels bietet nach Level 100 Endlos. Die Ergebnisdialoge bieten Platz für alle Buttons.
+- BlockBreaker: Geschaffte Level lassen sich ohne Einfluss auf die gewertete Partie wiederholen. Die Karte zeigt die beste Abschlusszeit je geschafftem Level; Fortsetzen lädt die gespeicherte Partie.
+- Erfolge: Wiederholten Wochenfortschritt bei „Durchhaltevermögen“ korrigiert. „Dein Casino. Mein Gewinn.“ in Gallywix zählt nur noch eigene Drehungen.
+- Die Mehrspieler-Spielauswahl zeigt eine gemalte Tafelrunde, Snake einen Schreinboden hinter dem Brett. Nonogramms Brett ist zentriert; Zeit, Fehler und Füllen stehen darunter.
+- Tabwechsel und Schließen des Hubs speichern fortsetzbare Spiele. Schlägt das Speichern fehl, bleibst du im aktuellen Spiel. Nach dem Logout bleibt der Wiedereinstieg in eine Mehrspielerpartie möglich.
+- Mehrspieler-Ergebnisse und Belohnungen werden nach Unterbrechungen zuverlässiger nachgetragen, auch beim nächsten Login ohne erneuten Partiebeitritt. Fälle fehlender oder doppelter Belohnungen sowie Erfolgsbelohnungen korrigiert.
+- Übernahme älterer Spielstände, Einstellungen und Bestwerte verbessert, darunter Reaktionszeiten, Argus-Orbit-Defense-Rekorde und Ludos Sichtbarkeit. Beschädigte Speicherdaten werden vor Änderungen geprüft.
+- Azeroth Intelligence, Solo: Beendete Partien sperren weitere Züge und zeigen das Ergebnis bis zum Verlassen. Abbrechen kehrt zum Ergebnis zurück; die Nachfrage unterstützt Maus und Gamepad.
+
+### Arcadia Nexus 1.2.3 Changelog
+
+### English
+
+- Settings: removed statistics reset, export and import. Existing progress, records, achievements and saves are preserved.
+- Alchemist’s Sort: 1000 fixed campaign puzzles increase from 3 to 8 colours, with random puzzles from level 1001. The map shows locked levels from the start and asks before discarding a paused run to select another level.
+- Alchemist’s Sort: improved bottle movement, tilt and pouring effects; removed dark lines between liquid layers and already-completed starting bottles in early levels. Help icons show remaining uses and tooltips.
+- Alchemist’s Sort: fixed Undo with no uses left, the extra bottle after Reset/Undo, saving during pouring and actions after winning. Hints consume a use only when a useful solution move is available. Replays retain the same puzzle; move and time records compare equivalent puzzles and assistance.
+- Nether Bound, formerly Hangman: new fel-green ritual chamber, portal, frame and logo. Error runes and a victory seal accompany 29 selectable warlock pet forms, random selection, an idle preview, sound effects and reduced motion.
+- Nether Bound: rounds start directly without save slots. Improved letter and pet-name readability, German keyboard layout and repeated-word prevention across categories; repeated letters no longer trigger an error sound. The pet becomes more visible with each wrong guess.
+- BlockBreaker: illustrated run overview with ten map pages. Continue loads the saved stage, score and lives; other levels cannot be started individually.
+- Azeroth Jewels and Shadows Conquest: illustrated campaign maps with ten and five pages respectively, showing levels, stars, locks and existing records.
+- Shadows Conquest: 50 solvable puzzles per difficulty, corrected move limits and a campaign map with stars. Solving on the last allowed move now wins. Three save slots, a preview of affected cells and best-move displays help you plan; Reset repeats the same puzzle with a full move budget.
+- Shadows Conquest: scoring rewards solutions close to the minimum move count. Earned old score achievements become Feats of Strength; new goals reward different puzzles solved in minimum moves.
+- Nonogram: 150 different puzzles with unique solutions, including 50 Easy puzzles solvable without guessing, plus an unrated learning puzzle. Wins and green clues now require complete matching groups; extra filled cells prevent a win.
+- Nonogram: Free and Strict have no time limit. Strict retains its error limit and remaining-error bonus; rankings separate modes. Three save slots, repeatable puzzles, clearer clues, row/column highlights and tool selection improve play.
+- Mosaic of Azeroth: 3×3, 4×4 and 5×5 puzzles with 19 images, three save slots and replay of the same puzzle. Added sliding tiles, a skippable intro, movable preview and optional tile numbers.
+- Mosaic of Azeroth: move and time records are tracked separately for the same puzzle. Earned 6×6/8×8 achievements remain as Feats of Strength, with new 4×4/5×5 goals.
+- Revised puzzle-game results show the XP actually awarded. Existing saves, campaign progress, historical records and earned achievements are preserved.
+
+### Deutsch
+
+- Einstellungen: Statistik-Reset, Export und Import entfernt. Vorhandener Fortschritt, Bestwerte, Erfolge und Spielstände bleiben erhalten.
+- Alchemist’s Sort: 1000 feste Kampagnenrätsel steigen von 3 auf 8 Farben; ab Level 1001 folgen Zufallsrätsel. Die Karte zeigt gesperrte Level von Anfang an und fragt vor dem Verwerfen einer pausierten Partie bei anderer Levelwahl nach.
+- Alchemist’s Sort: Bewegung, Neigung und Gießeffekte der Flaschen verbessert. Dunkle Linien zwischen Farbschichten und bereits fertige Startflaschen in frühen Leveln entfernt. Hilfssymbole zeigen Restnutzungen und Tooltips.
+- Alchemist’s Sort: Rückgängig ohne Restnutzung, Zusatzflasche nach Zurücksetzen/Rückgängig, Speichern während des Gießens und Aktionen nach einem Sieg korrigiert. Tipps verbrauchen nur bei einem hilfreichen Lösungszug eine Nutzung. Wiederholungen behalten das Rätsel; Zug- und Zeitbestwerte vergleichen passende Rätsel und Hilfen.
+- Nether Bound, bisher Hangman: Neue felgrüne Ritualkammer, Portal, Rahmen und Logo. Fehlerrunen und ein Siegel bei Sieg ergänzen 29 wählbare Hexer-Petformen, Zufallsauswahl, Startvorschau, Soundeffekte und reduzierte Bewegung.
+- Nether Bound: Runden starten direkt ohne Spielstandplätze. Lesbarkeit von Buchstaben und Petnamen, deutsche Tastaturbelegung und Wortwiederholungen über Kategorien hinweg verbessert. Wiederholte Buchstaben lösen keinen Fehlersound mehr aus. Mit jedem Fehler wird das Pet sichtbarer.
+- BlockBreaker: Illustrierte Laufübersicht mit zehn Kartenseiten. Fortsetzen lädt die gespeicherte Etappe mit Punkten und Leben; andere Level lassen sich nicht einzeln starten.
+- Azeroth Jewels und Shadows Conquest: Illustrierte Kampagnenkarten mit zehn beziehungsweise fünf Seiten zeigen Level, Sterne, Sperren und vorhandene Bestwerte.
+- Shadows Conquest: 50 lösbare Rätsel je Schwierigkeit, korrigierte Zuglimits und eine Kampagnenkarte mit Sternen. Auch eine Lösung mit dem letzten erlaubten Zug gewinnt. Drei Spielstandplätze, eine Vorschau betroffener Felder und Zugbestwerte helfen beim Planen; Zurücksetzen wiederholt das Rätsel mit vollem Zugbudget.
+- Shadows Conquest: Punkte belohnen Lösungen nahe der Mindestzugzahl. Verdiente alte Punkteerfolge werden zu Heldentaten; neue Ziele belohnen unterschiedliche mit Mindestzügen gelöste Rätsel.
+- Nonogramm: 150 verschiedene eindeutig lösbare Rätsel, darunter 50 einfache ohne Raten, sowie ein ungewertetes Lernrätsel. Sieg und grüne Hinweise verlangen vollständig passende Gruppen; zusätzliche gefüllte Felder verhindern einen Sieg.
+- Nonogramm: Frei und Streng haben kein Zeitlimit. Streng behält Fehlergrenze und Restfehlerbonus; Ranglisten trennen die Modi. Drei Spielstandplätze, wiederholbare Rätsel, klarere Hinweise, Zeilen-/Spaltenmarkierungen und Werkzeugwahl erleichtern das Spielen.
+- Mosaic of Azeroth: 3×3-, 4×4- und 5×5-Rätsel mit 19 Motiven, drei Spielstandplätzen und Wiederholung desselben Rätsels. Gleitende Kacheln, überspringbares Intro, verschiebbare Vorschau und optionale Kachelnummern ergänzt.
+- Mosaic of Azeroth: Zug- und Zeitbestwerte werden für dasselbe Rätsel getrennt geführt. Verdiente 6×6-/8×8-Erfolge bleiben Heldentaten; neue Ziele gelten für 4×4 und 5×5.
+- Überarbeitete Rätselspiele zeigen die tatsächlich vergebenen XP im Ergebnis. Vorhandene Spielstände, Kampagnenfortschritte, historische Bestwerte und verdiente Erfolge bleiben erhalten.
+
+### Arcadia Nexus 1.2.2 Changelog
+
+### English
+
+- Azeroth Intelligence: Solo vs. AI lets you choose Horde or Alliance and play as spy or operative. German and English puzzle languages are available in Settings. Easy opponents guess at most once per clue, Normal opponents twice.
+- Azeroth Intelligence: expanded German and English clue knowledge, including Val’anyr, Illidan and Ulduar, and fixed rare stalled positions. Unknown spy clues can be corrected, with optional dictionary help.
+- Azeroth Intelligence: more compact controls and clearer role instructions; Sound appears before the guide in Settings.
+- Gallywix – Wheel of Fortune: three solo save slots preserve the complete game, even during a spin or intervention. Retry retains the house rules. Results show actual XP and records; the leave button is now labelled Exit.
+- Gallywix multiplayer: separate standings for two humans, two humans plus AI and three humans, with and without Gallywix. Two-player matches choose the first starter randomly, then rotate.
+- Azeroth Words removed. Earned achievements remain as Feats of Strength with their unlock dates; unearned tiers no longer count toward completion. Existing records and statistics are preserved.
+
+### Deutsch
+
+- Azeroth Intelligence: Im Solo gegen KI stehen Horde und Allianz sowie die Rollen Spion und Agent zur Wahl. Deutsch und Englisch sind als Rätselsprache in den Einstellungen verfügbar. Leichte Gegner raten höchstens einmal je Hinweis, normale zweimal.
+- Azeroth Intelligence: Deutsches und englisches Hinweiswissen erweitert, unter anderem für Val’anyr, Illidan und Ulduar, und seltene Spielstillstände korrigiert. Unbekannte Spionhinweise lassen sich mit optionaler Wörterbuchhilfe korrigieren.
+- Azeroth Intelligence: Kompaktere Steuerung und verständlichere Rollenanleitung; in den Einstellungen steht Sound vor der Anleitung.
+- Gallywix – Wheel of Fortune: Drei Solo-Spielstandplätze erhalten die vollständige Partie, auch während einer Drehung oder eines Eingriffs. Erneut spielen behält die Hausregeln. Ergebnisse zeigen tatsächliche XP und Bestwerte; der Verlassen-Button heißt jetzt Beenden.
+- Gallywix-Mehrspieler: Getrennte Wertungen für zwei Menschen, zwei Menschen mit KI und drei Menschen, jeweils mit und ohne Gallywix. Bei zwei Spielern wird der erste Starter ausgelost, danach rotiert er.
+- Azeroth Words entfernt. Verdiente Erfolge bleiben mit Freischaltdatum als Heldentaten erhalten; unverdiente Stufen zählen nicht mehr zur Vollständigkeit. Vorhandene Bestwerte und Statistiken bleiben erhalten.
+
+### Arcadia Nexus 1.2.1 Changelog
+
+### English
+
+- Ludo of Azeroth: corrected track positions and capture previews. Entering the board captures full opposing stacks; rapid repeated clicks no longer cause extra actions. Pieces follow the track through corners and home entrances.
+- Ludo of Azeroth: three save slots preserve rolls, moves and AI turns without rerolling on continuation. Older saves are transferred; ambiguous unfinished moves ask how to continue. Wins and losses are tracked separately for one, two and three AI opponents.
+- Backgammon: improved move and AI calculation while respecting compulsory dice use. Doubles show four separate dice; clearer bar, home and dice-use guidance, bear-off selection and a larger settings guide improve readability.
+- Backgammon: complete saves resume without rerolling. Difficulty stays fixed during play and retry; leaving explains which unconfirmed moves are discarded.
+- Azeroth Conquest: improved random fleet placement and editable manual placement with Rotate, Undo and confirmation before battle. AI targeting uses revealed shots; reloading no longer changes the chosen reply or causes double turns.
+- Azeroth Conquest: three save slots preserve placement and battle progress. Gamepad Back saves the game. The display shows both last shots, hit/miss/sunk feedback, remaining ships and final shot accuracy; active difficulty stays fixed.
+- Existing records, statistics and earned achievements are preserved. Results and rewards are protected against duplicate awards when continuing or reloading.
+
+### Deutsch
+
+- Ludo of Azeroth: Bahnpositionen und Schlagvorschau korrigiert. Beim Eintritt werden ganze gegnerische Stapel geschlagen; schnelle Mehrfachklicks lösen keine zusätzlichen Aktionen mehr aus. Figuren folgen der Bahn über Ecken und Zieleingänge.
+- Ludo of Azeroth: Drei Spielstandplätze erhalten Würfe, Bewegungen und KI-Züge ohne erneutes Würfeln beim Fortsetzen. Ältere Spielstände werden übernommen; bei unklaren offenen Zügen wird die Fortsetzung erfragt. Siege und Niederlagen werden für ein, zwei und drei KI-Gegner getrennt geführt.
+- Backgammon: Zug- und KI-Berechnung unter Beachtung der verpflichtenden Würfelnutzung verbessert. Pasch zeigt vier einzelne Würfel; klarere Hinweise zu Bar, Heimfeld und Würfelnutzung, Würfelwahl beim Abtragen und eine größere Anleitungsbox verbessern die Lesbarkeit.
+- Backgammon: Vollständige Spielstände werden ohne Neuwürfeln fortgesetzt. Die Schwierigkeit bleibt während Partie und Neustart fest; beim Verlassen wird auf verworfene unbestätigte Züge hingewiesen.
+- Azeroth Conquest: Zufällige Flottenaufstellung und manuelle Platzierung mit Drehen, Rückgängig und Bestätigung vor Kampfbeginn verbessert. Die KI nutzt aufgedeckte Schüsse; Neuladen ändert keine gewählte Antwort und erzeugt keine Doppelzüge mehr.
+- Azeroth Conquest: Drei Spielstandplätze erhalten Aufstellung und Kampfverlauf. Gamepad-Zurück speichert die Partie. Angezeigt werden beide letzten Schüsse, Treffer/Verfehlt/Versenkt, Restflotte und abschließende Trefferquote; die aktive Schwierigkeit bleibt fest.
+- Vorhandene Bestwerte, Statistiken und verdiente Erfolge bleiben erhalten. Ergebnisse und Belohnungen sind beim Fortsetzen oder Neuladen gegen doppelte Vergabe geschützt.
+
+### Arcadia Nexus 1.2.0 Changelog
+
+### English
+
+- Arcade games: improved saving and continuation, pause behaviour and keyboard/gamepad input. Held buttons no longer trigger unintended actions at transitions; guides and power-up explanations are clearer. Historical records and earned achievements are preserved.
+- Snake: three save slots retain the snake, food, score and queued turns. Corrected head, body and tail connections across board edges. Long client stalls or text entry pause movement; Escape saves and exits. A full board counts as a win.
+- Goblin Blast: complete saves retain bombs, flames, upgrades and timers. Fixed chain explosions and last-life hits; clearer time and bomb displays. Rankings track a complete twelve-level run; older checkpoints restart their saved level with historical points kept separately.
+- Darkmoon Pinball: three complete saves include multiball, missions, tilt and ball protection. Improved ball-passage and mission-achievement tracking, pause behaviour and low-frame-rate timing; clearer tilt, rescue, ball-count and bonus displays.
+- BlockDrop: immediate hard drop, improved rotation near walls and the floor, and saved piece order. Three complete saves retain the board and current pieces; new rankings are separate from historical records.
+- BlockBreaker: saves retain damaged blocks, balls and power-ups. Improved paddle/block/wall collisions, including multiball, and corrected starting lives to 5/3/1. After 100 cleared levels, optional Endless continues the same scored run without another victory reward; replaying no longer farms run points.
+- Barrel Brawl: three complete saves retain jumps, barrels and bonus time. Safe barrel passages award 100 points; at least one rescue makes a successful run. Corrected Hard starting lives and added a ten-second warning with optional sound. Older partial saves restart their saved stage.
+- Argus Orbit Defense: complete saves for both modes and improved collisions across screen edges. Late-wave enemies remain visible. Separate Level/Endless rankings by difficulty, clearer power-up and control displays, and corrected leaderboard labels.
+- Arcane Barrage: rebuilt all 100 campaign boards with solvable layouts, improved aiming preview and an Easy snap marker. Each level starts at zero points; level records and stars are shown separately from historical campaign scores.
+- Arcane Barrage: improved gamepad Joker selection, colour marks and power help. Campaigns can be saved; leaving Arcade or Time records the started run’s score. Corrected mode and difficulty labels in leaderboards.
+- Alien Defense: three complete saves retain waves, enemies, weapons and projectiles. Victory after 30 cleared waves offers optional Endless continuation of the same score. Wave achievements require actually clearing the wave; older partial saves restart their displayed wave.
+- Arcade results: one ranking entry per run where applicable, clearer final results and more reliable rewards after reload, without repeated victory rewards during endless continuation.
+
+### Deutsch
+
+- Arcade-Spiele: Speichern und Fortsetzen, Pausen sowie Tastatur-/Gamepad-Eingaben verbessert. Gehaltene Tasten lösen bei Übergängen keine ungewollten Aktionen mehr aus; Anleitungen und Power-up-Hilfen sind verständlicher. Historische Bestwerte und verdiente Erfolge bleiben erhalten.
+- Snake: Drei Spielstandplätze erhalten Schlange, Futter, Punkte und vorgemerkte Kurven. Kopf-, Körper- und Schwanzverbindungen am Spielfeldrand korrigiert. Längere Client-Hänger oder Texteingabe pausieren die Bewegung; Escape speichert und beendet. Ein volles Brett zählt als Sieg.
+- Goblin Blast: Vollständige Spielstände erhalten Bomben, Flammen, Upgrades und Spieluhren. Kettenexplosionen und Treffer beim letzten Leben korrigiert; klarere Zeit- und Bombenanzeigen. Ranglisten werten den gesamten Zwölf-Level-Lauf; alte Checkpoints starten das gespeicherte Level neu, historische Punkte bleiben separat.
+- Darkmoon Pinball: Drei vollständige Spielstände einschließlich Multiball, Missionen, Tilt und Kugelschutz. Kugelpassagen, Missionserfolge, Pausen und Zeitverhalten bei niedriger Bildrate verbessert; klarere Anzeigen für Tilt, Rettung, Kugelzahl und Boni.
+- BlockDrop: Sofortiger Harddrop, verbesserte Drehungen an Wand und Boden sowie gespeicherte Steinreihenfolge. Drei vollständige Spielstände erhalten Brett und aktuelle Steine; neue Ranglisten sind von historischen Bestwerten getrennt.
+- BlockBreaker: Spielstände erhalten beschädigte Blöcke, Bälle und Power-ups. Kollisionen mit Schläger, Blöcken und Wänden einschließlich Mehrball verbessert; Startleben auf 5/3/1 korrigiert. Nach 100 geschafften Leveln setzt optionales Endlos denselben gewerteten Lauf ohne weitere Siegprämie fort; Wiederholungen vermehren keine Laufpunkte mehr.
+- Barrel Brawl: Drei vollständige Spielstände erhalten Sprünge, Fässer und Bonuszeit. Sichere Fasspassagen geben 100 Punkte; mindestens eine Rettung zählt als erfolgreicher Lauf. Schwer-Startleben korrigiert und Zehn-Sekunden-Warnung mit optionalem Ton ergänzt. Alte Teilstände starten ihre gespeicherte Etappe neu.
+- Argus Orbit Defense: Vollständige Spielstände für beide Modi und verbesserte Kollisionen am Bildschirmrand. Gegner bleiben auch in späten Wellen sichtbar. Getrennte Level-/Endlosranglisten je Schwierigkeit, klarere Power-up- und Steuerungsanzeigen sowie korrigierte Bestenlisten-Beschriftungen.
+- Arcane Barrage: Alle 100 Kampagnenbretter mit lösbaren Anordnungen überarbeitet; Zielvorschau und Anheftmarker auf Einfach verbessert. Jedes Level beginnt bei null Punkten; Levelbestwerte und Sterne stehen getrennt von historischen Kampagnenpunkten.
+- Arcane Barrage: Jokerwahl per Gamepad, Farbmarkierungen und Hilfen zu Mächten verbessert. Kampagnen lassen sich speichern; Verlassen von Arcade oder Zeit verbucht die Punkte des begonnenen Laufs. Modus- und Schwierigkeitsnamen in Bestenlisten korrigiert.
+- Alien Defense: Drei vollständige Spielstände erhalten Wellen, Gegner, Waffen und Projektile. Ein Sieg nach 30 geschafften Wellen bietet optionales Endlos mit demselben Punktestand. Wellenerfolge verlangen den tatsächlichen Abschluss; alte Teilstände starten die angezeigte Welle neu.
+- Arcade-Ergebnisse: Wo zutreffend ein Ranglistenplatz je Lauf, verständlichere Abschlüsse und zuverlässigere Belohnungen nach Neuladen, ohne wiederholte Siegprämien im Endlosspiel.
+
+### Arcadia Nexus 1.1.9 Changelog
+
+### English
+
+- Whack-a-Mole: fixed hit and score tracking. Surviving 30 seconds wins; hitting a bomb ends the round immediately. Added separate hit/miss counters, a red final countdown and an independent round-start/end sound switch.
+- Tic Tac Toe: fixed rules throughout best-of-three series; two board wins decide the series and draws extend it. AI rankings separate difficulty, board size and win length. Streaks count completed series under the same rules; next-round and new-series actions are clearer.
+- Reaction Strike: immediate real/fake signals, equivalent board/Space/gamepad input and fastest-time rankings per difficulty. False starts and fake clicks count as failed attempts; ignored fakes update achievement progress immediately. Historical point records remain separate.
+- Gadgetzan Cup Shuffle: corrected half-chip stakes and net-profit factors of 1 / 1.5 / 2 plus the returned stake. Three capital save slots; leaving an open round loses the stake, while bankruptcy preserves the actual remainder.
+- Arcadia’s Echo: only fully mastered sequences score. Starts with one symbol at 0.85 seconds, becoming faster each round. Separate rankings by difficulty; the daily task requires eight mastered symbols in one run. Voluntary exit records progress without counting a win.
+- Fixed sound settings and missing German/English leaderboard titles in these games. Existing records and earned achievements are preserved; result and reward tracking is more reliable.
+
+### Deutsch
+
+- Whack-a-Mole: Treffer- und Punktewertung korrigiert. Überstandene 30 Sekunden zählen als Sieg; eine Bombe beendet die Runde sofort. Getrennte Treffer-/Verpasst-Zähler, roter Schluss-Countdown und ein eigener Schalter für Rundenstart-/Endsound ergänzt.
+- Tic Tac Toe: Feste Regeln während Best-of-3-Serien; zwei Brettsiege entscheiden, Remis verlängern die Serie. KI-Ranglisten trennen Schwierigkeit, Brettgröße und Gewinnlänge. Siegesserien zählen abgeschlossene Serien gleicher Regeln; nächste Runde und neue Serie sind klarer bedienbar.
+- Reaction Strike: Sofort sichtbare Echt-/Täuschsignale, gleichwertige Eingabe per Spielfeld/Leertaste/Gamepad und Bestzeiten je Schwierigkeit. Fehlstarts und Fake-Klicks zählen als Fehlversuche; ignorierte Täuschungen aktualisieren Erfolge sofort. Historische Punkte bleiben separat.
+- Gadgetzan Cup Shuffle: Halbchip-Einsätze und Nettogewinnfaktoren 1 / 1,5 / 2 zusätzlich zur Einsatzrückzahlung korrigiert. Drei Kapital-Spielstandplätze; Verlassen einer offenen Runde verliert den Einsatz, Bankrott erhält das tatsächliche Restkapital.
+- Arcadia’s Echo: Nur vollständig gemeisterte Sequenzen geben Punkte. Start mit einem Symbol bei 0,85 Sekunden, danach jede Runde schneller. Getrennte Ranglisten je Schwierigkeit; die Tagesaufgabe verlangt acht gemeisterte Symbole in einem Lauf. Freiwilliges Beenden verbucht Fortschritt ohne Sieg.
+- Sound-Einstellungen und fehlende deutsche/englische Bestenlistentitel dieser Spiele korrigiert. Vorhandene Bestwerte und verdiente Erfolge bleiben erhalten; Ergebnisse und Belohnungen werden zuverlässiger erfasst.
+
+### Arcadia Nexus 1.1.8 Changelog
+
+### English
+
+- Tavern Cards: fixed action-tooltip errors and overlapping action buttons. Card tooltips show Playable / Not playable; card tooltips and the House Rules button can be switched independently in Settings.
+- Tavern Cards: corrected +4 stacking/challenges, stacked penalties and final +2/+4 settlement. UNO’s three-second window excludes pauses and offline time. Three solo saves retain rules, scores and open decisions; improved AI, card/action help and game displays.
+- Higher or Lower: chip positions stay stable while dealing and changing stakes; increasing a stake adds chips without rearranging existing ones.
+- Higher or Lower: Standard uses 52 cards, Joker 54; Aces are high and the first card is never a Joker. Ties preserve the streak. Corrected payouts, half chips and deck-end settlement; three saves retain capital, deck and streak. Earned old Hard-only achievements remain Feats of Strength.
+- Solitaire: no automatic loss when placement moves run out. Give up requires confirmation; Exit, tab changes and closing the hub save the game. The last 20 actions remain undoable across saves, costing 15 points each without rewinding time.
+- Solitaire: corrected automatic finish and scoring. Draw-three recycling costs 20 points from pass 4; draw-one recycling stays free. Improved long-column layout and legal-move highlights; completed boards remain visible behind results.
+- Solitaire: new win-only rankings by mode and Action Master achievements at 300/500/650 points. Earned old Score Hunter achievements remain Feats of Strength; historical scores remain separate.
+- Blackjack: fixed four-deck table, stand on soft 17 and dealer Blackjack check; removed difficulty/counting variants. Optional zero to two table players can be changed between rounds.
+- Blackjack: corrected split hands, doubling, split Aces, Blackjack and insurance payouts. Three independent-capital saves retain the full table. Results show each hand, insurance and net outcome; bankruptcy keeps the actual remainder without refilling capital.
+- Card games: clearer German/English guides, tooltips and keyboard/gamepad actions. Existing records and achievements remain available, with more reliable result and reward tracking.
+
+### Deutsch
+
+- Tavern Cards: Fehler der Aktionstooltips und überlappende Aktionsbuttons behoben. Kartentooltips zeigen Spielbar / Nicht spielbar; Kartentooltips und Hausregeln-Button lassen sich getrennt in den Einstellungen schalten.
+- Tavern Cards: +4-Stapeln/Anfechten, Stapelstrafen und abschließende +2/+4-Abrechnung korrigiert. Die drei UNO-Sekunden zählen keine Pausen- oder Offlinezeit. Drei Solo-Spielstände erhalten Regeln, Punkte und offene Entscheidungen; KI, Karten-/Aktionshilfe und Anzeigen verbessert.
+- Higher or Lower: Chips behalten beim Austeilen und bei Einsatzänderungen ihre Position. Ein höherer Einsatz ergänzt Chips, ohne vorhandene neu anzuordnen.
+- Higher or Lower: Standard nutzt 52 Karten, Joker 54; Asse sind hoch und die Startkarte ist nie ein Joker. Gleichstände erhalten die Serie. Auszahlungen, Halbchips und Abrechnung am Deckende korrigiert; drei Spielstände erhalten Kapital, Deck und Serie. Verdiente alte Schwer-Erfolge bleiben Heldentaten.
+- Solitaire: Keine automatische Niederlage bei fehlenden Ablagezügen. Aufgeben erfordert Bestätigung; Beenden, Tabwechsel und Hub-Schließen speichern die Partie. Die letzten 20 Aktionen bleiben über Spielstände hinweg rücknehmbar, mit je 15 Punkten Abzug ohne Zeitrücklauf.
+- Solitaire: Automatischen Abschluss und Punktewertung korrigiert. Im 3-Karten-Modus kostet Recycling ab Durchlauf 4 jeweils 20 Punkte; im 1-Karten-Modus bleibt es kostenlos. Lange Spalten und Markierungen legaler Ziele verbessert; fertige Bretter bleiben hinter dem Ergebnis sichtbar.
+- Solitaire: Neue Ranglisten gewonnener Partien je Modus und Aktionsmeister-Erfolge bei 300/500/650 Punkten. Verdiente alte Punktejäger-Erfolge bleiben Heldentaten; historische Punkte bleiben separat.
+- Blackjack: Fester Vier-Deck-Tisch, Halten auf Soft 17 und Dealer-Blackjack-Prüfung; Schwierigkeit und Zählvarianten entfernt. Zwischen Runden lassen sich null bis zwei Mitspieler wählen.
+- Blackjack: Geteilte Hände, Double, geteilte Asse, Blackjack und Versicherungsauszahlungen korrigiert. Drei Spielstände mit eigenem Kapital erhalten den vollständigen Tisch. Ergebnisse zeigen jede Hand, Versicherung und Nettogewinn; Bankrott erhält das echte Restkapital ohne Auffüllen.
+- Kartenspiele: Verständlichere deutsche/englische Anleitungen, Tooltips sowie Tastatur-/Gamepad-Aktionen. Vorhandene Bestwerte und Erfolge bleiben verfügbar; Ergebnisse und Belohnungen werden zuverlässiger erfasst.
+
+### Arcadia Nexus 1.1.7 Changelog
+
+### English
+
+- New game: Gallywix – Wheel of Fortune. Play three puzzle rounds against Gazlowe and Rexxar, with 320 puzzles in German and English, vowel purchases, extra spins, bankruptcy and skip-turn fields. Jaina hosts Alliance players, Sylvanas hosts Horde players.
+- Gallywix: optional interference house rule, separate rankings with/without it, twelve achievement groups with sixteen unlocks, a secret achievement and individually adjustable sounds. Multiplayer supports two or three humans, with an optional AI for two-player matches.
+- Sudoku: 24 unique puzzles per difficulty, cell notes, Undo, Clear and keyboard shortcuts. Three saves retain puzzles, notes and undo history; leaderboards show solved puzzles by difficulty. Improved conflict highlights and consecutive note undo; removed Shuffle.
+- Minesweeper: the first reveal and its neighbours are safe. Clicking an open number with matching flags reveals remaining neighbours; incorrect flags can trigger a mine. Clearer symbols, contrast and mine/flag counters.
+- Minesweeper: three saves retain the board and difficulty. Time begins at the first reveal, excludes pauses and stops at completion; continued wins qualify for best times. Fixed results remaining open after tab changes or closing the hub; removed Shuffle.
+- Codebreaker: fixed 3/4/6 positions and 10/8/6 attempts by difficulty, always allowing repeated symbols. Clear and Copy last checked guess cost no attempt; loss reveals the actual symbols. Three saves retain guesses and unfinished input; the HUD shows the potential score of the next guess.
+- 2048: three saves retain the board and score, including during tile movement. Reaching 2048 grants one win; Keep playing improves the same record without another reward. Added sliding/merge effects and reduced motion; board sizes have separate current rankings. Removed Shuffle.
+- Match-3 removed; Azeroth Jewels is its official successor. Earned Match-3 achievements remain in the new General → Feats of Strength category with their unlock dates. Retired unearned tiers no longer count toward active completion.
+- BlockBreaker: opened passages in 40 levels where indestructible walls blocked targets; further corrected levels 72, 89 and 93.
+- Existing statistics, earned achievements and historical records remain available where applicable. Revised games show actual rewards and protect against duplicate awards after reload.
+
+### Deutsch
+
+- Neues Spiel: Gallywix – Wheel of Fortune. Drei Rätselrunden gegen Gazlowe und Rexxar mit 320 Rätseln auf Deutsch und Englisch, Vokalkauf, Extradrehs, Bankrott und Aussetzen. Jaina moderiert für Allianzspieler, Sylvanas für Hordenspieler.
+- Gallywix: Optionale Eingriffs-Hausregel, getrennte Ranglisten mit/ohne diese Regel, zwölf Erfolgsgruppen mit sechzehn Freischaltungen, ein geheimer Erfolg und einzeln einstellbare Sounds. Mehrspieler unterstützt zwei oder drei Menschen; bei zwei Spielern ist optional eine KI dabei.
+- Sudoku: 24 eindeutige Rätsel je Schwierigkeit, Feldnotizen, Rückgängig, Leeren und Tastaturkürzel. Drei Spielstände erhalten Rätsel, Notizen und Rücknahmen; Bestenlisten zeigen gelöste Rätsel je Schwierigkeit. Konfliktmarkierungen und mehrfaches Notizen-Rückgängig verbessert; Mischen entfernt.
+- Minesweeper: Erstes Aufdecken samt Nachbarfeldern ist minenfrei. Ein Klick auf eine offene Zahl mit passender Flaggenzahl öffnet übrige Nachbarn; falsche Flaggen können eine Mine auslösen. Klarere Symbole, Kontraste sowie Minen-/Flaggenzähler.
+- Minesweeper: Drei Spielstände erhalten Brett und Schwierigkeit. Die Zeit beginnt beim ersten Aufdecken, zählt keine Pausen und stoppt bei Abschluss; fortgesetzte Siege zählen für Bestzeiten. Stehenbleibende Ergebnisse nach Tabwechsel oder Hub-Schließen korrigiert; Mischen entfernt.
+- Codebreaker: Feste 3/4/6 Positionen und 10/8/6 Versuche je Schwierigkeit, Symbolwiederholungen immer erlaubt. Leeren und Übernehmen des letzten geprüften Versuchs kosten keinen Versuch; Niederlagen zeigen die tatsächlichen Symbole. Drei Spielstände erhalten Versuche und offene Eingabe; das HUD zeigt mögliche Punkte des nächsten Versuchs.
+- 2048: Drei Spielstände erhalten Brett und Punkte, auch während Kachelbewegungen. Erreichen von 2048 gibt einen Sieg; Weiterspielen verbessert denselben Rekord ohne erneute Belohnung. Schiebe-/Verschmelzeffekte und reduzierte Bewegung ergänzt; Brettgrößen haben getrennte aktuelle Ranglisten. Mischen entfernt.
+- Match-3 entfernt; Azeroth Jewels ist der offizielle Nachfolger. Verdiente Match-3-Erfolge bleiben mit Freischaltdatum unter Allgemein → Heldentaten erhalten. Nicht verdiente stillgelegte Stufen zählen nicht mehr zur aktiven Vollständigkeit.
+- BlockBreaker: In 40 Leveln Durchgänge geöffnet, in denen unzerstörbare Wände Ziele unerreichbar machten; Level 72, 89 und 93 zusätzlich korrigiert.
+- Vorhandene Statistiken, verdiente Erfolge und historische Bestwerte bleiben soweit zutreffend erhalten. Überarbeitete Spiele zeigen tatsächliche Belohnungen und verhindern doppelte Vergabe nach Neuladen.
+
 ### Arcadia Nexus 1.1.6 Changelog
 
 ### English
@@ -29,7 +259,7 @@
 - Achievement groups registered after addon load now receive normalized icons, retroactive checks, and a refresh of the visible achievement view.
 - Tavern Cards plays the special sound for both WILD and WILD4. Match version detection uses the current `C_AddOns.GetAddOnMetadata` API. Azeroth Conquest has its missing board border.
 - Azeroth Jewels now uses the shared campaign-progress logic while preserving older stars, inventory, Endless progress, and paused levels.
-- Multiplayer roster handling shares one name-normalization path. Removed unused Settings rebuild hooks.
+- Multiplayer roster handling shares one name-normalization path. Removed unused Settings rebuild hooks, dead helpers, and hidden Fighter projectile actors; DungeonDemo is listed among the development games.
 
 ### Deutsch
 
@@ -60,7 +290,7 @@
 - Nach dem Addon-Start registrierte Erfolgsgruppen erhalten normalisierte Icons, eine rückwirkende Prüfung und eine Aktualisierung der sichtbaren Erfolgsansicht.
 - Tavern Cards spielt das Spezialgeräusch für WILD und WILD4. Die Match-Version nutzt die aktuelle API `C_AddOns.GetAddOnMetadata`. Azeroth Conquest besitzt wieder seinen fehlenden Brettrahmen.
 - Azeroth Jewels nutzt die gemeinsame Kampagnenfortschritts-Logik und erhält alte Sterne, Inventar, Endless-Fortschritt und pausierte Level.
-- Die Multiplayer-Gruppenliste verwendet einen gemeinsamen Pfad zur Namensnormalisierung. Ungenutzte Settings-`rebuild`-Einträge wurden entfernt.
+- Die Multiplayer-Gruppenliste verwendet einen gemeinsamen Pfad zur Namensnormalisierung. Ungenutzte Settings-`rebuild`-Einträge, tote Helfer und versteckte Fighter-Projektil-Actors wurden entfernt; DungeonDemo steht nun in der Liste der Entwicklungsspiele.
 
 ---
 

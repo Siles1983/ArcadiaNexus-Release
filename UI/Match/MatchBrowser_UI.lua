@@ -11,6 +11,16 @@ local ArcadiaNexus = _G.ArcadiaNexus
 ArcadiaNexus.MatchBrowserUI = {}
 local UI = ArcadiaNexus.MatchBrowserUI
 
+-- Tafelrunde, solange kein Titel gewählt ist.
+-- Größe in Pixeln, Versatz vom Mittelpunkt des Rahmens.
+-- Positives tavern_y schiebt nach oben, über den Goldrahmen hinweg.
+local CFG = {
+    tavern_w = 790,
+    tavern_h = 553,
+    tavern_x = 0,
+    tavern_y = 20,
+}
+
 local selectedId
 local lobbyGameId
 UI._hostPolicy = nil
@@ -428,16 +438,20 @@ function UI.BuildPanel(parent)
     local empty = CreateFrame("Frame", nil, panel)
     empty:SetAllPoints(panel)
     panel._empty = empty
-    local eTitle = empty:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    eTitle:SetPoint("CENTER", empty, "CENTER", 0, 12)
-    eTitle:SetText(Loc("match_pick_empty_title"))
-    eTitle:SetTextColor(1, 0.82, 0)
-    local eBody = empty:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    eBody:SetPoint("TOP", eTitle, "BOTTOM", 0, -10)
-    eBody:SetWidth(420)
-    eBody:SetJustifyH("CENTER")
-    eBody:SetText(Loc("match_pick_empty_body"))
-    eBody:SetTextColor(0.85, 0.78, 0.60)
+    -- Content-Chrome (Goldrahmen) liegt über dem Panel. Das Bild bleibt darunter
+    -- nicht hängen: eigener Frame, eine Ebene über dem Rahmen.
+    local locale = GetLocale and GetLocale() or "enUS"
+    local lang = locale == "deDE" and "de" or "en"
+    local artFrame = CreateFrame("Frame", nil, empty)
+    artFrame:SetSize(CFG.tavern_w, CFG.tavern_h)
+    artFrame:SetPoint("CENTER", empty, "CENTER", CFG.tavern_x, CFG.tavern_y)
+    local chrome = frames and frames.contentChrome
+    artFrame:SetFrameLevel(((chrome and chrome:GetFrameLevel()) or (empty:GetFrameLevel() or 1)) + 5)
+    artFrame:EnableMouse(false)
+    local art = artFrame:CreateTexture(nil, "OVERLAY")
+    art:SetAllPoints(artFrame)
+    art:SetTexture("Interface/AddOns/ArcadiaNexus/UI/Assets/Match/tavern_table_" .. lang)
+    art:SetTexCoord(0, 1, 155 / 1024, 869 / 1024)
 
     local browse = CreateFrame("Frame", nil, panel)
     browse:SetAllPoints(panel)
@@ -627,13 +641,26 @@ function UI.BuildPanel(parent)
     panel._lColName   = ColHeader(Loc("match_col_name"), COL_LEFT)
     panel._lColStatus = ColHeader(Loc("match_col_status"), statusX)
     panel._lColGroup  = ColHeader(Loc("match_col_group"), groupX)
+    panel._lobbyOptionChoices={}
+    panel._lobbyOptionDropdown=ArcadiaNexus.UI.CreateSimpleDropdown(hdr,groupX,30,168,"",
+        panel._lobbyOptionChoices,
+        function() return panel._lobbyOption and panel._lobbyOption.value end,
+        function(value)
+            local Shell=ArcadiaNexus.MatchShell
+            local engine=Shell and Shell.Engine(lobbyGameId)
+            if panel._lobbyOption and engine and engine.SetLobbyOption then
+                engine:SetLobbyOption(panel._lobbyOption.key,value)
+            end
+        end)
+    panel._lobbyOptionDropdown:Hide()
 
     panel._lobbyRows = {}
     for i = 1, 4 do
         local row = CreateFrame("Button", nil, lobby, "BackdropTemplate")
         row:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, -8 - ((i - 1) * ROW_STEP))
-        row:SetPoint("RIGHT", lobby, "RIGHT", -LOBBY_INSET, 0)
-        row:SetHeight(ROW_H)
+        -- Limit both the gold box and its hover area to name + status.
+        -- Session options and group buttons sit outside this rectangle.
+        row:SetSize(statusX + COL_STATUS_W - 20, ROW_H)
         StyleGoldRow(row)
         local nameFS = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         nameFS:SetPoint("LEFT", row, "LEFT", COL_LEFT, 0)
@@ -653,6 +680,15 @@ function UI.BuildPanel(parent)
             row = row, nameFS = nameFS, readyFS = readyFS, aBtn = aBtn, bBtn = bBtn,
         }
     end
+
+    -- The option belongs to the session, but occupies the first row's third
+    -- column. Parenting it to that row keeps its backdrop and hit area above
+    -- the row background, even when the lobby is reparented by MatchShell.
+    local optionRow = panel._lobbyRows[1].row
+    panel._lobbyOptionDropdown:SetParent(optionRow)
+    panel._lobbyOptionDropdown:ClearAllPoints()
+    panel._lobbyOptionDropdown:SetPoint("LEFT", optionRow, "LEFT", groupX, 0)
+    panel._lobbyOptionDropdown:SetFrameLevel(optionRow:GetFrameLevel() + 3)
 
     local readyBtn = ArcadiaNexus.UI.CreateArcadiaButton(lobby, Loc("match_btn_ready"), 120, 32)
     readyBtn:SetPoint("BOTTOMLEFT", lobby, "BOTTOMLEFT", LOBBY_INSET, LOBBY_INSET)
@@ -803,9 +839,29 @@ function UI.RefreshLobby()
     end
     local players = v.lobbyPlayers or {}
     local showPairs = lobbyGameId == "SI7" and v.state == "LOBBY"
+    local option=v.state=="LOBBY" and v.lobbyOption or nil
+    panel._lobbyOption=option
+    local choices=panel._lobbyOptionChoices
+    for i=#choices,1,-1 do choices[i]=nil end
+    if option then
+        for i,choice in ipairs(option.options or {}) do
+            choices[i]={key=choice.key,label=choice.label or Loc(choice.labelKey)}
+        end
+        panel._lColGroup:SetText(Loc(option.labelKey)); panel._lColGroup:Show()
+        panel._lobbyOptionDropdown:Show()
+        panel._lobbyOptionDropdown:SetEnabled(v.isHost and option.enabled~=false)
+        if panel._lobbyOptionDropdown.RefreshDisplay then panel._lobbyOptionDropdown:RefreshDisplay() end
+    else
+        panel._lobbyOptionDropdown:Hide()
+        if showPairs then panel._lColGroup:SetText(Loc("match_col_group")); panel._lColGroup:Show()
+        else panel._lColGroup:Hide() end
+    end
     for i = 1, 4 do
         local row = panel._lobbyRows[i]
         local p = players[i]
+        row.nameFS:SetWidth(COL_NAME_W)
+        row.readyFS:ClearAllPoints()
+        row.readyFS:SetPoint("LEFT",row.row,"LEFT",COL_LEFT+COL_NAME_W+COL_GAP,0)
         if p then
             row.row:Show()
             local mark = p.self and "> " or ""
@@ -842,6 +898,8 @@ function UI.RefreshLobby()
             row.row:Hide()
         end
     end
+    panel._lColStatus:ClearAllPoints()
+    panel._lColStatus:SetPoint("LEFT",panel._lHeader,"LEFT",COL_LEFT+COL_NAME_W+COL_GAP,0)
 
     local inLobby = v.state == "LOBBY"
     if inLobby then panel._lReady:Show() else panel._lReady:Hide() end
@@ -868,7 +926,6 @@ function UI.RefreshLobby()
     end
     if panel._lColName then panel._lColName:SetText(Loc("match_col_name")) end
     if panel._lColStatus then panel._lColStatus:SetText(Loc("match_col_status")) end
-    if panel._lColGroup then panel._lColGroup:SetText(Loc("match_col_group")) end
 
     local showRoster = v.isHost and node and node.policy == "INVITE" and inLobby
     if panel._roster then

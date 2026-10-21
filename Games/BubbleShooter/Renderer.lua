@@ -277,6 +277,9 @@ local function CreateDotPool()
             tex:SetTexture(WHITE)
             f._tex = tex
             f._texMask = AttachCircleMask(f, tex)
+            f._markFS=f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+            f._markFS:SetPoint("CENTER",f,"CENTER",0,0)
+            f._markFS:Hide()
             return f
         end,
         onRelease = function(f)
@@ -828,7 +831,7 @@ function R:_CreateControls()
     local modeAnchor = CreateFrame("Frame", nil, cf)
     modeAnchor:SetSize(CFG.dd_w, CFG.btn_h)
     modeAnchor:SetPoint("CENTER", cf, "CENTER", bar.segX[3], bar.y.dropdownOfs)
-    UI.CreateSimpleDropdown(modeAnchor, 0, 0, CFG.dd_w, "", {
+    self._modeDropdown = UI.CreateSimpleDropdown(modeAnchor, 0, 0, CFG.dd_w, "", {
         { key = "endless", label = L["mode_endless"] },
         { key = "time",    label = L["mode_time"] },
         { key = "shot",    label = L["mode_shot"] },
@@ -841,7 +844,7 @@ function R:_CreateControls()
     local diffAnchor = CreateFrame("Frame", nil, cf)
     diffAnchor:SetSize(CFG.dd_w, CFG.btn_h)
     diffAnchor:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
-    UI.CreateSimpleDropdown(diffAnchor, 0, 0, CFG.dd_w, "", {
+    self._diffDropdown = UI.CreateSimpleDropdown(diffAnchor, 0, 0, CFG.dd_w, "", {
         { key = "easy",   label = L["diff_easy"] },
         { key = "normal", label = L["diff_normal"] },
         { key = "hard",   label = L["diff_hard"] },
@@ -968,6 +971,18 @@ function R:_CreateCampaignMap()
             local E = ArcadiaNexus.BS_Engine
             if E then E:SelectCampaignLevel(node._level) end
         end)
+        btn:SetScript("OnEnter",function(node)
+            local progress=R._campaignProgress
+            local versions=progress and progress.levelBests
+            local bests=versions and versions[3] and versions[3][progress.diff or "easy"]
+            local best=bests and bests[node._level]
+            if best and GameTooltip then
+                GameTooltip:SetOwner(node,"ANCHOR_RIGHT")
+                GameTooltip:SetText(string.format(R:_Loc().map_best,best.score,best.shots,best.maxCombo,best.maxDrop))
+                GameTooltip:Show()
+            end
+        end)
+        btn:SetScript("OnLeave",function() if GameTooltip then GameTooltip:Hide() end end)
         self._campaignNodes[i] = btn
     end
 
@@ -1111,7 +1126,8 @@ function R:_SetStartBtnStatus()
     if not self._startBtn then return end
     local L = self:_Loc()
     if self.state == "PLAYING" or self.state == "MENU" or self.state == "MAP" then
-        self._startBtn:SetLabel(L["btn_exit"])
+        local gs=ArcadiaNexus.BS_Engine and ArcadiaNexus.BS_Engine.gameState
+        self._startBtn:SetLabel(gs and gs.mode=="shot" and L.btn_save_exit or L["btn_exit"])
     else
         self._startBtn:SetLabel(L["btn_start"])
     end
@@ -1787,7 +1803,7 @@ function R:UpdateAim(gs)
     self:_UpdateCannonAim()
     self:_PlaceLoadedBubble(self._queueBubbles and self._queueBubbles[1])
     self._dotPool:ReleaseAll()
-    local points = Logic:AimPreview(gs, self._aimAngle, gs.difficulty)
+    local points,_,snap = Logic:AimPreview(gs, self._aimAngle, gs.difficulty)
     local gem = ArcadiaNexus.BS_Themes and ArcadiaNexus.BS_Themes:GetGem(ThemeKey(), gs.queue[1] or 1)
     local col = (gem and gem.color) or { 1, 1, 1 }
     local step = 2
@@ -1798,7 +1814,22 @@ function R:UpdateAim(gs)
         d:ClearAllPoints()
         d:SetPoint("CENTER", self._gridHolder, "TOPLEFT", p[1], -p[2])
         if d._tex then d._tex:SetVertexColor(col[1], col[2], col[3], 0.75) end
+        d:SetSize(CFG.aim_dot,CFG.aim_dot)
+        if d._markFS then d._markFS:Hide() end
         d:Show()
+    end
+    -- A pooled endpoint carries the same colour mark as board/queue/flight.
+    local endpoint=snap or points[#points]
+    if endpoint then
+        local d=self._dotPool:Acquire({parent=self._gridHolder})
+        d:ClearAllPoints(); d:SetPoint("CENTER",self._gridHolder,"TOPLEFT",endpoint[1],-endpoint[2])
+        d:SetSize(snap and Logic.RADIUS*1.5 or CFG.aim_dot, snap and Logic.RADIUS*1.5 or CFG.aim_dot)
+        if d._tex then d._tex:SetVertexColor(col[1],col[2],col[3],snap and 0.35 or 0.75) end
+        if not d._markFS then
+            d._markFS=d:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+            d._markFS:SetPoint("CENTER",d,"CENTER",0,0)
+        end
+        ApplyColorMark(d,gs.queue[1]); d:Show()
     end
 end
 
@@ -2178,7 +2209,26 @@ function R:OnAiming(gs)
     self:UpdateAim(gs)
 end
 
+function R:_RefreshRuleControls(locked)
+    for _,dd in ipairs({self._modeDropdown,self._diffDropdown}) do
+        dd:RefreshDisplay(); dd:SetEnabled(not locked)
+    end
+    if self._modeAnchor then self._modeAnchor:Show() end
+    if self._diffAnchor then self._diffAnchor:Show() end
+end
+
+function R:OnJokerChoice(gs,color)
+    local L=self:_Loc()
+    if self._hintFS then
+        self._hintFS:SetText(string.format(L.joker_choice,color or 1)); self._hintFS:Show()
+    end
+    if self._queueBubbles and self._queueBubbles[1] and color then
+        ApplyColorMark(self._queueBubbles[1],color)
+    end
+end
+
 function R:OnGameStarted(gs)
+    self._resultState=nil
     self.state = "PLAYING"
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     if self._logoFS then self._logoFS:Hide() end
@@ -2187,11 +2237,11 @@ function R:OnGameStarted(gs)
     if self._slotMenu then self._slotMenu:Hide() end
     self:_HideCampaignMap()
     self:_SetStartBtnStatus()
-    if self._modeAnchor then self._modeAnchor:Hide() end
-    if self._diffAnchor then self._diffAnchor:Hide() end
+    self:_RefreshRuleControls(true)
     if self._gridHolder then self._gridHolder:Show() end
     self:_SetHudShown(true)
     self:_StartAmbientFX()
+    if gs.aimAngle then self._aimAngle=gs.aimAngle end
     self:SyncBoard(gs)
     self:UpdateHUD(gs)
 end
@@ -2212,20 +2262,26 @@ function R:ShowLevelWin(gs, isNew)
     local L = self:_Loc()
     local UI = ArcadiaNexus.UI
     local E = ArcadiaNexus.BS_Engine
+    self._resultState=gs
     UI.ShowArcadeResult(self._fieldFrame, {
+        isCurrent=function() return self._resultState==gs end,
         title = L["result_level_win_title"],
         titleColor = { 0.3, 1, 0.3 },
         score = gs.score,
         gameId = GAME_ID,
         difficulty = ArcadiaNexus.BS_Logic.ScoreKey(gs.mode, gs.difficulty),
         result = "WIN",
+        hideHighscore = gs.mode=="shot",
         newHighscore = isNew,
+        xp = gs.resultPayload and gs.resultPayload.awardedXP or 0,
+        gold = gs.resultPayload and gs.resultPayload.awardedGold or 0,
         lines = ResultLines(gs, L),
         L = L,
-        buttons = UI.ResultDialogButtons.Level(L,
-            function() if E then E:ContinueToNextLevel() end end,
-            function() if E then E:RetryLevel() end end,
-            function() if E then E:OpenCampaignMap(E.activeSlot, (gs.levelIndex or 1) + 1) end end
+        buttons = UI.ResultDialogButtons.Campaign(L,
+            function() if self._resultState==gs and E then E:ContinueToNextLevel() end end,
+            function() if self._resultState==gs and E then E:OpenCampaignMap(E.activeSlot, (gs.levelIndex or 1) + 1) end end,
+            function() if self._resultState==gs and E then E:RetryLevel() end end,
+            function() if self._resultState==gs and E then E:StopGame() end end
         ),
     })
 end
@@ -2234,18 +2290,26 @@ function R:ShowFinalWin(gs, isNew)
     local L = self:_Loc()
     local UI = ArcadiaNexus.UI
     local E = ArcadiaNexus.BS_Engine
+    self._resultState=gs
     UI.ShowArcadeResult(self._fieldFrame, {
+        isCurrent=function() return self._resultState==gs end,
         title = L["result_final_win_title"],
         titleColor = { 1, 0.84, 0 },
         score = gs.score,
         gameId = GAME_ID,
         difficulty = ArcadiaNexus.BS_Logic.ScoreKey(gs.mode, gs.difficulty),
         result = "WIN",
+        hideHighscore = gs.mode=="shot",
         newHighscore = isNew,
+        xp = gs.resultPayload and gs.resultPayload.awardedXP or 0,
+        gold = gs.resultPayload and gs.resultPayload.awardedGold or 0,
         lines = ResultLines(gs, L),
         L = L,
-        onRetry = function() if E then E:RetryLevel() end end,
-        onExit = function() if E then E:OpenCampaignMap(E.activeSlot, gs.levelIndex or 1) end end,
+        buttons = UI.ResultDialogButtons.Campaign(L, nil,
+            function() if self._resultState==gs and E then E:OpenCampaignMap(E.activeSlot, gs.levelIndex or 1) end end,
+            function() if self._resultState==gs and E then E:RetryLevel() end end,
+            function() if self._resultState==gs and E then E:StopGame() end end
+        ),
     })
 end
 
@@ -2253,22 +2317,28 @@ function R:ShowArcadeWin(gs, isNew)
     local L = self:_Loc()
     local UI = ArcadiaNexus.UI
     local E = ArcadiaNexus.BS_Engine
+    self._resultState=gs
     UI.ShowArcadeResult(self._fieldFrame, {
+        isCurrent=function() return self._resultState==gs end,
         title = L["result_level_win_title"],
         titleColor = { 0.3, 1, 0.3 },
         score = gs.score,
         gameId = GAME_ID,
         difficulty = ArcadiaNexus.BS_Logic.ScoreKey(gs.mode, gs.difficulty),
         result = "WIN",
+        hideHighscore = gs.mode=="shot",
         newHighscore = isNew,
+        xp = gs.resultPayload and gs.resultPayload.awardedXP or 0,
+        gold = gs.resultPayload and gs.resultPayload.awardedGold or 0,
         lines = ResultLines(gs, L),
         L = L,
         onRetry = function()
+            if self._resultState~=gs then return end
             if E then
                 E:StartGame({ playMode = gs.mode, difficulty = gs.difficulty, mode = "new" })
             end
         end,
-        onExit = function() if E then E:StopGame() end end,
+        onExit = function() if self._resultState==gs and E then E:StopGame() end end,
     })
 end
 
@@ -2280,36 +2350,52 @@ function R:ShowLoss(gs, isNew)
     if gs.mode == "time" and (gs.timeLeft or 1) <= 0 then
         title = L["result_time_title"]
     end
+    local neutral=gs.reason=="exit" or gs.reason=="hide" or gs.reason=="restart"
+    if neutral then title=L.result_ended end
+    self._resultState=gs
     UI.ShowArcadeResult(self._fieldFrame, {
+        isCurrent=function() return self._resultState==gs end,
         title = title,
-        titleColor = { 1, 0.3, 0.3 },
+        titleColor = neutral and {0.9,0.8,0.6} or { 1, 0.3, 0.3 },
         score = gs.score,
         gameId = GAME_ID,
         difficulty = ArcadiaNexus.BS_Logic.ScoreKey(gs.mode, gs.difficulty),
         result = "LOSS",
+        hideHighscore = gs.mode=="shot",
         newHighscore = isNew,
+        xp = gs.resultPayload and gs.resultPayload.awardedXP or 0,
+        gold = gs.resultPayload and gs.resultPayload.awardedGold or 0,
         lines = ResultLines(gs, L),
         L = L,
-        onRetry = function()
+        buttons = (gs.mode == "shot") and UI.ResultDialogButtons.Campaign(L, nil,
+            function() if self._resultState==gs and E then E:OpenCampaignMap(E.activeSlot, gs.levelIndex or 1) end end,
+            function()
+                if self._resultState~=gs or not E then return end
+                E:StartGame({
+                    playMode = gs.mode, difficulty = gs.difficulty, mode = "new",
+                    levelIndex = gs.levelIndex or 1, slot = E.activeSlot,
+                    preserveProgress = true,
+                })
+            end,
+            function() if self._resultState==gs and E then E:StopGame() end end
+        ) or nil,
+        onRetry = (gs.mode ~= "shot") and function()
+            if self._resultState~=gs then return end
             if E then
                 E:StartGame({
                     playMode = gs.mode, difficulty = gs.difficulty, mode = "new",
                     levelIndex = gs.levelIndex or 1, slot = E.activeSlot,
-                    preserveProgress = gs.mode == "shot",
                 })
             end
-        end,
-        onExit = function()
-            if E and gs.mode == "shot" then
-                E:OpenCampaignMap(E.activeSlot, gs.levelIndex or 1)
-            elseif E then
-                E:StopGame()
-            end
-        end,
+        end or nil,
+        onExit = (gs.mode ~= "shot") and function()
+            if self._resultState==gs and E then E:StopGame() end
+        end or nil,
     })
 end
 
 function R:EnterIdleState()
+    self._resultState=nil
     self.state = "IDLE"
     self._padAim = false
     self:_StopAmbientFX()
@@ -2328,6 +2414,7 @@ function R:EnterIdleState()
     self:_SetStartBtnStatus()
     if self._modeAnchor then self._modeAnchor:Show() end
     if self._diffAnchor then self._diffAnchor:Show() end
+    self:_RefreshRuleControls(false)
 end
 
 SLASH_ARCADIABUBBLESHOOTER1 = "/bubbleshooter"

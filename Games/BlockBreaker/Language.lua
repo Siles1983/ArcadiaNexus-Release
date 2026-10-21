@@ -5,6 +5,16 @@
 -- ============================================================
 
 ArcadiaNexus.RegisterLocale("BLOCKBREAKER", "deDE", {
+    -- Saved run overview. Cleared stages can be replayed; the scored run stays parked.
+    map_title = "Laufübersicht · Level %d–%d",
+    map_summary = "%s · Level %d · Punkte %s · Leben %d",
+    map_current = "Hier",
+    map_done = "OK",
+    map_resume = "Fortsetzen",
+    map_help = "Geschaffte Level können wiederholt werden. Fortsetzen lädt die gespeicherte Partie.",
+    result_practice = "Wiederholung. Punkte und die Partie bleiben unverändert.",
+    map_legacy = "Altstand: %s",
+
     game_title        = "BlockBreaker",
 
     -- HUD
@@ -25,6 +35,8 @@ ArcadiaNexus.RegisterLocale("BLOCKBREAKER", "deDE", {
     btn_pause         = "Pause",
     btn_continue      = "Weiter",
     btn_next_level    = "Nächstes Level",
+    btn_level_select  = "Levelauswahl",
+    btn_repeat_level  = "Level wiederholen",
     btn_replay_level  = "Wiederholen",
 
     -- Schwierigkeiten
@@ -66,7 +78,7 @@ ArcadiaNexus.RegisterLocale("BLOCKBREAKER", "deDE", {
     pu_bullet         = "Extra-Ball!",
     pu_fast           = "Turbo!",
     pu_slow           = "Zeitlupe!",
-    pu_small          = "Paddle halbiert!",
+    pu_small          = "Paddle schmaler!",
     pu_strength       = "Stärke!",
     pu_bomb           = "Bombe!",
     pu_ironguard      = "Eisenwache!",
@@ -86,14 +98,27 @@ ArcadiaNexus.RegisterLocale("BLOCKBREAKER", "deDE", {
     guide_1           = "A / Linkspfeil: Paddle nach links",
     guide_2           = "D / Rechtspfeil: Paddle nach rechts",
     guide_3           = "Leertaste: Ball starten, danach Pause. P: Pause / Fortsetzen",
-    guide_4           = "Zerstöre alle Blöcke um das Level zu beenden.",
+    guide_4           = "Zerstöre alle zerstörbaren Blöcke; permanente Wände bleiben bestehen.",
     guide_5           = "Gepanzerte Blöcke (heller Rahmen) brauchen 2 Treffer.",
-    guide_6           = "Power-Ups fallen aus goldenen Blöcken.",
-    guide_7           = "Extra-Ball: Leben geht erst verloren, wenn der letzte Ball fällt.",
+    guide_6           = "Goldene Blöcke droppen sicher, andere zerstörte Blöcke mit 8% Chance.",
+    guide_7           = "Maximal 3 Bälle und 5 Leben. Ein Leben geht erst verloren, wenn der letzte Ball fällt.",
     guide_8           = "Nach Start, Levelwechsel und Lebenverlust klebt der Ball am Paddle, bis du ihn mit Leertaste startest.",
 
+    guide_9="100 reguläre Level gewinnen den Lauf einmal. Danach optional Endlos; keine zweite Belohnung. Escape: speichern und verlassen.",
+    guide_10="Combo zählt zerstörte Blöcke ohne Paddlekontakt: 5 Treffer = Faktor 1,4. Stärke durchschlägt zerstörbare Blöcke, keine permanenten Wände.",
+    guide_11="Turbo/Zeitlupe ändern Ball UND Paddle um ±50%. Klein halbiert die Basisbreite bis mindestens 32 Pixel. Groß 10 s, andere zeitliche Power-Ups 8 s.",
+    lbl_balls="Bälle", lbl_level_score="Levelpunkte", btn_endless="Endlos fortsetzen",
+    state_campaign_win="100 Level geschafft!", state_run_ended="Erfolgreicher Lauf beendet",
+    level_no_reward="Etappenleistung – Partiebelohnung nach 100 Leveln",
+    legacy_save="Altfortsetzung: Etappe neu", legacy_points="Altpunkte",
+    combo_help="Trefferkette ohne Paddlekontakt. Punktefaktor: 1 + 0,1 × (Combo − 1).",
+    powerup_help="Stärke durchschlägt zerstörbare Blöcke, keine Wände. Turbo/Zeitlupe beeinflussen Ball und Paddle. Klein: halbe Basisbreite, mindestens 32 Pixel.",
+
     -- DevMode (F8)
-    dev_pu_title      = "F8  PUs",
+    dev_pu_title      = "F8  DevMode",
+    dev_level_label   = "Level 1–100",
+    dev_level_go      = "Laden",
+    dev_test_hint     = "Test: ohne Wertung",
     dev_pu_lives      = "Leben",
     dev_pu_score250   = "+250",
     dev_pu_score500   = "+500",
@@ -131,6 +156,16 @@ ArcadiaNexus.RegisterLocale("BLOCKBREAKER", "deDE", {
 })
 
 ArcadiaNexus.RegisterLocale("BLOCKBREAKER", "enUS", {
+    -- Saved run overview. Cleared stages can be replayed; the scored run stays parked.
+    map_title = "Run overview · Levels %d–%d",
+    map_summary = "%s · Level %d · Score %s · Lives %d",
+    map_current = "Here",
+    map_done = "OK",
+    map_resume = "Continue",
+    map_help = "Cleared levels can be replayed. Continue loads the saved run.",
+    result_practice = "Replay. Score and the saved run stay unchanged.",
+    map_legacy = "Historical score: %s",
+
     game_title        = "BlockBreaker",
 
     -- HUD
@@ -151,6 +186,8 @@ ArcadiaNexus.RegisterLocale("BLOCKBREAKER", "enUS", {
     btn_pause         = "Pause",
     btn_continue      = "Continue",
     btn_next_level    = "Next Level",
+    btn_level_select  = "Level Select",
+    btn_repeat_level  = "Replay Level",
     btn_replay_level  = "Replay",
 
     -- Schwierigkeiten
@@ -192,7 +229,7 @@ ArcadiaNexus.RegisterLocale("BLOCKBREAKER", "enUS", {
     pu_bullet         = "Extra Ball!",
     pu_fast           = "Turbo!",
     pu_slow           = "Slow-Mo!",
-    pu_small          = "Paddle Halved!",
+    pu_small          = "Narrow Paddle!",
     pu_strength       = "Strength!",
     pu_bomb           = "Bomb!",
     pu_ironguard      = "Iron Guard!",
@@ -212,14 +249,27 @@ ArcadiaNexus.RegisterLocale("BLOCKBREAKER", "enUS", {
     guide_1           = "A / Left Arrow: Move paddle left",
     guide_2           = "D / Right Arrow: Move paddle right",
     guide_3           = "Space: serve the ball, then Pause. P: Pause / Resume",
-    guide_4           = "Destroy all blocks to complete the level.",
+    guide_4           = "Destroy all breakable blocks; permanent walls remain.",
     guide_5           = "Armored blocks (bright border) require 2 hits.",
-    guide_6           = "Power-Ups drop from golden blocks.",
-    guide_7           = "Extra ball: a life is lost only when the last ball falls.",
+    guide_6           = "Golden blocks always drop power-ups; other destroyed blocks have an 8% chance.",
+    guide_7           = "Maximum 3 balls and 5 lives. A life is lost only when the last ball falls.",
     guide_8           = "After start, next level, or a lost life the ball sticks to the paddle until you serve with Space.",
 
+    guide_9="Complete 100 regular levels to win once, then optionally continue endless without another reward. Escape: save and exit.",
+    guide_10="Combo counts destroyed blocks without paddle contact: 5 hits = factor 1.4. Strength pierces breakable blocks, never permanent walls.",
+    guide_11="Fast/slow change BOTH ball and paddle speed by ±50%. Small halves base width down to 32 pixels. Big lasts 10 s; other timed power-ups last 8 s.",
+    lbl_balls="Balls", lbl_level_score="Level score", btn_endless="Continue endless",
+    state_campaign_win="100 levels completed!", state_run_ended="Successful run ended",
+    level_no_reward="Stage performance – run reward after 100 levels",
+    legacy_save="Legacy continuation: stage restarted", legacy_points="Old points",
+    combo_help="Block chain without paddle contact. Score factor: 1 + 0.1 × (Combo − 1).",
+    powerup_help="Strength pierces breakable blocks, never walls. Fast/slow affect ball and paddle. Small: half base width, at least 32 pixels.",
+
     -- DevMode (F8)
-    dev_pu_title      = "F8  PUs",
+    dev_pu_title      = "F8  DevMode",
+    dev_level_label   = "Level 1–100",
+    dev_level_go      = "Load",
+    dev_test_hint     = "Test: unranked",
     dev_pu_lives      = "Life",
     dev_pu_score250   = "+250",
     dev_pu_score500   = "+500",

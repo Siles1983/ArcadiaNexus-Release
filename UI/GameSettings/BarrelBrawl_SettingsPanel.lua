@@ -22,6 +22,7 @@ local function BuildBarrelBrawlSettingsPanel(parent)
                 { key = "soundOnScore", label = L.sound_score },
                 { key = "soundOnHit",   label = L.sound_hit   },
                 { key = "soundOnWin",   label = L.sound_win   },
+                { key = "soundOnWarning", label = L.sound_warning },
             },
         },
         guide = {

@@ -511,6 +511,7 @@ end
 
 SLASH_ANMATCH1 = "/anmatch"
 SlashCmdList["ANMATCH"] = function()
+    if not ArcadiaNexus.RequireDevMode() then return end
     if not ArcadiaNexus.HasMultiplayer or not ArcadiaNexus.HasMultiplayer() then
         print("|cffffaa00[Arcadia]|r Multiplayer-Modul nicht geladen.")
         return

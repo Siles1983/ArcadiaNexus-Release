@@ -9,5 +9,10 @@ local S  = LR.SECTION
 ArcadiaNexus.RegisterLeaderboard({
     gameId = "MINESWEEPER",
     difficulties = { "easy", "normal", "hard" },
-    sections = { S.TopScores(3), S.StatsWL() },
+    sections = {
+        {type="top_scores",titleKey="lb_best_times",field="bestTimes",resultField="elapsedMs",
+            result="WIN",order="asc",format="milliseconds",count=3},
+        S.StatsWL(),
+        {type="top_scores",titleKey="lb_legacy_points",field="legacyHighscores",hideIfEmpty=true,count=3},
+    },
 })

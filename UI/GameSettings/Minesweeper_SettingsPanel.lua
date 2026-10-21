@@ -60,6 +60,9 @@ local function BuildMinesweeperSettingsPanel(parent)
             end,
         },
         guide = {
+            sections = {GS.GuideSection(nil,L,{
+                "guide_start","guide_chord","guide_flags","guide_result","guide_time",
+            })},
             build = function(cA, yOff, measureOnly)
                 if measureOnly then return 200 end
                 if not cA then return 200 end

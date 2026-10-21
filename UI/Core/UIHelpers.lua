@@ -311,6 +311,7 @@ function UI.CreateSimpleDropdown(parent, x, y, w, label, options, getCurrent, on
             local item = root:CreateRadio(optLabel,
                 function() return getCurrent() == optKey end,
                 function()
+                    if dd.IsEnabled and not dd:IsEnabled() then return end
                     onChange(optKey)
                     dd:SetText(optLabel)
                 end
@@ -342,6 +343,7 @@ function UI.CreateSimpleDropdown(parent, x, y, w, label, options, getCurrent, on
             if self.Enable then self:Enable() end
             self:SetAlpha(1)
         else
+            if self.CloseMenu then self:CloseMenu() end
             if self.Disable then self:Disable() end
             self:SetAlpha(0.38)
         end
@@ -1062,9 +1064,85 @@ end
 --   x, y        – Offset (Default 0, 0)
 --   width, height – Popup-Größe (Default 260×148)
 --   buttons     – { { label, onClick, enabled=true }, ... } (max 2)
+--   pageNav     – optional { prev={onClick,enabled,tooltip}, next={...} }
+--                 Pfeile links/rechts vom sichtbaren Textbutton (Schließen)
 
 UI._choicePopups = UI._choicePopups or {}
-local CHOICE_POPUP_VER = 2
+local CHOICE_POPUP_VER = 3
+
+local function CreateChoicePageArrow(parent, direction)
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetSize(32, 32)
+    local prefix = "Interface\\Buttons\\UI-SpellbookIcon-"
+        .. (direction == "prev" and "PrevPage-" or "NextPage-")
+    btn:SetNormalTexture(prefix .. "Up")
+    btn:SetPushedTexture(prefix .. "Down")
+    btn:SetDisabledTexture(prefix .. "Disabled")
+    btn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    btn:SetScript("OnEnter", function(self)
+        if not self:IsEnabled() or not self._tip or self._tip == "" then return end
+        UI.ShowFrameTooltip(self, self._tip)
+    end)
+    btn:SetScript("OnLeave", function()
+        UI.HideFrameTooltip()
+    end)
+    btn:Hide()
+    return btn
+end
+
+local function BindChoicePageArrow(btn, cfg, anchor, point, relPoint, x)
+    if not btn then return end
+    if type(cfg) ~= "table" then
+        btn:Hide()
+        return
+    end
+    btn._tip = cfg.tooltip
+    btn:SetScript("OnClick", cfg.onClick or function() end)
+    if cfg.enabled == false then btn:Disable() else btn:Enable() end
+    btn:ClearAllPoints()
+    btn:SetPoint(point, anchor, relPoint, x, 0)
+    btn:Show()
+end
+
+local function FitChoiceButton(btn, width, height)
+    btn:SetSize(width, height)
+    if btn.content then btn.content:SetSize(width, height) end
+    if btn.text then btn.text:SetWidth(math.max(8, width - 16)) end
+end
+
+local function LayoutChoiceButtons(popup, pageNav, layout)
+    popup.btn1:ClearAllPoints()
+    popup.btn2:ClearAllPoints()
+    FitChoiceButton(popup.btn1, 140, 32)
+    FitChoiceButton(popup.btn2, 140, 32)
+    if popup.prevBtn then popup.prevBtn:Hide() end
+    if popup.nextBtn then popup.nextBtn:Hide() end
+    if layout == "pair" and popup.btn1:IsShown() and popup.btn2:IsShown() then
+        FitChoiceButton(popup.btn1, 150, 32)
+        FitChoiceButton(popup.btn2, 170, 32)
+        popup.btn1:SetPoint("BOTTOMLEFT", popup, "BOTTOMLEFT", 18, 16)
+        popup.btn2:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -18, 16)
+        return
+    end
+    if type(pageNav) ~= "table" then
+        popup.btn1:SetPoint("BOTTOM", popup, "BOTTOM", 0, 50)
+        popup.btn2:SetPoint("BOTTOM", popup, "BOTTOM", 0, 14)
+        return
+    end
+    local anchor = popup.btn1
+    if popup.btn1:IsShown() and popup.btn2:IsShown() then
+        popup.btn1:SetPoint("BOTTOM", popup, "BOTTOM", 0, 52)
+        popup.btn2:SetPoint("BOTTOM", popup, "BOTTOM", 0, 16)
+        anchor = popup.btn2
+    elseif popup.btn2:IsShown() then
+        popup.btn2:SetPoint("BOTTOM", popup, "BOTTOM", 0, 16)
+        anchor = popup.btn2
+    else
+        popup.btn1:SetPoint("BOTTOM", popup, "BOTTOM", 0, 16)
+    end
+    BindChoicePageArrow(popup.prevBtn, pageNav.prev, anchor, "RIGHT", "LEFT", -8)
+    BindChoicePageArrow(popup.nextBtn, pageNav.next, anchor, "LEFT", "RIGHT", 8)
+end
 
 local function EnsureChoicePopup(parent)
     local popup = UI._choicePopups[parent]
@@ -1108,6 +1186,9 @@ local function EnsureChoicePopup(parent)
     popup.btn2 = UI.CreateArcadiaButton(popup, "", 140, 32)
     popup.btn2:SetPoint("BOTTOM", popup, "BOTTOM", 0, 14)
 
+    popup.prevBtn = CreateChoicePageArrow(popup, "prev")
+    popup.nextBtn = CreateChoicePageArrow(popup, "next")
+
     popup:Hide()
     UI._choicePopups[parent] = popup
     return popup
@@ -1130,7 +1211,8 @@ function UI.ShowChoicePopup(config)
     local h = config.height or 172
     popup:SetSize(w, h)
     popup:ClearAllPoints()
-    popup:SetPoint(config.anchor or "CENTER", parent, config.anchor or "CENTER",
+    local rel = config.anchorFrame or parent
+    popup:SetPoint(config.anchor or "CENTER", rel, config.anchor or "CENTER",
         config.x or 0, config.y or 0)
 
     local parentLevel = parent.GetFrameLevel and parent:GetFrameLevel() or 1
@@ -1165,20 +1247,79 @@ function UI.ShowChoicePopup(config)
         end
     end
 
+    LayoutChoiceButtons(popup, config.pageNav, config.layout)
+
+    if config.owner then popup._anOwner = config.owner end
+    local already = popup.IsShown and popup:IsShown()
+    local previous = already and popup._choiceConfig or nil
     popup:Show()
     popup:Raise()
 
-    local GI = ArcadiaNexus.GameInput
-    if GI and GI.OnUiOverlay then
-        local list = {}
-        if popup.btn1 and (not popup.btn1.IsShown or popup.btn1:IsShown()) then
-            list[#list + 1] = popup.btn1
-        end
-        if popup.btn2 and (not popup.btn2.IsShown or popup.btn2:IsShown()) then
-            list[#list + 1] = popup.btn2
-        end
-        pcall(GI.OnUiOverlay, list)
+    local list = popup._overlayButtons
+    if not list then
+        list = {}
+        popup._overlayButtons = list
     end
+    for i = #list, 1, -1 do list[i] = nil end
+    if config.pageNav and popup.prevBtn and popup.prevBtn:IsShown() then
+        list[#list + 1] = popup.prevBtn
+    end
+    if popup.btn1 and (not popup.btn1.IsShown or popup.btn1:IsShown()) then
+        list[#list + 1] = popup.btn1
+    end
+    if popup.btn2 and (not popup.btn2.IsShown or popup.btn2:IsShown()) then
+        list[#list + 1] = popup.btn2
+    end
+    if config.pageNav and popup.nextBtn and popup.nextBtn:IsShown() then
+        list[#list + 1] = popup.nextBtn
+    end
+
+    if config._restoreOnly then
+        popup._choiceConfig = config
+        return popup
+    end
+
+    local GI = ArcadiaNexus.GameInput
+    local opts = { onCancel = config.onCancel }
+    local enabled = GI and GI.IsEnabled and GI.IsEnabled()
+    if not enabled then
+        if not already and GI and GI.OnUiOverlay then
+            pcall(GI.OnUiOverlay, list, opts)
+            popup._overlayLive = true
+        end
+        popup._choiceConfig = config
+        return popup
+    end
+    local synced = true
+    if already and GI.SyncOverlay then
+        local ran, ok = pcall(GI.SyncOverlay, list, opts)
+        synced = ran and ok == true
+    elseif GI.OnUiOverlay then
+        local ran, ok = pcall(GI.OnUiOverlay, list, opts)
+        synced = ran and ok == true
+        if synced then popup._overlayLive = true end
+        if not synced and ran and GI.OnUiOverlayClosed then
+            pcall(GI.OnUiOverlayClosed, list)
+        end
+    end
+    if not synced then
+        if previous then
+            previous._restoreOnly = true
+            UI.ShowChoicePopup(previous)
+            previous._restoreOnly = nil
+        else
+            popup:Hide()
+        end
+        return nil
+    end
+    popup._choiceConfig = config
+    if already then popup._overlayLive = true end
+    return popup
+end
+
+function UI.ChoicePopupOwner(parent)
+    local popup = parent and UI._choicePopups and UI._choicePopups[parent]
+    return popup and popup._anOwner or nil
 end
 
 function UI.HideChoicePopup(parent)
@@ -1186,10 +1327,11 @@ function UI.HideChoicePopup(parent)
     local popup = UI._choicePopups and UI._choicePopups[parent]
     local wasShown = popup and popup.IsShown and popup:IsShown()
     if popup then popup:Hide() end
-    if wasShown then
+    if wasShown and popup._overlayLive and popup._overlayButtons then
         local GI = ArcadiaNexus.GameInput
         if GI and GI.OnUiOverlayClosed then
-            pcall(GI.OnUiOverlayClosed)
+            pcall(GI.OnUiOverlayClosed, popup._overlayButtons)
         end
     end
+    if popup then popup._overlayLive = nil end
 end

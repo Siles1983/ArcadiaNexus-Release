@@ -692,25 +692,59 @@ function R:_CreateFlash()
     ft:SetAllPoints(flash)
     ft:SetTexture(WHITE8X8)
     ft:SetVertexColor(1, 1, 1, 0)
-    flash:SetScript("OnUpdate", function(_, dt)
+    self._fxOnUpdate = function(_, dt)
         local a = select(4, ft:GetVertexColor())
         if a and a > 0.001 then
             ft:SetVertexColor(R._flashR, R._flashG, R._flashB, math.max(0, a - dt * 4))
         end
         R:_TickFx(dt)
-    end)
+    end
+    flash:SetScript("OnUpdate", self._fxOnUpdate)
     self._flashFrame = flash
     self._flashTex   = ft
 end
 
+function R:_SetFxDriver(active)
+    local flash = self._flashFrame
+    if not flash or not self._fxOnUpdate then return end
+    if active then
+        flash:SetScript("OnUpdate", self._fxOnUpdate)
+        flash:Show()
+        return
+    end
+    self:_ClearFx()
+    if self._flashTex then
+        self._flashTex:SetVertexColor(self._flashR or 1, self._flashG or 1, self._flashB or 1, 0)
+    end
+    flash:SetScript("OnUpdate", nil)
+    flash:Hide()
+end
+
 -- ── _CreateKeyFrame ───────────────────────────────────────────
+function R:NeutralizeInput()
+    self._blockedKeys = self._blockedKeys or {}
+    for key in pairs(self._heldKeys or {}) do self._blockedKeys[key] = true end
+end
+
 function R:_CreateKeyFrame()
     local field = self._fieldFrame
     local kf = CreateFrame("Frame", "ArcadiaNexus_AD_KeyFrame", field)
     kf:SetAllPoints(field)
-    kf:SetPropagateKeyboardInput(false)
+    kf:SetPropagateKeyboardInput(true)
     kf:EnableKeyboard(false)
-    kf:SetScript("OnKeyDown", function(_, key)
+    kf:SetScript("OnKeyDown", function(frame, key)
+        local focus = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+        local E = ArcadiaNexus.AD_Engine
+        local allowed = not focus and E and (E.state == "PLAYING" or E.state == "PAUSED")
+        local handled = allowed and (key=="RETURN" or E.state=="PLAYING" and
+            (key=="A" or key=="LEFT" or key=="D" or key=="RIGHT" or key=="SPACE" or key=="W" or key=="S"))
+        if not InCombatLockdown or not InCombatLockdown() then frame:SetPropagateKeyboardInput(not handled) end
+        if not allowed then return end
+        self._heldKeys = self._heldKeys or {}
+        local repeated = self._heldKeys[key]
+        self._heldKeys[key] = handled or nil
+        if self._blockedKeys and self._blockedKeys[key] then return end
+        if repeated and (key=="RETURN" or key=="W" or key=="S") then return end
         local E  = ArcadiaNexus.AD_Engine
         local gs = E and E.gameState
         if key == "RETURN" then
@@ -724,7 +758,13 @@ function R:_CreateKeyFrame()
         if key == "W"                   then E:CycleWeaponUp()   end
         if key == "S"                   then E:CycleWeaponDown() end
     end)
-    kf:SetScript("OnKeyUp", function(_, key)
+    kf:SetScript("OnKeyUp", function(frame, key)
+        if self._heldKeys then self._heldKeys[key] = nil end
+        if self._blockedKeys then self._blockedKeys[key] = nil end
+        local handled = key=="A" or key=="LEFT" or key=="D" or key=="RIGHT" or key=="SPACE" or key=="W" or key=="S" or key=="RETURN"
+        if not InCombatLockdown or not InCombatLockdown() then
+            frame:SetPropagateKeyboardInput(not handled or (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()) ~= nil)
+        end
         local gs = ArcadiaNexus.AD_Engine and ArcadiaNexus.AD_Engine.gameState
         if not gs then return end
         if key == "A" or key == "LEFT"  then gs.keyLeft  = false end
@@ -747,7 +787,7 @@ end
 -- Alle Anker am Design-Canvas (Controls-Leiste), Spielfeld bleibt am _contentFrame.
 function R:_CreateControls()
     local UI = ArcadiaNexus.UI
-    local bar = UI.CreateGameControlsBar(self.frame, "wide")
+    local bar = UI.CreateGameControlsBar(self.frame, "narrow")
     local cf = bar.frame
     self._controlsFrame = cf
     self._controlsY = bar.y
@@ -781,6 +821,8 @@ function R:_CreateControls()
             return (S and S:Get("difficulty")) or "easy"
         end,
         function(key)
+            local E = ArcadiaNexus.AD_Engine
+            if E and E.state ~= "IDLE" then return end
             local S = ArcadiaNexus.AD_Settings
             if S then S:Set("difficulty", key) end
             self._lastDiff = key
@@ -842,20 +884,7 @@ function R:_CreateControls()
     savedHint:SetText("")
     self._savedHintFS = savedHint
 
-    -- Endlos-Checkbox (Segment 4), Label rechts
-    local chkHolder, chk = UI.CreateBarCheckbox(cf, L["lbl_endless"] or "Endlos", {
-        w = 110, h = 36, size = CHK_SIZE,
-    })
-    chkHolder:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[4], bar.y.checkbox)
-    chk:SetScript("OnShow", function()
-        local S = ArcadiaNexus.AD_Settings
-        chk:SetChecked(S and S:Get("endlessMode") or false)
-    end)
-    chk:SetScript("OnClick", function()
-        local S = ArcadiaNexus.AD_Settings
-        if S then S:Set("endlessMode", chk:GetChecked()) end
-    end)
-    self._endlessChk = chk
+
 end
 
 function R:_CreateSlotMenu()
@@ -873,9 +902,11 @@ function R:_CreateSlotMenu()
         loadSlot      = function(slot) return S and S:LoadSlot(slot) end,
         deleteSlot    = function(slot) if S then S:DeleteSlot(slot) end end,
         formatInfo    = function(save, loc)
-            local score = (ArcadiaNexus.Format and ArcadiaNexus.Format.Score(save.score or 0))
-                or tostring(save.score or 0)
-            return string.format(loc.slot_info or "Welle %d · %s", save.wave or 1, score)
+            local score = (ArcadiaNexus.Format and ArcadiaNexus.Format.Score((save.state and save.state.score or save.score) or 0))
+                or tostring((save.state and save.state.score or save.score) or 0)
+            local info = string.format(loc.slot_info or "Welle %d · %s", (save.state and save.state.wave or save.wave) or 1, score)
+            if not save.version or save.state and save.state.legacyRestart then info=info.." · "..loc.legacy_restart end
+            return info
         end,
         isPaused      = function() return true end,
         onNewGame     = function(slot)
@@ -954,6 +985,8 @@ end
 -- ══════════════════════════════════════════════════════════════
 
 function R:EnterIdleState()
+    local E = ArcadiaNexus.AD_Engine
+    if E and E._sessionId and E.state ~= "IDLE" then return end
     self.state = "IDLE"
     self:_ClearAlienFrames()
     self:_ClearShotFrames()
@@ -988,10 +1021,12 @@ function R:EnterIdleState()
     if self._diffDropdown then self._diffDropdown:SetEnabled(true) end
     self:_SetPauseMode("pause")
     if self._keyFrame then self._keyFrame:EnableKeyboard(false) end
+    self:_SetFxDriver(false)
 end
 
 function R:OnGameStarted(gs)
     self.state = "PLAYING"
+    self:_SetFxDriver(true)
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     if self._pauseOverlay then self._pauseOverlay:Hide() end
     if self._diffContainer then self._diffContainer:Show() end
@@ -1004,7 +1039,10 @@ function R:OnGameStarted(gs)
     if self._exitBtn  then self._exitBtn:Show()  end
     if self._resumeBtn   then self._resumeBtn:Hide()  end
     if self._pauseBtn    then self._pauseBtn:Show()   end
-    if self._diffDropdown then self._diffDropdown:SetEnabled(false) end
+    if self._diffDropdown then
+        self._diffDropdown:RefreshDisplay()
+        self._diffDropdown:SetEnabled(false)
+    end
 
     self:_SetPauseMode("pause")
     self:_ClearAlienFrames()
@@ -1024,6 +1062,7 @@ function R:OnGameStarted(gs)
         self._playerTex:Show()
     end
     self:UpdateHUD(gs)
+    self:UpdatePhysics(gs, 0)
 end
 
 function R:OnWaveAdvanced(gs)
@@ -1438,10 +1477,8 @@ function R:UpdateHUD(gs)
     if not gs then return end
     local L = ArcadiaNexus.GetLocaleTable("ALIENDEFENSE")
 
-    local waveStr = (L["lbl_wave"] or "Welle") .. " " .. gs.wave
-    if gs.waveName and gs.waveName ~= "" then
-        waveStr = waveStr .. " · " .. gs.waveName
-    end
+    local waveStr = (L["lbl_wave"] or "Welle") .. " " .. gs.wave .. (gs.endlessMode and "" or "/30")
+    waveStr = waveStr .. " · " .. (L["diff_" .. gs.difficulty] or gs.difficulty)
     if gs.endlessMode then
         waveStr = waveStr .. " |cff999999(" .. (L["lbl_endless"] or "Endlos") .. ")|r"
     end
@@ -1464,6 +1501,9 @@ function R:UpdateHUD(gs)
     if self._weaponFS then
         local wname = L["weapon_" .. string.lower(gs.activeWeapon)] or gs.activeWeapon
         if gs.weaponTimer > 0 then
+            if gs.activeWeapon == "SINGLE" and gs._lastCollectedWeapon then
+                wname = wname .. " / " .. (L["weapon_" .. string.lower(gs._lastCollectedWeapon)] or gs._lastCollectedWeapon)
+            end
             self._weaponFS:SetText(
                 "|cffffd700" .. (L["lbl_weapon"] or "Waffe") .. ": "
                 .. wname .. " [" .. math.ceil(gs.weaponTimer) .. "s]|r")
@@ -1496,12 +1536,18 @@ function R:ShowWaveWin(gs)
     if self._keyFrame then self._keyFrame:EnableKeyboard(false) end
     if self._pauseBtn then self._pauseBtn:Hide() end
     if self._pauseOverlay then self._pauseOverlay:Hide() end
+    local E = ArcadiaNexus.AD_Engine
+    local sid, waveId = E._sessionId, gs.waveId
+    local final = gs.wave == 30 and not gs.endlessMode
     local lines = { (L["popup_wave"] or "Welle:") .. " " .. gs.wave }
     if gs.perfectWave then
         lines[#lines + 1] = (L["popup_bonus"] or "Wellen-Bonus:") .. " +500"
     end
     UI.ShowArcadeResult(field, {
-        title      = L["state_win"] or "Welle überstanden!",
+        title      = final and L.state_victory or L.state_win,
+        xp         = final and gs.resultData and gs.resultData.awardedXP or 0,
+        gold       = final and gs.resultData and gs.resultData.awardedGold or 0,
+        isCurrent  = function() return E.gameState==gs and E._sessionId==sid and E.state=="TRANSITION" and gs.waveId==waveId end,
         titleColor = { 0, 1, 0 },
         score      = gs.score,
         gameId     = "ALIENDEFENSE",
@@ -1511,10 +1557,10 @@ function R:ShowWaveWin(gs)
         L          = L,
         buttons    = {
             {
-                label = L["btn_next_wave"] or L["popup_next_wave"] or "Nächste Welle",
+                label = final and L.btn_endless or L.btn_next_wave,
                 onClick = function()
                     local E = ArcadiaNexus.AD_Engine
-                    if E then E:ContinueToNextWave() end
+                    if E then E:ContinueToNextWave(waveId) end
                 end,
             },
             {
@@ -1533,6 +1579,8 @@ function R:ShowGameOver(gs)
     if not field then return end
     local L  = ArcadiaNexus.GetLocaleTable("ALIENDEFENSE")
     local UI = ArcadiaNexus.UI
+    local E = ArcadiaNexus.AD_Engine
+    local sid = E._sessionId
     local reason = gs.invaded
         and (L["state_invaded"] or "Invasion!")
         or  (L["state_gameover"] or "Spiel vorbei!")
@@ -1543,17 +1591,20 @@ function R:ShowGameOver(gs)
     if self._savedHintFS then self._savedHintFS:SetText("") end
     local lines = { (L["popup_wave"] or "Welle:") .. " " .. gs.wave }
     UI.ShowArcadeResult(field, {
-        title      = reason,
+        title      = gs.runResult=="WIN" and L.state_endless_end or reason,
+        xp         = gs.resultData and gs.resultData.awardedXP or 0,
+        gold       = gs.resultData and gs.resultData.awardedGold or 0,
+        isCurrent  = function() return E.gameState==gs and E._sessionId==sid and E.state=="GAMEOVER" end,
         titleColor = { 1, 0.27, 0.27 },
         score      = gs.score,
         gameId     = "ALIENDEFENSE",
         difficulty = gs.difficulty,
-        result     = "LOSS",
+        result     = gs.runResult or "LOSS",
         lines      = lines,
         L          = L,
         onRetry    = function()
             local E = ArcadiaNexus.AD_Engine
-            if E then E:StartGame({ mode = "new" }) end
+            if E then E:StartGame({ slot=E.activeSlot, mode = "new", difficulty=gs.difficulty }) end
         end,
         onExit = function()
             local E = ArcadiaNexus.AD_Engine

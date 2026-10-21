@@ -28,6 +28,28 @@ local ArcadiaNexus = _G.ArcadiaNexus
 ArcadiaNexus.AchUI_H = {}
 local H = ArcadiaNexus.AchUI_H
 
+-- Hide secret conditions in rows, expanded tiers and tooltips until unlocked.
+-- Return a presentation copy; registry definitions remain available to toasts.
+function H.DisplayGroup(group, unlocked)
+    if not group.hidden then return group end
+    for _,tier in ipairs(group.tiers or {}) do
+        if unlocked[tier.id] then return group end
+    end
+    local display={}
+    for key,value in pairs(group) do display[key]=value end
+    display.title_de,display.title_en="Geheimer Erfolg","Secret Achievement"
+    display.desc_de="Die Bedingung wird nach der Freischaltung enthüllt."
+    display.desc_en="The condition is revealed after unlocking."
+    display.icon="Interface\\Icons\\INV_Misc_QuestionMark"
+    display.tiers={}
+    for i,tier in ipairs(group.tiers or {}) do
+        local copy={}; for key,value in pairs(tier) do copy[key]=value end
+        copy.desc_de,copy.desc_en=display.desc_de,display.desc_en
+        display.tiers[i]=copy
+    end
+    return display
+end
+
 -- ============================================================
 -- Konstanten (einmal definiert, überall referenzierbar)
 -- ============================================================
@@ -65,6 +87,13 @@ H.TIER_PADDING   = 28   -- Abstand von Container-Top: überbrückt ProgressBar (
 -- ============================================================
 function H.loc(de, en)
     return (ArcadiaNexus.ActiveLocale == "deDE") and de or en
+end
+
+-- Only the display label is translated; tierName and achievement IDs stay canonical.
+function H.TierLabel(name)
+    local keys = { Bronze = "ach_tier_bronze", Silber = "ach_tier_silver", Silver = "ach_tier_silver", Gold = "ach_tier_gold" }
+    local key = keys[name]
+    return key and ArcadiaNexus.GetLocaleTable("UI")[key] or name
 end
 
 function H.ApplyAchievementIcon(texture, icon)
@@ -289,7 +318,7 @@ function H.BuildProgressBar(row, textX, textW, nextTier, current)
             math.floor(tc[1] * 255),
             math.floor(tc[2] * 255),
             math.floor(tc[3] * 255)) ..
-        H.TierIconMarkup(nextTier.tierName, 14) .. " " .. nextTier.tierName .. "|r"
+        H.TierIconMarkup(nextTier.tierName, 14) .. " " .. H.TierLabel(nextTier.tierName) .. "|r"
     )
     container:Show()
 end
@@ -355,7 +384,7 @@ function H.BuildExpandedTiers(container, group, textX, unlocked, progress)
 
         row.tierLbl:ClearAllPoints()
         row.tierLbl:SetPoint("TOPLEFT", container, "TOPLEFT", textX + 18, yOff)
-        row.tierLbl:SetText(tier.tierName)
+        row.tierLbl:SetText(H.TierLabel(tier.tierName))
         row.tierLbl:SetTextColor(tc[1], tc[2], tc[3])
         row.tierLbl:Show()
 
@@ -382,6 +411,14 @@ function H.BuildExpandedTiers(container, group, textX, unlocked, progress)
         else
             row.prgLbl:Hide()
             row.prgLbl:SetText("")
+            if group.retired then
+                local timestamp=unlocked[tier.id]
+                if type(timestamp)=="number" and timestamp>0 then
+                    local d=date("*t",timestamp)
+                    row.prgLbl:SetText(string.format("%02d.%02d.%02d",d.day,d.month,d.year%100))
+                    row.prgLbl:Show()
+                end
+            end
         end
     end
 end

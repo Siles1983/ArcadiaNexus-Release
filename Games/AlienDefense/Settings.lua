@@ -11,7 +11,6 @@ S.MAX_SLOTS = 3
 
 S.Defaults = {
     difficulty        = "easy",
-    endlessMode       = false,
     soundOnShoot      = true,
     soundOnAlienShoot = true,
     soundOnAlienDeath = true,
@@ -30,16 +29,29 @@ local function GetDB()
 end
 
 function S:Get(key)
+    local E = ArcadiaNexus.AD_Engine
+    if key == "difficulty" and E and E.gameState and E.state ~= "IDLE" then return E.gameState.difficulty end
     local db = GetDB()
     if db[key] ~= nil then return db[key] end
     return self.Defaults[key]
 end
 
-function S:Set(key, value) P:SetGameSetting(DB_KEY, key, value) end
+function S:Set(key, value)
+    local E = ArcadiaNexus.AD_Engine
+    if key == "difficulty" and E and E.gameState and E.state ~= "IDLE" then return false end
+    if key == "difficulty" and not ArcadiaNexus.AD_Logic.DIFFICULTY_DEFS[value] then return false end
+    P:SetGameSetting(DB_KEY, key, value)
+    return true
+end
 
 function S:Reset()
     local db = GetDB()
-    for k in pairs(self.Defaults) do db[k] = nil end
+    local E=ArcadiaNexus.AD_Engine
+    for k in pairs(self.Defaults) do
+        if k~="difficulty" or not (E and E.gameState and E.state~="IDLE") then db[k]=nil end
+    end
+    local R=ArcadiaNexus.AD_Renderer
+    if R and R._diffDropdown then R._diffDropdown:RefreshDisplay() end
 end
 
 function S:GetAll()
@@ -101,30 +113,22 @@ function S:DeleteSlot(slot)
     db.saves[slot] = nil
 end
 
-function S:ResetSlot(slot)
-    self:SaveSlot(slot, {
-        wave = 1, score = 0, lives = 3,
-        diff = self:Get("difficulty") or "easy",
-    })
+function S:ResetSlot(slot) self:DeleteSlot(slot) end
+function S:LoadProgress(slot) return ArcadiaNexus.AD_Logic:Copy(self:LoadSlot(slot)) end
+function S:SaveProgress(state, slot)
+    local save = ArcadiaNexus.AD_Logic:Snapshot(state)
+    if save then self:SaveSlot(slot, save) end
 end
+function S:ClearProgress(slot) self:DeleteSlot(slot) end
 
-function S:SaveProgress(wave, score, lives, diff)
-    self:SaveSlot(self:GetActiveSlot(), {
-        wave = wave, score = score, lives = lives, diff = diff,
-    })
+-- Failed bookings are not playable saves; pinned by LocalResults.Prune.
+function S:SavePending(data)
+    local db=GetDB()
+    db.pendingResults=db.pendingResults or {}
+    db.pendingResults[data.runId]=ArcadiaNexus.AD_Logic:Copy(data)
 end
-
-function S:LoadProgress(slot)
-    local save = self:LoadSlot(slot or self:GetActiveSlot())
-    if not save then return nil end
-    return {
-        wave  = save.wave or 1,
-        score = save.score or 0,
-        lives = save.lives or 3,
-        diff  = save.diff or "easy",
-    }
+function S:ClearPending(runId)
+    local db=GetDB()
+    if db.pendingResults then db.pendingResults[runId]=nil end
 end
-
-function S:ClearProgress(slot)
-    self:DeleteSlot(slot or self:GetActiveSlot())
-end
+function S:GetPending() return GetDB().pendingResults or {} end

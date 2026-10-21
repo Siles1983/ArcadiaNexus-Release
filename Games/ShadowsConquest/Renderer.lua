@@ -27,30 +27,30 @@ local CFG = {
     btn_w        = 144,
     btn_h        = 32,
     chk_size     = 20,
-    grid_size    = 500,
+    grid_size    = 380,
     grid_ofs_x   = 0,
-    grid_ofs_y   = 0,
+    grid_ofs_y   = -10,
     gold_ofs_x   = 0,
     gold_ofs_y   = 0,
-    hud_score_w     = 120,
+    hud_score_w     = 230,
     hud_score_h     = 28,
-    hud_score_x     = -306,
-    hud_score_y     = 253,
+    hud_score_x     = -125,
+    hud_score_y     = -218,
     hud_score_alpha = 0.75,
-    hud_best_w      = 120,
+    hud_best_w      = 220,
     hud_best_h      = 28,
-    hud_best_x      = 306,
-    hud_best_y      = 253,
+    hud_best_x      = 140,
+    hud_best_y      = 225,
     hud_best_alpha  = 0.75,
-    hud_puzzle_w    = 120,
+    hud_puzzle_w    = 250,
     hud_puzzle_h    = 28,
-    hud_puzzle_x    = -306,
-    hud_puzzle_y    = 220,
+    hud_puzzle_x    = -115,
+    hud_puzzle_y    = 225,
     hud_puzzle_alpha = 0.75,
-    hud_moves_w     = 120,
+    hud_moves_w     = 230,
     hud_moves_h     = 28,
-    hud_moves_x     = 306,
-    hud_moves_y     = 220,
+    hud_moves_x     = 125,
+    hud_moves_y     = -218,
     hud_moves_alpha = 0.75,
     ov_w         = 320,
     ov_h         = 200,
@@ -105,6 +105,8 @@ local function CreateCellPool()
             local btn = CreateFrame("Button", nil, wrap)
             wrap._bg       = bg
             wrap._glow     = glow
+            wrap._preview = wrap:CreateTexture(nil, "OVERLAY")
+            wrap._preview:SetTexture("Interface\\Buttons\\WHITE8X8"); wrap._preview:SetVertexColor(.2,.65,1,.45); wrap._preview:Hide()
             wrap._flash    = flash
             wrap._flashGen = 0
             wrap._btn      = btn
@@ -115,6 +117,7 @@ local function CreateCellPool()
             wrap:Hide()
             wrap:ClearAllPoints()
             wrap._btn:SetScript("OnClick", nil)
+            wrap._btn:SetScript("OnEnter",nil); wrap._btn:SetScript("OnLeave",nil); wrap._preview:Hide()
             wrap._btn._row = nil
             wrap._btn._col = nil
             wrap._btn:Enable()
@@ -170,8 +173,10 @@ function R:_CreateMainFrame()
 
     f:SetScript("OnHide", function()
         ArcadiaNexus.GameSession:HandleRendererHide("SHADOWSCONQUEST", ArcadiaNexus.SC_Engine, function(E)
-            E:StopGame()
+            E:SaveAndPause()
         end)
+        local E=ArcadiaNexus.SC_Engine
+        if E and not E._sessionId and E.state~="IDLE" then E:StopGame() end
         R:EnterIdleState()
     end)
 end
@@ -280,66 +285,44 @@ function R:_SetHudShown(shown)
 end
 
 function R:UpdateHUD(gs)
-    if not gs then
-        self:_SetHudShown(false)
-        return
-    end
-    local L = ArcadiaNexus.GetLocaleTable("SHADOWSCONQUEST")
-    local score = gs.score or gs.finalScore or 0
-    if self.scoreFS then
-        self.scoreFS:SetText((L["lbl_score"] or "Punkte") .. ": " .. score)
-    end
-    if self.bestFS then
-        local SM = ArcadiaNexus.ScoreManager
-        local hs = SM and SM:GetBestScore("SHADOWSCONQUEST", gs.difficulty) or 0
-        self.bestFS:SetText((L["lbl_highscore"] or "Highscore") .. ": " .. math.max(hs, score))
-    end
-    if self.puzzleFS then
-        self.puzzleFS:SetText((L["lbl_puzzle"] or "Puzzle") .. ": " .. (gs.puzzleIndex or 1))
-    end
-    if self.movesFS then
-        self.movesFS:SetText((L["lbl_moves"] or "Zuge") .. ": " .. (gs.moveCount or 0))
-    end
+    if not gs then self:_SetHudShown(false); return end
+    local A=ArcadiaNexus; local loc=A.GetLocaleTable('SHADOWSCONQUEST'); local E=A.SC_Engine
+    local b=A.SC_Settings:LoadSlot(E._slot); local best=b and b.bests[gs.puzzleIndex]
+    self.scoreFS:SetText(loc.lbl_optimal..': '..gs.puzzleOptimal)
+    self.bestFS:SetText(loc.lbl_best_moves..': '..(best and best.moves or '—'))
+    self.puzzleFS:SetText(loc.lbl_puzzle..' '..gs.puzzleIndex..' / 50'..(gs.puzzleName and gs.puzzleName~='' and ' · '..gs.puzzleName or '')..' · '..loc.btn_map)
+    self.movesFS:SetText(loc.lbl_moves..': '..gs.moveCount..(gs.movesLeft and ' · '..loc.lbl_left..': '..gs.movesLeft or ''))
+    if not self._mapHudBtn then self._mapHudBtn=CreateFrame('Button',nil,self._puzzleBox); self._mapHudBtn:SetAllPoints(self._puzzleBox); self._mapHudBtn:SetScript('OnClick',function() E:ShowMap() end) end
     self:_SetHudShown(true)
 end
 
-function R:ShowOverlay(kind, gs)
-    if kind ~= "WIN" and kind ~= "GAMEOVER_MOVES" then return end
-    local field = self._fieldFrame
-    if not field then return end
-    local L  = ArcadiaNexus.GetLocaleTable("SHADOWSCONQUEST")
-    local UI = ArcadiaNexus.UI
-    local config = {
-        title      = nil,
-        titleColor = nil,
-        gameId     = "SHADOWSCONQUEST",
-        L          = L,
-        buttons    = {
-            {
-                label   = L["btn_start"] or "Spiel starten",
-                onClick = function()
-                    local E = ArcadiaNexus.SC_Engine
-                    if E then E:NextPuzzle() end
-                end,
-            },
-        },
-    }
-    if kind == "WIN" then
-        config.title      = L["state_win"] or "Gelöst!"
-        config.titleColor = { 1, 0.84, 0 }
-        config.score      = gs and gs.finalScore or 0
-        config.result     = "WIN"
-    else
-        config.title      = L["state_gameover_moves"] or "Keine Zuge mehr!"
-        config.titleColor = { 1, 0.3, 0.3 }
-        config.result     = "LOSS"
+function R:ShowResult(d)
+    local A=ArcadiaNexus; local E=A.SC_Engine; local loc=A.GetLocaleTable('SHADOWSCONQUEST'); local b=A.SC_Settings:LoadSlot(d.slot)
+    self:ClearPreview()
+    local best=b.bests[d.gameState.puzzleIndex]
+    local lines={string.format(loc.result_moves,d.stats.moves,d.gameState.puzzleOptimal),string.format(loc.result_stars,d.stars,d.bestStars or A.CampaignProgress.GetStars(b,d.gameState.puzzleIndex))}
+    if best then lines[#lines+1]=loc.lbl_best_moves..': '..best.moves end
+    local nextFn=nil
+    if d.result=='WIN' and not d.campaignCompleted and b and A.SC_Settings:IsUnlocked(b,d.gameState.puzzleIndex+1) then
+        nextFn=function() E:NextPuzzle() end
     end
-    UI.ShowArcadeResult(field, config)
+    A.UI.ShowArcadeResult(self._canvas,{gameId='SHADOWSCONQUEST',difficulty=d.difficulty,title=d.result=='WIN' and d.campaignCompleted and loc.campaign_done or d.result=='WIN' and loc.state_win or loc.state_gameover_moves,result=d.result,score=d.score,xp=d.awardedXP,gold=d.awardedGold,newHighscore=d.newHighscore,lines=lines,L=loc,
+        isCurrent=function() return E._runId==d.runId and (E.state=='WIN' or E.state=='GAMEOVER') end,
+        buttons=A.UI.ResultDialogButtons.Campaign(loc,nextFn,function() E:ShowMap() end,function() E:RetryPuzzle() end,function() E:StopGame() end)})
+end
+function R:ShowPending(d)
+    local A=ArcadiaNexus; local E=A.SC_Engine; local loc=A.GetLocaleTable('SHADOWSCONQUEST'); self:ClearPreview(); self:_UpdateControlLabels()
+    A.UI.ShowArcadeResult(self._canvas,{title=loc.msg_pending,result='LOSS',xp=0,hideHighscore=true,L=loc,
+        isCurrent=function() return E._runId==d.runId and E.state=='RESULT_PENDING' end,
+        onRetry=function() E:RetryResult() end,onExit=function() E:StopGame() end})
+end
+function R:ShowConfirmReset(confirm)
+    local A=ArcadiaNexus; local E=A.SC_Engine; local loc=A.GetLocaleTable('SHADOWSCONQUEST'); local run,rev=E._runId,E._revision
+    A.UI.ShowArcadeResult(self._canvas,{title=loc.reset_title,subtitle=loc.reset_text,result='DRAW',xp=0,hideHighscore=true,L=loc,
+        isCurrent=function() return E.state=='PLAYING' and E._runId==run and E._revision==rev end,
+        buttons={{label=loc.btn_reset,onClick=confirm},{label=loc.btn_cancel,onClick=function() end}}})
 end
 
--- ============================================================
--- CONTROLS – CreateGameControlsBar "wide"
--- ============================================================
 function R:_CreateControls()
     if self._controlsFrame then return end
     local L  = ArcadiaNexus.GetLocaleTable("SHADOWSCONQUEST")
@@ -360,10 +343,10 @@ function R:_CreateControls()
         { label = L["diff_normal"] or "Normal",  key = "normal" },
         { label = L["diff_hard"]   or "Schwer",  key = "hard"   },
     }
-    UI.CreateSimpleDropdown(ddAnchor, 0, 0, CFG.dd_w, "",
+    self._diffDropdown = UI.CreateSimpleDropdown(ddAnchor, 0, 0, CFG.dd_w, "",
         diffOptions,
         function()
-            return S and S:Get("difficulty") or "easy"
+            return ArcadiaNexus.SC_Engine._book and ArcadiaNexus.SC_Engine._book.difficulty or S:Get("difficulty")
         end,
         function(val)
             if S then S:Set("difficulty", val) end
@@ -376,13 +359,7 @@ function R:_CreateControls()
     startBtn:SetScript("OnClick", function()
         local E = ArcadiaNexus.SC_Engine
         if not E then return end
-        if E.state == "PLAYING" or E.state == "WIN" or E.state == "GAMEOVER" then
-            E:StopGame()
-            R:EnterIdleState()
-        else
-            local sv = S and S:Get("difficulty") or "easy"
-            E:StartGame(sv)
-        end
+        if E.state~="IDLE" and E.state~="SLOT_MENU" then E:SaveAndPause() else E:ShowSlots() end
     end)
     self._startBtn = startBtn
 
@@ -395,7 +372,7 @@ function R:_CreateControls()
         if E.state == "PLAYING" then
             E:ResetPuzzle()
         else
-            E:NextPuzzle()
+            E:ShowMap()
         end
     end)
     resumeBtn:Hide()
@@ -409,6 +386,7 @@ function R:_CreateControls()
     end)
     chk:SetScript("OnClick", function()
         if S then S:Set("moveLimitActive", chk:GetChecked()) end
+        R:_UpdateControlLabels()
     end)
     self._moveLimitChk = chk
 end
@@ -417,36 +395,20 @@ end
 -- TOGGLE-BUTTON LABELS
 -- ============================================================
 function R:_UpdateControlLabels()
-    local L = ArcadiaNexus.GetLocaleTable("SHADOWSCONQUEST")
-    local E = ArcadiaNexus.SC_Engine
-    if not E then return end
-
-    if self._startBtn then
-        if E.state == "PLAYING" or E.state == "WIN" or E.state == "GAMEOVER" then
-            self._startBtn:SetLabel(L["btn_stop"] or "Beenden")
-        else
-            self._startBtn:SetLabel(L["btn_start"] or "Spiel starten")
-        end
-    end
-
+    local A=ArcadiaNexus; local E=A.SC_Engine; local loc=A.GetLocaleTable('SHADOWSCONQUEST'); if not E then return end
+    local lock=E:IsConfigLocked()
+    if self._diffDropdown then self._diffDropdown:SetEnabled(not lock); self._diffDropdown:RefreshDisplay() end
+    if self._moveLimitChk then self._moveLimitChk:SetEnabled(not lock); self._moveLimitChk:SetChecked(E._book and E._book.moveLimitActive or not E._book and A.SC_Settings:Get('moveLimitActive')) end
+    if self._startBtn then self._startBtn:SetLabel(lock and loc.btn_stop or loc.btn_start) end
     if self._resumeBtn then
-        if E.state == "PLAYING" then
-            self._resumeBtn:SetLabel(L["btn_reset"] or "Zurücksetzen")
-            self._resumeBtn:Show()
-        elseif E.state == "WIN" or E.state == "GAMEOVER" then
-            self._resumeBtn:SetLabel(L["btn_resume"] or "Weiterspielen")
-            self._resumeBtn:Show()
-        else
-            self._resumeBtn:Hide()
-        end
+        if E.state=='PLAYING' then self._resumeBtn:SetLabel(loc.btn_reset); self._resumeBtn:Show()
+        elseif E.state=='WIN' or E.state=='GAMEOVER' then self._resumeBtn:SetLabel(loc.btn_map); self._resumeBtn:Show()
+        else self._resumeBtn:Hide() end
     end
 end
 
--- ============================================================
--- GRID
--- ============================================================
 function R:RenderGame(gs)
-    self:_ShowPlayArea()
+    self:HideMap(); self:HideSlotMenu(); self:_ShowPlayArea()
     self:_BuildGrid(gs)
     self:UpdateHUD(gs)
     self:_UpdateControlLabels()
@@ -513,6 +475,9 @@ function R:_BuildGrid(gs)
                 local E = ArcadiaNexus.SC_Engine
                 if E then E:HandleClick(selfBtn._row, selfBtn._col) end
             end)
+            wrap._preview:SetAllPoints(wrap); wrap._preview:Hide()
+            wrap._btn:SetScript('OnEnter',function(btn) R:ShowPreview(btn._row,btn._col) end)
+            wrap._btn:SetScript('OnLeave',function() R:ClearPreview() end)
             wrap._btn:Enable()
             wrap._flash:ClearAllPoints()
             wrap._flash:SetSize(cellSize, cellSize)
@@ -542,6 +507,7 @@ function R:_ClearGrid()
 end
 
 function R:UpdateGrid(gs, clickedRow, clickedCol)
+    if ArcadiaNexus.SC_Engine.state=="PLAYING" then ArcadiaNexus.UI.HideResultDialog(self._canvas) end
     if not self._cells then return end
     local gridSize = gs.gridSize
     for r = 1, gridSize do
@@ -552,11 +518,7 @@ function R:UpdateGrid(gs, clickedRow, clickedCol)
         end
     end
     if clickedRow and clickedCol then
-        local neighbors = {
-            {clickedRow,   clickedCol  }, {clickedRow-1, clickedCol  },
-            {clickedRow+1, clickedCol  }, {clickedRow,   clickedCol-1},
-            {clickedRow,   clickedCol+1},
-        }
+        local neighbors = ArcadiaNexus.SC_Logic:Targets(gs,clickedRow,clickedCol) or {}
         for _, t in ipairs(neighbors) do
             local r, c = t[1], t[2]
             if r >= 1 and r <= gridSize and c >= 1 and c <= gridSize then
@@ -606,8 +568,8 @@ end
 -- ============================================================
 function R:EnterIdleState()
     self.state = "IDLE"
-    self:_ClearGrid()
-    ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
+    self:HideMap(); self:HideSlotMenu(); self:_ClearGrid()
+    ArcadiaNexus.UI.HideResultDialog(self._canvas)
     self:_SetHudShown(false)
 
     if self._logo then self._logo:Show() end
@@ -624,7 +586,7 @@ end
 -- PLAY-AREA SHOW
 -- ============================================================
 function R:_ShowPlayArea()
-    ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
+    ArcadiaNexus.UI.HideResultDialog(self._canvas)
     if self._logo    then self._logo:Hide()    end
     if self._goldGrid then self._goldGrid:Show() end
 end
@@ -642,3 +604,43 @@ ArcadiaNexus.RegisterGame({
     logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\ShadowsConquest\\assets\\logo\\logo_sc",
     xp        = 10,
 })
+
+function R:ClearPreview()
+    for _,row in pairs(self._cells or {}) do for _,cell in pairs(row) do cell.wrap._preview:Hide() end end
+end
+function R:ShowPreview(r,c)
+    self:ClearPreview(); local A=ArcadiaNexus; local E=A.SC_Engine
+    if E.state~='PLAYING' then return end
+    for _,p in ipairs(A.SC_Logic:Targets(E._gameState,r,c) or {}) do local cell=self._cells[p[1]] and self._cells[p[1]][p[2]]; if cell then cell.wrap._preview:Show() end end
+end
+function R:ShowSlotMenu()
+    local A=ArcadiaNexus; local S=A.SC_Settings; local loc=A.GetLocaleTable('SHADOWSCONQUEST'); self:_ClearGrid(); self:_SetHudShown(false); self:HideMap(); if self._logo then self._logo:Hide() end
+    if not self._slotMenu then self._slotMenu=A.UI.CreateSaveSlotMenu({parent=self._canvas,maxSlots=3,L=loc,
+        loadSlot=function(i) local raw=S:LoadSlot(i); if raw==nil then return end if type(raw)~='table' then return {invalid=true} end local copy=A.SC_Logic:Copy(raw); if not A.SC_Logic:Int(copy.timestamp,2147483647) then copy.timestamp=nil end return copy end,
+        deleteSlot=function(i) S:DeleteSlot(i) end,
+        formatInfo=function(b) if not A.SC_Logic.DiffConfig[b.difficulty] or type(b.moveLimitActive)~='boolean' then return loc.msg_invalid_save end return loc['diff_'..b.difficulty]..' / '..loc[b.moveLimitActive and 'mode_limit' or 'mode_free'] end,
+        isPaused=function(b) return b.inProgress~=nil end,canContinue=function() return true end,
+        formatPaused=function(b) return string.format(loc.slot_info,b.mapLevel or 1,A.CampaignProgress.TotalStars(b)) end,
+        onNewGame=function(i) A.SC_Engine:StartGame({slot=i,action='new'}) end,onContinue=function(i) A.SC_Engine:StartGame({slot=i,action='continue'}) end,onCancel=function() A.SC_Engine:StopGame() end}) end
+    self._slotMenu:Show()
+end
+function R:HideSlotMenu() if self._slotMenu then self._slotMenu:Hide() end if self._feedback then self._feedback:Hide() end end
+function R:ShowFeedback(key)
+    if not self._feedback then self._feedback=self._canvas:CreateFontString(nil,'OVERLAY','GameFontNormal'); self._feedback:SetPoint('TOP',self._canvas,'TOP',0,-50); self._feedback:SetSize(520,48) end
+    self._feedback:SetText(ArcadiaNexus.GetLocaleTable('SHADOWSCONQUEST')[key]); self._feedback:Show()
+end
+function R:ShowMap(b)
+    local A=ArcadiaNexus; local loc=A.GetLocaleTable('SHADOWSCONQUEST'); self:_ClearGrid(); self:_SetHudShown(false); self:HideSlotMenu(); A.UI.HideResultDialog(self._canvas); if self._logo then self._logo:Hide() end
+    if not self._map then self._map=A.UI.CreateCampaignMap({parent=self._canvas,getPage=A.SC_CampaignMap.GetPage,
+        getView=function()
+            local book=A.SC_Engine._book; if not book then return {levelCount=50} end
+            return {levelCount=50,currentLevel=book.mapLevel,titleFormat=loc.map_title,subtitle=loc['diff_'..book.difficulty]..' · '..string.format(loc.map_progress,A.CampaignProgress.TotalStars(book))..' · '..loc[book.moveLimitActive and 'mode_limit' or 'mode_free'],lockedText=loc.map_locked,
+                actionLabel=book.inProgress and loc.btn_resume or nil,
+                getLevel=function(i)
+                    local e=A.SC_Catalog[book.difficulty][i]; local stars=A.CampaignProgress.GetStars(book,i); local best=book.bests[i]
+                    return {unlocked=A.SC_Settings:IsUnlocked(book,i),stars=stars,tooltipTitle=loc.lbl_puzzle..' '..i..(e.name~='' and ' · '..e.name or ''),tooltipText=string.format(loc.map_details,e.optimalMoves,e.twoStars,e.moveLimit)..(best and '\n'..loc.lbl_best_moves..': '..best.moves or '')}
+                end}
+        end,onSelect=function(i) A.SC_Engine:SelectLevel(i) end,onAction=function() A.SC_Engine:ResumeSelectedLevel() end,onCancel=function() A.SC_Engine:StopGame() end}) end
+    self._map:Show(b.mapLevel)
+end
+function R:HideMap() if self._map then self._map:Hide() end end

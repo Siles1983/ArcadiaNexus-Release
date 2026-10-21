@@ -204,8 +204,10 @@ function R:_CreateMainFrame()
 
     f:SetScript("OnHide", function()
         ArcadiaNexus.GameSession:HandleRendererHide("ARGUSORBDEFENSE", ArcadiaNexus.AOD_Engine, function(E)
-            if E.state == "PLAYING" then
+            if E.state == "PLAYING" or E.state == "PAUSED" or E.state == "WAVE_CLEAR" then
                 E:SaveAndPause()
+            elseif E.state == "GAMEOVER" then
+                E:StopGame()
             end
         end)
         if R.state == "MENU" then
@@ -377,12 +379,10 @@ function R:_CreateHUD()
     if not f then return end
 
     local function MakeBox(x, y, w, h, br, bg, bb, ba, er, eg, eb)
-        local box = CreateFrame("Frame", nil, f, "BackdropTemplate")
-        box:SetSize(w, h)
-        box:SetPoint("TOPLEFT", f, "TOPLEFT", x, y)
-        box:SetBackdrop({ bgFile=WHITE, edgeFile=WHITE, edgeSize=1, insets={left=1,right=1,top=1,bottom=1} })
-        box:SetBackdropColor(br, bg, bb, ba or 0.8)
-        box:SetBackdropBorderColor(er, eg, eb, 1)
+        local box,fs=ArcadiaNexus.UI.CreateHudStatBox(f,{w=w,h=h,x=x,y=y,alpha=ba or 0.8,shown=false})
+        if fs then fs:Hide() end
+        box:SetBackdropColor(br,bg,bb,ba or 0.8)
+        box:SetBackdropBorderColor(er,eg,eb,1)
         return box
     end
 
@@ -468,6 +468,21 @@ function R:_CreateHUD()
     self._rapidFS  = rpFS
 end
 
+function R:_PowerTooltips()
+    local L=Loc()
+    for _,entry in ipairs({{self._shieldHUD,L.pu_shield,L.tip_shield},{self._rapidHUD,L.pu_rapid,L.tip_rapid},
+        {self._spreadHUD,L.pu_spread,L.tip_spread},{self._livesBox,L.lbl_lives,L.tip_lives}}) do
+        local frame=entry[1]
+        if frame then
+            frame:EnableMouse(true)
+            frame:SetScript("OnEnter",function()
+                if GameTooltip then GameTooltip:SetOwner(frame,"ANCHOR_RIGHT"); GameTooltip:SetText(entry[2] or ""); GameTooltip:AddLine(entry[3] or "",1,1,1,true); GameTooltip:Show() end
+            end)
+            frame:SetScript("OnLeave",function() if GameTooltip then GameTooltip:Hide() end end)
+        end
+    end
+end
+
 -- ── Schiff ────────────────────────────────────────────────────
 function R:_CreateShip()
     local field = self._fieldFrame
@@ -512,6 +527,17 @@ end
 
 -- ── Objekt-Pools ─────────────────────────────────────────────
 -- FIX: Meteore/Hunter = WHITE8X8 + SetVertexColor (robust, keine Icon-Pfad-Abhängigkeit)
+function R:_AttachPowerDropTooltip(frame)
+    frame:EnableMouse(true)
+    frame:SetScript("OnEnter",function()
+        if not GameTooltip or not frame._puType then return end
+        local key=frame._puType:lower(); local L=Loc()
+        GameTooltip:SetOwner(frame,"ANCHOR_RIGHT"); GameTooltip:SetText(L["pu_"..key] or frame._puType)
+        GameTooltip:AddLine(L["tip_"..key] or "",1,1,1,true); GameTooltip:Show()
+    end)
+    frame:SetScript("OnLeave",function() if GameTooltip then GameTooltip:Hide() end end)
+end
+
 function R:_CreatePools()
     local field = self._fieldFrame
     if not field then return end
@@ -614,6 +640,9 @@ function R:_CreatePools()
         tex:SetTexture(ICON_SHIELD)
         fr._tex   = tex
         fr._icons = PU_ICONS
+        self:_AttachPowerDropTooltip(fr)
+        local symbol=fr:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+        symbol:SetPoint("CENTER",fr,"CENTER",0,0); fr._symbol=symbol
         fr:Hide()
         self._puPool[i] = { frame=fr, tex=tex, active=false }
     end
@@ -702,12 +731,12 @@ function R:_CreateControls()
     local L        = ArcadiaNexus.GetLocaleTable("ARGUSORBDEFENSE") or {}
     local Settings = ArcadiaNexus.AOD_Settings
 
-    local bar = UI.CreateGameControlsBar(self.frame, "wide")
+    local bar = UI.CreateGameControlsBar(self.frame, "equal4")
     local cf = bar.frame
     self._controlsFrame = cf
 
     local DD_W     = 120
-    local BTN_W    = 144
+    local BTN_W    = 132
     local BTN_H    = 32
     local CHK_SIZE = 20
 
@@ -775,28 +804,25 @@ function R:_CreateControls()
     self._pauseBtn = pauseBtn
     self._btnPause = pauseBtn   -- Alias
 
-    -- Endlos-Checkbox (Segment 4)
-    local chkHolder = CreateFrame("Frame", nil, cf)
-    chkHolder:SetSize(CHK_SIZE + 4, CHK_SIZE + 20)
-    chkHolder:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[4], bar.y.checkbox)
-
-    -- Label zentriert über der Checkbox
-    local chkLabel = chkHolder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    chkLabel:SetPoint("BOTTOM", chkHolder, "TOP", 0, -18)
-    chkLabel:SetJustifyH("CENTER")
-    chkLabel:SetText(L["lbl_endless"] or "Endlos")
-
-    local chk = CreateFrame("CheckButton", nil, chkHolder, "UICheckButtonTemplate")
-    chk:SetSize(CHK_SIZE, CHK_SIZE)
-    chk:SetPoint("CENTER", chkHolder, "CENTER", 0, -8)
-    chk:SetChecked(true)
-    chk:SetScript("OnClick", function()
-        R._endlessMode = chk:GetChecked() and true or false
-        if Settings then Settings:Set("endlessMode", R._endlessMode) end
+    local holder,chk=UI.CreateBarCheckbox(cf,L.lbl_endless or "Endless",{w=112})
+    holder:SetPoint("BOTTOM",cf,"BOTTOM",bar.segX[4]-56,bar.y.checkbox)
+    chk:SetScript("OnClick",function()
+        if Settings then Settings:Set("gameMode",chk:GetChecked() and "endless" or "levels") end
+        R:RefreshConfig()
     end)
-    self._endlessChk    = chk
-    self._cbEndless     = chk      -- Alias
-    self._cbEndlessLbl  = chkLabel
+    self._endlessChk=chk; self._cbEndless=chk; self._cbEndlessLbl=chk._label
+    self:RefreshConfig()
+end
+
+function R:RefreshConfig()
+    local S=ArcadiaNexus.AOD_Settings; local E=ArcadiaNexus.AOD_Engine
+    local locked=E and E.gameState and E.state~="IDLE"
+    if self._diffDropdown then self._diffDropdown:SetEnabled(not locked); self._diffDropdown:RefreshDisplay() end
+    if self._endlessChk then
+        self._endlessChk:SetChecked(S:Get("gameMode")=="endless")
+        self._endlessChk:SetEnabled(not locked); self._endlessChk:SetAlpha(locked and 0.45 or 1)
+    end
+    if self._cbEndlessLbl then self._cbEndlessLbl:SetAlpha(locked and 0.45 or 1) end
 end
 
 function R:_CreateSlotMenu()
@@ -816,10 +842,11 @@ function R:_CreateSlotMenu()
         formatInfo    = function(save, loc)
             local score = (ArcadiaNexus.Format and ArcadiaNexus.Format.Score(save.score or 0))
                 or tostring(save.score or 0)
-            if save.mode == "endless" then
-                return string.format("%s · %s", loc.mode_endless or "Endless", score)
-            end
-            return string.format(loc.slot_info or "Level %d · %s", save.level or 1, score)
+            local mode=save.gameMode or save.mode or "levels"
+            local stage=mode=="endless" and (save.version==2 and tostring(save.wave) or "?") or tostring(save.level or 1)
+            return string.format("%s %s · %s · %s%s",loc["mode_"..mode] or mode,stage,
+                loc["diff_"..(save.difficulty or save.diff or "normal")] or "Normal",score,
+                (save.version~=2 or save.legacyContinuation) and (" · "..(loc.legacy_save or "Legacy")) or "")
         end,
         isPaused      = function() return true end,
         onNewGame     = function(slot)
@@ -827,8 +854,8 @@ function R:_CreateSlotMenu()
             if not eng then return end
             eng:StartGame({
                 slot = slot, mode = "new",
-                difficulty = R._lastDiff or (S and S:Get("difficulty")) or "normal",
-                gameMode   = R._endlessMode and "endless" or "levels",
+                difficulty = S:Get("difficulty"),
+                gameMode   = S:Get("gameMode"),
             })
         end,
         onContinue    = function(slot)
@@ -858,26 +885,26 @@ function R:_CreateKeyFrame()
     kf:SetPropagateKeyboardInput(false)
     kf:EnableKeyboard(false)
 
-    kf:SetScript("OnKeyDown", function(_, key)
-        local E = ArcadiaNexus.AOD_Engine
-        if not E then return end
-        if     key == "A" or key == "LEFT"  then E:HandleKey("ROTATE_LEFT",  true)
-        elseif key == "D" or key == "RIGHT" then E:HandleKey("ROTATE_RIGHT", true)
-        elseif key == "W" or key == "UP"    then E:HandleKey("THRUST",       true)
-        elseif key == "SPACE"               then E:HandleKey("FIRE",         true)
-        elseif key == "ESCAPE"              then E:HandleKey("PAUSE",        true)
-        end
-    end)
-    kf:SetScript("OnKeyUp", function(_, key)
-        local E = ArcadiaNexus.AOD_Engine
-        if not E then return end
-        if     key == "A" or key == "LEFT"  then E:HandleKey("ROTATE_LEFT",  false)
-        elseif key == "D" or key == "RIGHT" then E:HandleKey("ROTATE_RIGHT", false)
-        elseif key == "W" or key == "UP"    then E:HandleKey("THRUST",       false)
-        elseif key == "SPACE"               then E:HandleKey("FIRE",         false)
-        end
-    end)
+    local keys={A="ROTATE_LEFT",LEFT="ROTATE_LEFT",D="ROTATE_RIGHT",RIGHT="ROTATE_RIGHT",W="THRUST",UP="THRUST",SPACE="FIRE",ESCAPE="PAUSE"}
+    local function input(frame,key,pressed)
+        local E=ArcadiaNexus.AOD_Engine
+        R._keyHeld=R._keyHeld or {}; R._keyBlocked=R._keyBlocked or {}
+        R._keyHeld[key]=pressed or nil
+        if not pressed then R._keyBlocked[key]=nil end
+        local focus=GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+        local handled=not focus and keys[key] and E and (E.state=="PLAYING" or keys[key]=="PAUSE" and E.state=="PAUSED")
+        frame:SetPropagateKeyboardInput(not handled)
+        if focus and E then E:_NeutralizeInput() end
+        if handled and not R._keyBlocked[key] then E:HandleKey(keys[key],pressed) end
+    end
+    kf:SetScript("OnKeyDown",function(frame,key) input(frame,key,true) end)
+    kf:SetScript("OnKeyUp",function(frame,key) input(frame,key,false) end)
     self._keyFrame = kf
+end
+
+function R:NeutralizeInput()
+    self._keyBlocked=self._keyBlocked or {}
+    for key,down in pairs(self._keyHeld or {}) do if down then self._keyBlocked[key]=true end end
 end
 
 -- ── Pool-Hilfsfunktionen ─────────────────────────────────────
@@ -941,10 +968,39 @@ end
 
 -- ── UpdatePhysics ─────────────────────────────────────────────
 
+function R:_GrowObjectPools(gs)
+    local field=self._fieldFrame; local fl=field:GetFrameLevel()
+    local icons={SHIELD=ICON_SHIELD,RAPID=ICON_RAPID,SPREAD=ICON_SPREAD,BOMB=ICON_BOMB,LIFE=ICON_LIFE}
+    local specs={{self._meteorPool,#gs.meteors,38,3,"meteor"},
+        {self._bulletPool,#gs.bullets,12,4,"bullet"},{self._hBulletPool,#gs.hunterBullets,12,4,"hunterBullet"},
+        {self._puPool,#gs.powerDrops,24,4,"power"}}
+    for _,sp in ipairs(specs) do
+        local pool=sp[1]
+        while #pool<sp[2] do
+            local fr=CreateFrame("Frame",nil,field,sp[5]=="power" and "BackdropTemplate" or nil)
+            fr:SetSize(sp[3],sp[3]); fr:SetFrameLevel(fl+sp[4]); fr:EnableMouse(false)
+            local tex=fr:CreateTexture(nil,"ARTWORK"); fr._tex=tex
+            if sp[5]=="bullet" or sp[5]=="hunterBullet" then
+                tex:SetSize(4,sp[5]=="bullet" and 10 or 8); tex:SetPoint("CENTER",fr,"CENTER",0,0)
+                tex:SetColorTexture(sp[5]=="bullet" and 0.5 or 0.8,sp[5]=="bullet" and 0.85 or 0.2,1,1)
+            else tex:SetAllPoints(fr) end
+            if sp[5]=="power" then
+                fr:SetBackdrop({bgFile=WHITE,edgeFile=WHITE,edgeSize=2,insets={left=2,right=2,top=2,bottom=2}})
+                fr:SetBackdropColor(0,0,0,0.7); fr._icons=icons
+                self:_AttachPowerDropTooltip(fr)
+                local symbol=fr:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+                symbol:SetPoint("CENTER",fr,"CENTER",0,0); fr._symbol=symbol
+            end
+            fr:Hide(); pool[#pool+1]={frame=fr,tex=tex,active=false}
+        end
+    end
+end
+
 function R:UpdatePhysics(gs)
     local field = self._fieldFrame
     if not field or not gs then return end
 
+    self:_GrowObjectPools(gs)
     local ship = gs.ship
     if ship.alive then
         self._shipFrame:SetPoint("CENTER", field, "BOTTOMLEFT", ship.x, ship.y)
@@ -1061,6 +1117,7 @@ function R:UpdatePhysics(gs)
     for i, p in ipairs(gs.powerDrops) do
         local slot = self._puPool[i]
         if slot then
+            slot.frame._puType=p.puType
             slot.frame:SetPoint("CENTER", field, "BOTTOMLEFT", p.x, p.y)
             -- TGA-Assets: SHIELD → grünes Asset, alle anderen → rotes Asset (original)
             if p.puType == "SHIELD" then
@@ -1069,6 +1126,7 @@ function R:UpdatePhysics(gs)
                 slot.tex:SetTexture(PU_ASSET_WEAPON)
             end
             -- Rahmenfarbe pro Typ
+            if slot.frame._symbol then slot.frame._symbol:SetText(({SHIELD="S",RAPID="R",SPREAD="3",BOMB="B",LIFE="+"})[p.puType] or "?") end
             local col = PU_COLORS[p.puType] or PU_COLORS.SHIELD
             slot.frame:SetBackdropBorderColor(col[1], col[2], col[3], 1)
             local pulse = math.sin(p.lifetime * 4) * 2
@@ -1082,12 +1140,13 @@ end
 -- ── HUD ───────────────────────────────────────────────────────
 function R:UpdateHUD(gs)
     if not gs then return end
+    if not self._powerTipsReady then self:_PowerTooltips(); self._powerTipsReady=true end
     local L = Loc()
     if self._scoreLbl then self._scoreLbl:SetText(L.lbl_score or "Score") end
-    if self._scoreFS then self._scoreFS:SetText(tostring(gs.score or 0)) end
+    if self._scoreFS then self._scoreFS:SetText(ArcadiaNexus.Format.Score(gs.score or 0)) end
     if self._waveFS  then
         if gs.gameMode == "levels" then
-            self._waveFS:SetText(string.format(L.overlay_level or "Level %d", gs.level or 1))
+            self._waveFS:SetText(string.format(L.hud_level or "Level %d/30", gs.level or 1))
         else
             self._waveFS:SetText(string.format(L.overlay_wave or "Wave %d", gs.wave or 1))
         end
@@ -1182,9 +1241,7 @@ function R:OnGameStarted(gs)
     if self._startBtn     then self._startBtn:Hide() end
     if self._exitBtn      then self._exitBtn:Show()  end
     if self._pauseBtn     then self._pauseBtn:Show() end
-    if self._diffDropdown then self._diffDropdown:SetEnabled(false); self._diffDropdown:Hide() end
-    if self._endlessChk   then self._endlessChk:Hide() end
-    if self._cbEndlessLbl then self._cbEndlessLbl:Hide() end
+    self:RefreshConfig()
 
     if self._keyFrame  then self._keyFrame:EnableKeyboard(true) end
     if self._shipFrame then self._shipFrame:Show() end
@@ -1197,8 +1254,10 @@ function R:OnGameStarted(gs)
     if self._waveBox  then self._waveBox:Show()  end
 
     self:_StartParticleUpdate()
+    self:UpdatePhysics(gs)
     self:UpdateHUD(gs)
     self:ShowWaveBanner(gs)
+    if gs.legacyContinuation and self._waveBannerFS then self._waveBannerFS:SetText(Loc().legacy_notice) end
 
     self._lastDiff    = gs.difficulty
     self._endlessMode = gs.gameMode == "endless"
@@ -1323,6 +1382,7 @@ end
 
 function R:_RetryFromResult()
     ArcadiaNexus.AOD_Engine:StartGame({
+        slot       = ArcadiaNexus.AOD_Engine.activeSlot,
         mode       = "new",
         difficulty = self._lastDiff,
         gameMode   = self._endlessMode and "endless" or "levels",
@@ -1330,6 +1390,7 @@ function R:_RetryFromResult()
 end
 
 function R:ShowWaveClear(gs)
+    local stageId=gs.stageId
     local field = self._fieldFrame
     if not field then return end
     local L  = ArcadiaNexus.GetLocaleTable("ARGUSORBDEFENSE") or {}
@@ -1343,7 +1404,7 @@ function R:ShowWaveClear(gs)
         buttons[#buttons + 1] = {
             label   = L["btn_continue"] or "Weiter",
             onClick = function()
-                ArcadiaNexus.AOD_Engine:ContinueToNextLevel()
+                ArcadiaNexus.AOD_Engine:ContinueToNextLevel(stageId)
             end,
         }
     end
@@ -1353,15 +1414,17 @@ function R:ShowWaveClear(gs)
     }
     buttons[#buttons + 1] = {
         label   = L["btn_exit"] or L["popup_exit"] or "Beenden",
-        onClick = function() ArcadiaNexus.AOD_Engine:StopGame() end,
+        onClick = function() ArcadiaNexus.AOD_Engine:SaveAndPause(); R:EnterIdleState() end,
     }
     UI.ShowArcadeResult(field, {
         title      = title,
         titleColor = { 0.4, 1, 0.5 },
         score      = gs.score,
         gameId     = "ARGUSORBDEFENSE",
-        difficulty = gs.difficulty or self._lastDiff,
-        result     = "WIN",
+        difficulty = gs.gameMode.."_"..gs.difficulty,
+        result     = "STATS",
+        xp = 0,
+        isCurrent = function() return ArcadiaNexus.AOD_Engine.gameState==gs and gs.stageId==stageId and ArcadiaNexus.AOD_Engine.state=="WAVE_CLEAR" end,
         L          = L,
         buttons    = buttons,
     })
@@ -1377,8 +1440,11 @@ function R:ShowVictory(gs)
         titleColor = { 1, 0.84, 0 },
         score      = gs.score,
         gameId     = "ARGUSORBDEFENSE",
-        difficulty = gs.difficulty or self._lastDiff,
+        difficulty = gs.gameMode.."_"..gs.difficulty,
         result     = "WIN",
+        xp = ArcadiaNexus.AOD_Engine.resultData and ArcadiaNexus.AOD_Engine.resultData.awardedXP or 0,
+        gold = ArcadiaNexus.AOD_Engine.resultData and ArcadiaNexus.AOD_Engine.resultData.awardedGold or 0,
+        isCurrent = function() return ArcadiaNexus.AOD_Engine.gameState==gs end,
         L          = L,
         onRetry    = function() R:_RetryFromResult() end,
         onExit     = function() ArcadiaNexus.AOD_Engine:StopGame() end,
@@ -1395,8 +1461,11 @@ function R:ShowGameOver(gs)
         titleColor = { 1, 0.27, 0.27 },
         score      = gs.score,
         gameId     = "ARGUSORBDEFENSE",
-        difficulty = gs.difficulty or self._lastDiff,
+        difficulty = gs.gameMode.."_"..gs.difficulty,
         result     = "LOSS",
+        xp = ArcadiaNexus.AOD_Engine.resultData and ArcadiaNexus.AOD_Engine.resultData.awardedXP or 0,
+        gold = ArcadiaNexus.AOD_Engine.resultData and ArcadiaNexus.AOD_Engine.resultData.awardedGold or 0,
+        isCurrent = function() return ArcadiaNexus.AOD_Engine.gameState==gs end,
         L          = L,
         onRetry    = function() R:_RetryFromResult() end,
         onExit     = function() ArcadiaNexus.AOD_Engine:StopGame() end,
@@ -1406,6 +1475,7 @@ end
 function R:EnterIdleState()
     if not self.frame then return end
     self.state = "IDLE"
+    self:RefreshConfig()
 
     HideAllPool(self._meteorPool)
     HideAllPool(self._bulletPool)

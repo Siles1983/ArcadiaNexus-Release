@@ -120,38 +120,18 @@ function Logic:TickOrb(state, dt)
 end
 
 -- ── Reaktionszeit messen ──────────────────────────────────────
-function Logic:RecordStrike(state)
+function Logic:RecordStrike(state, now)
     if not state.signalTime then return 0 end
-    local ms = math.floor((GetTime() - state.signalTime) * 1000)
+    local ms = math.ceil(math.max(0, now - state.signalTime) * 1000)
     state.reactionMs = ms
     return ms
 end
+
+function Logic:IsDifficulty(diff) return self.DiffConfig[diff]~=nil end
 
 -- ── Score berechnen ───────────────────────────────────────────
 function Logic:CalcScore(reactionMs, difficulty)
     local base    = math.max(0, math.floor(1000 - reactionMs))
     local factors = { easy = 1.0, normal = 1.5, hard = 2.0 }
     return math.floor(base * (factors[difficulty] or 1.0))
-end
-
--- Näherungsweise Reaktionszeit aus gespeichertem Score (Anzeige)
-function Logic:MsFromScore(score, difficulty)
-    if not score or score <= 0 then return nil end
-    local factors = { easy = 1.0, normal = 1.5, hard = 2.0 }
-    local factor  = factors[difficulty] or 1.0
-    return math.max(0, math.floor(1000 - (score / factor)))
-end
-
--- ── Ergebnis-Label ───────────────────────────────────────────
-function Logic:GetResultLabel(reactionMs)
-    local L = ArcadiaNexus.GetLocaleTable("REACTIONSTRIKE")
-    if reactionMs < 200 then
-        return L["result_great"] or "Ausgezeichnet!", { 0.20, 1.00, 0.20 }
-    elseif reactionMs < 350 then
-        return L["result_good"] or "Gut!",            { 1.00, 0.84, 0.00 }
-    elseif reactionMs < 500 then
-        return L["result_ok"] or "Geht so.",           { 1.00, 0.65, 0.10 }
-    else
-        return L["result_slow"] or "Zu langsam!",      { 1.00, 0.30, 0.30 }
-    end
 end

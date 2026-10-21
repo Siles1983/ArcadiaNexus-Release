@@ -356,7 +356,7 @@ end
 -- Schwerkraft + Refill (Hindernis-aware)
 -- ============================================================
 -- ICE-Zellen sind fixiert; STONE/LOCKED enthalten keine Gems,
--- fallende Gems passieren sie. Rückgabe wie Match3:
+-- Fallende Gems passieren sie; Rückgabe der Fallbewegungen:
 --   { [col] = { { fromRow, toRow, gemType, isNew }, … } }
 function L:ApplyGravity(state)
     local fallInfo = {}

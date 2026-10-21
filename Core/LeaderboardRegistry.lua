@@ -179,9 +179,13 @@ local function NormalizeSchema(raw)
     if not raw or not raw.gameId then return nil end
 
     local diffs = {}
+    local labelsById = {}
     for _, item in ipairs(raw.difficulties or { "default" }) do
         local d = NormalizeDifficulty(item)
-        if d then diffs[#diffs + 1] = d end
+        if d then
+            diffs[#diffs + 1] = d
+            labelsById[d.id] = d.labelKey
+        end
     end
     if #diffs == 0 then
         diffs[1] = { id = "default", labelKey = "lb_diff_default" }
@@ -189,7 +193,22 @@ local function NormalizeSchema(raw)
 
     local sections = {}
     for _, sec in ipairs(raw.sections or {}) do
-        sections[#sections + 1] = sec
+        local section={}; for k,v in pairs(sec) do section[k]=v end
+        if sec.difficulties then
+            section.difficulties={}
+            for _,item in ipairs(sec.difficulties) do
+                local d=NormalizeDifficulty(item)
+                if d then
+                    -- Section strings select registered variants; retain their locale keys.
+                    -- Explicit section label overrides still take precedence.
+                    if type(item)=="string" and labelsById[d.id] then
+                        d.labelKey=labelsById[d.id]
+                    end
+                    section.difficulties[#section.difficulties+1]=d
+                end
+            end
+        end
+        sections[#sections + 1] = section
     end
 
     return {
@@ -276,6 +295,7 @@ function LR.FormatValue(value, rowDef)
     if value == nil then return nil end
 
     local fmt = rowDef and rowDef.format
+    if fmt=="milliseconds" then return ArcadiaNexus.Format.Milliseconds(value) end
     if fmt == "score" then
         local F = ArcadiaNexus.Format
         if F and F.Score then return F.Score(value) end
@@ -284,6 +304,7 @@ function LR.FormatValue(value, rowDef)
         local F = ArcadiaNexus.Format
         if F and F.SecondsMMSS then return F.SecondsMMSS(value) end
     end
+    if fmt=="halfChips" then return ArcadiaNexus.Format.HalfUnits(value*2) end
     if fmt == "gold" then
         local F = ArcadiaNexus.Format
         local n = (F and F.Score) and F.Score(value) or tostring(value)

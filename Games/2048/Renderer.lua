@@ -198,6 +198,8 @@ local function CreateTilePool()
         end,
         onRelease = function(tf)
             tf:Hide()
+            tf:SetAlpha(1)
+            tf:SetScale(1)
             tf:ClearAllPoints()
             if tf._bgTex then tf._bgTex:SetVertexColor(0, 0, 0, 0) end
             if tf._label then tf._label:SetText("") end
@@ -256,17 +258,17 @@ Renderer._scoreBox    = nil
 Renderer._bestBox     = nil
 Renderer._goldGrid    = nil
 Renderer._startBtn    = nil
-Renderer._shuffleBtn  = nil
+Renderer._animation = ArcadiaNexus.GameLoop.Create(nil)
+Renderer._exitBtn = nil
 
 -- ============================================================
 -- INIT
 -- ============================================================
 
 function Renderer:Init()
-    -- selectedSize aus Settings laden (verhindert Reset auf 4 nach Reload)
     local S = ArcadiaNexus.TDG_Settings
-    self.selectedSize = (S and S:Get("boardSize")) or 4
-
+    self.selectedSize = S:Get("boardSize")
+    if not ArcadiaNexus.TDG_Logic:GetDifficulty(self.selectedSize) then self.selectedSize = 4 end
     self:_CreateMainFrame()
     self:_CreateFieldFrame()
     self:_CreateBackground()
@@ -276,41 +278,67 @@ function Renderer:Init()
     self:_CreateControls()
     self:_CreateKeyFrame()
     self:EnterIdleState()
-
-    local Engine = ArcadiaNexus.Engine
-
-    Engine:On("TDG_GAME_STARTED", function(state)
+    local Bus = ArcadiaNexus.Engine
+    Bus:On("TDG_GAME_STARTED", function(state)
         Renderer.state = "PLAYING"
+        Renderer._slotMenu:Hide()
+        ArcadiaNexus.UI.HideResultDialog(Renderer._fieldFrame)
         Renderer:RenderBoard(state)
         Renderer:UpdateScore(state)
-        if Renderer._fieldFrame and ArcadiaNexus.UI then
-            ArcadiaNexus.UI.HideResultDialog(Renderer._fieldFrame)
-        end
-        if Renderer.keyFrame   then Renderer.keyFrame:EnableKeyboard(true) end
-        if Renderer._logoTex   then Renderer._logoTex:Hide() end
-        if Renderer._startBtn  then
-            Renderer._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("2048")["btn_exit"])
-        end
-        if Renderer._shuffleBtn then Renderer._shuffleBtn:Show() end
-        if Renderer._scoreBox then Renderer._scoreBox:Show() end
-        if Renderer._bestBox  then Renderer._bestBox:Show()  end
-        if Renderer._goldGrid then Renderer._goldGrid:Show() end
+        Renderer:RefreshControls()
+        Renderer._scoreBox:Show()
+        Renderer._bestBox:Show()
+        Renderer._goldGrid:Show()
+        Renderer.keyFrame:EnableKeyboard(true)
     end)
-
-    Engine:On("TDG_BOARD_UPDATED", function(state)
-        Renderer:UpdateBoard(state)
+    Bus:On("TDG_BOARD_UPDATED", function(state)
+        Renderer:AnimateBoard(state)
         Renderer:UpdateScore(state)
     end)
-
-    Engine:On("TDG_GAME_OVER", function()
-        Renderer:ShowGameOverOverlay()
-        if Renderer.keyFrame then Renderer.keyFrame:EnableKeyboard(false) end
+    Bus:On("TDG_WIN_PROMPT", function(state, result)
+        Renderer:ShowGameOverOverlay(state, result)
     end)
-
-    Engine:On("TDG_GAME_STOPPED", function()
-        Renderer:EnterIdleState()
+    Bus:On("TDG_GAME_OVER", function(state, result)
+        Renderer:ShowGameOverOverlay(state, result)
     end)
+    Bus:On("TDG_GAME_CONTINUED", function(state)
+        Renderer.state = "PLAYING"
+        Renderer:UpdateBoard(state)
+        Renderer:RefreshControls()
+        Renderer.keyFrame:EnableKeyboard(true)
+    end)
+    Bus:On("TDG_RESULT_FAILED", function()
+        Renderer.state = "RESULT_PENDING"
+        Renderer._slotMenu:Hide()
+        Renderer:_CancelAnimation()
+        local E = ArcadiaNexus.TDG_Engine
+        if E.activeGame then
+            Renderer:RenderBoard(E.activeGame:GetBoardState())
+            Renderer:UpdateScore(E.activeGame:GetBoardState())
+        end
+        Renderer:RefreshControls()
+        Renderer._scoreBox:Show()
+        Renderer._bestBox:Show()
+        Renderer._goldGrid:Show()
+        Renderer.keyFrame:EnableKeyboard(false)
+        local L = ArcadiaNexus.GetLocaleTable("2048")
+        ArcadiaNexus.UI.ShowArcadeResult(Renderer._fieldFrame, {
+            title = L.result_pending, result = "WIN", xp = 0, L = L,
+            lines = { L.result_retry_hint },
+            buttons = {
+                {label=L.btn_retry_result, onClick=function() ArcadiaNexus.TDG_Engine:RetryResult() end},
+                {label=L.btn_pause, onClick=function() ArcadiaNexus.TDG_Engine:SaveAndPause(); Renderer:ShowSlotMenu() end},
+            },
+        })
+    end)
+    Bus:On("TDG_APPEARANCE_CHANGED", function()
+        local E = ArcadiaNexus.TDG_Engine
+        if E.activeGame then Renderer:RenderBoard(E.activeGame:GetBoardState()) end
+        Renderer:RefreshControls()
+    end)
+    Bus:On("TDG_GAME_STOPPED", function() Renderer:EnterIdleState() end)
 end
+
 
 -- ============================================================
 -- FRAME-AUFBAU
@@ -334,9 +362,13 @@ function Renderer:_CreateMainFrame()
         end
 
         container:SetScript("OnHide", function()
+            Renderer:_CancelAnimation()
+            if Renderer._slotMenu then Renderer._slotMenu:Hide() end
+            local E = ArcadiaNexus.TDG_Engine
+            if E.activeGame and not E._sessionId then E:StopGame() end
             ArcadiaNexus.GameSession:HandleRendererHide("2048", ArcadiaNexus.TDG_Engine, function(E)
                 if E.activeGame then
-                    E:StopGame()
+                    E:SaveAndPause()
                 end
             end)
         end)
@@ -425,63 +457,77 @@ function Renderer:_CreateScoreBoxes()
 end
 
 function Renderer:_CreateControls()
-    local L  = ArcadiaNexus.GetLocaleTable("2048")
-    local UI = ArcadiaNexus.UI
-
+    local L, UI, S = ArcadiaNexus.GetLocaleTable("2048"), ArcadiaNexus.UI, ArcadiaNexus.TDG_Settings
+    local E = ArcadiaNexus.TDG_Engine
     local bar = UI.CreateGameControlsBar(self.frame, "narrow")
     local cf = bar.frame
     self._controlsFrame = cf
-
-    -- Größen-Dropdown (linkes Segment)
-    local S = ArcadiaNexus.TDG_Settings
-    local ddOptions = {
-        { key = "3", label = L["size_small"]  },
-        { key = "4", label = L["size_normal"] },
-        { key = "5", label = L["size_large"]  },
-    }
-
-    local ddAnchor = CreateFrame("Frame", nil, cf)
-    ddAnchor:SetSize(CFG.dd_w, CFG.btn_h)
-    ddAnchor:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
-
-    UI.CreateSimpleDropdown(
-        ddAnchor,
-        0,
-        0,
-        CFG.dd_w,
-        "",  -- kein Label
-        ddOptions,
-        function()
-            local size = S and S:Get("boardSize") or 4
-            return tostring(size)
-        end,
-        function(key)
-            local size = tonumber(key) or 4
-            Renderer.selectedSize = size
-            if S then S:Set("boardSize", size) end
-        end
-    )
-
-    -- Start / Beenden Button (mittleres Segment, CENTER)
-    local startBtn = UI.CreateArcadiaButton(cf, L["btn_start"], CFG.btn_w, CFG.btn_h)
+    local anchor = CreateFrame("Frame", nil, cf)
+    anchor:SetSize(CFG.dd_w, CFG.btn_h)
+    anchor:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
+    self._sizeDropdown = UI.CreateSimpleDropdown(anchor, 0, 0, CFG.dd_w, "", {
+        {key="3", label=L.size_small}, {key="4", label=L.size_normal}, {key="5", label=L.size_large},
+    }, function()
+        return tostring(E.activeGame and E.activeGame.board.size or S:Get("boardSize"))
+    end, function(key)
+        if E.activeGame then Renderer:RefreshControls(); return end
+        if S:Set("boardSize", tonumber(key)) then Renderer.selectedSize = tonumber(key) end
+    end)
+    local startBtn = UI.CreateArcadiaButton(cf, L.btn_start, CFG.btn_w, CFG.btn_h)
     startBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
     startBtn:SetScript("OnClick", function()
-        if Renderer.state == "PLAYING" then
-            ArcadiaNexus.TDG_Engine:StopGame()
-        else
-            ArcadiaNexus.TDG_Engine:StartGame({ size = Renderer.selectedSize })
-        end
+        if E.activeGame then E:SaveAndPause() end
+        Renderer:ShowSlotMenu()
     end)
     self._startBtn = startBtn
+    local exitBtn = UI.CreateArcadiaButton(cf, L.btn_exit, CFG.btn_w, CFG.btn_h)
+    exitBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[3], bar.y.button)
+    exitBtn:SetScript("OnClick", function() Renderer:EnterIdleState() end)
+    self._exitBtn = exitBtn
+    self._slotMenu = UI.CreateSaveSlotMenu({
+        parent = self._fieldFrame, maxSlots = S.MAX_SLOTS, L = L,
+        loadSlot = function(slot) return S:LoadSlot(slot) end,
+        deleteSlot = function(slot) S:DeleteSlot(slot) end,
+        canContinue = function(save) return E:CanContinueSave(save) end,
+        formatInfo = function(save)
+            if not ArcadiaNexus.TDG_Logic:ValidateSave(save)
+                or ((save.phase ~= "FINISHED" or save.resultPending) and not E:CanContinueSave(save)) then return L.slot_invalid end
+            local text = string.format(L.slot_info, save.boardSize, save.boardSize,
+                ArcadiaNexus.Format.Score(save.score))
+            if save.resultPending then return text .. " · " .. L.result_pending end
+            return text .. (save.phase == "FINISHED" and (" · " .. L.slot_finished) or "")
+        end,
+        isPaused = function(save) return save.phase ~= "FINISHED" or save.resultPending end,
+        onNewGame = function(slot)
+            E:StartGame({slot=slot, mode="new", size=S:Get("boardSize"), overwrite=true})
+        end,
+        onContinue = function(slot) E:StartGame({slot=slot, mode="continue"}) end,
+        onCancel = function() Renderer:EnterIdleState() end,
+    })
+end
 
-    -- Mischen-Button (rechtes Segment, CENTER+180)
-    local shuffleBtn = UI.CreateArcadiaButton(cf, L["btn_restart"], CFG.btn_w, CFG.btn_h)
-    shuffleBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[3], bar.y.button)
-    shuffleBtn:SetScript("OnClick", function()
-        ArcadiaNexus.TDG_Engine:StartGame({ size = Renderer.selectedSize })
-    end)
-    shuffleBtn:Hide()
-    self._shuffleBtn = shuffleBtn
+function Renderer:RefreshControls()
+    local E, L = ArcadiaNexus.TDG_Engine, ArcadiaNexus.GetLocaleTable("2048")
+    if self._sizeDropdown then
+        if E.activeGame and self._sizeDropdown.CloseMenu then self._sizeDropdown:CloseMenu() end
+        self._sizeDropdown:SetEnabled(not E.activeGame)
+        self._sizeDropdown:RefreshDisplay()
+    end
+    if self._startBtn then
+        self._startBtn:SetLabel(E.activeGame and L.btn_pause or L.btn_start)
+        if self.state == "SLOT_MENU" then self._startBtn:Hide() else self._startBtn:Show() end
+    end
+    if self._exitBtn then
+        if self.state == "SLOT_MENU" then self._exitBtn:Show() else self._exitBtn:Hide() end
+    end
+end
+
+function Renderer:ShowSlotMenu()
+    self:EnterIdleState()
+    self.state = "SLOT_MENU"
+    self._logoTex:Hide()
+    self._slotMenu:Show()
+    self:RefreshControls()
 end
 
 function Renderer:_CreateKeyFrame()
@@ -517,6 +563,7 @@ function Renderer:_EnsureBoardPools()
 end
 
 function Renderer:_ReleaseBoardVisuals()
+    self:_CancelAnimation()
     if self._tilePool then self._tilePool:ReleaseAll() end
     if self._slotPool then self._slotPool:ReleaseAll() end
     self.tiles = {}
@@ -541,7 +588,8 @@ function Renderer:EnterIdleState()
     if self._logoTex    then self._logoTex:Show() end
     if self._borderFrame then self._borderFrame:Show() end
     if self._startBtn   then self._startBtn:SetLabel(L["btn_start"]) end
-    if self._shuffleBtn then self._shuffleBtn:Hide() end
+    if self._slotMenu then self._slotMenu:Hide() end
+    self:RefreshControls()
     if self._goldGrid   then self._goldGrid:Hide() end
 end
 
@@ -617,45 +665,98 @@ end
 -- UPDATEBOARD
 -- ============================================================
 
+function Renderer:_CancelAnimation()
+    self._animation:Stop()
+    self._animating = nil
+end
+
+function Renderer:_TilePoint(frame, row, col)
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", self._fieldFrame, "TOPLEFT",
+        8 + (col - 1) * (self.cellPx + 8), -(8 + (row - 1) * (self.cellPx + 8)))
+end
+
+function Renderer:_PaintTile(tile, value)
+    local colors = GetTileColor(value)
+    tile.frame:SetAlpha(1)
+    tile.frame:SetScale(1)
+    if value == 0 then
+        tile.bgTex:SetVertexColor(0, 0, 0, 0)
+        tile.label:SetText("")
+    else
+        tile.bgTex:SetVertexColor(colors.bg[1], colors.bg[2], colors.bg[3], 1)
+        tile.label:SetText(tostring(value))
+        tile.label:SetTextColor(colors.fg[1], colors.fg[2], colors.fg[3])
+        local digits = #tostring(value)
+        tile.label:SetFont(STANDARD_TEXT_FONT or "Fonts\\\\FRIZQT__.TTF",
+            math.min(30, math.floor(self.cellPx / math.max(3, digits * 0.65))), "OUTLINE")
+    end
+    tile.frame:Show()
+end
+
 function Renderer:UpdateBoard(state)
-    local size = state.size
-    for r = 1, size do
-        for c = 1, size do
+    self:_CancelAnimation()
+    for r = 1, state.size do
+        for c = 1, state.size do
             local tile = self.tiles[r] and self.tiles[r][c]
             if tile then
-                local val    = state.cells[r][c]
-                local colors = GetTileColor(val)
-                if val == 0 then
-                    tile.bgTex:SetVertexColor(0, 0, 0, 0)
-                    tile.label:SetText("")
-                else
-                    tile.bgTex:SetVertexColor(colors.bg[1], colors.bg[2], colors.bg[3], 1)
-                    tile.label:SetText(tostring(val))
-                    tile.label:SetTextColor(colors.fg[1], colors.fg[2], colors.fg[3])
-                    if state.merged and state.merged[r][c] then
-                        tile.bgTex:SetVertexColor(1, 1, 1, 1)
-                        C_Timer.After(0.12, function()
-                            if tile and tile.bgTex then
-                                tile.bgTex:SetVertexColor(
-                                    colors.bg[1], colors.bg[2], colors.bg[3], 1)
-                            end
-                        end)
-                    end
-                end
-                tile.frame:Show()
+                self:_TilePoint(tile.frame, r, c)
+                self:_PaintTile(tile, state.cells[r][c])
             end
         end
     end
-
-    if state.lastSpawn then
-        local sp   = state.lastSpawn
-        local tile = self.tiles[sp.row] and self.tiles[sp.row][sp.col]
-        if tile then
-            tile.frame:SetAlpha(0)
-            UIFrameFadeIn(tile.frame, 0.20, 0, 1)
-        end
-    end
 end
+
+function Renderer:AnimateBoard(state)
+    self:_CancelAnimation()
+    if ArcadiaNexus.TDG_Settings:Get("reducedMotion") or not state.motions then self:UpdateBoard(state); return end
+    local E, game = ArcadiaNexus.TDG_Engine, ArcadiaNexus.TDG_Engine.activeGame
+    local runId = state.runId
+    for r = 1, state.size do
+        for c = 1, state.size do self.tiles[r][c].frame:Hide() end
+    end
+    for _, motion in ipairs(state.motions) do
+        self:_PaintTile(self.tiles[motion.fromRow][motion.fromCol], motion.value)
+    end
+    local elapsed, settled = 0, false
+    self._animating = true
+    self._animation:Start(function(dt)
+        if E.activeGame ~= game or not game or game.runId ~= runId then self:_CancelAnimation(); return end
+        elapsed = elapsed + dt
+        if elapsed < 0.12 then
+            local p = elapsed / 0.12
+            p = 1 - (1 - p) * (1 - p)
+            for _, motion in ipairs(state.motions) do
+                local tile = self.tiles[motion.fromRow][motion.fromCol]
+                self:_TilePoint(tile.frame, motion.fromRow + (motion.toRow-motion.fromRow)*p,
+                    motion.fromCol + (motion.toCol-motion.fromCol)*p)
+            end
+        else
+            if not settled then
+                -- Draw final merge values before spawn/pop feedback.
+                for r = 1, state.size do
+                    for c = 1, state.size do
+                        local tile = self.tiles[r][c]
+                        self:_TilePoint(tile.frame, r, c)
+                        self:_PaintTile(tile, state.cells[r][c])
+                    end
+                end
+                settled = true
+            end
+            local p = math.min(1, (elapsed - 0.12) / 0.10)
+            for r = 1, state.size do
+                for c = 1, state.size do
+                    local tile = self.tiles[r][c]
+                    if state.lastSpawn and state.lastSpawn.row == r and state.lastSpawn.col == c then
+                        tile.frame:SetAlpha(p)
+                    elseif state.merged[r][c] then tile.frame:SetScale(1 + math.sin(p*math.pi)*0.06) end
+                end
+            end
+            if p == 1 then self:UpdateBoard(state) end
+        end
+    end)
+end
+
 
 -- ============================================================
 -- SCORE UPDATE
@@ -675,39 +776,35 @@ end
 -- GAME OVER OVERLAY
 -- ============================================================
 
-function Renderer:ShowGameOverOverlay()
+function Renderer:ShowGameOverOverlay(state, result)
     if not self._fieldFrame then return end
-    self.state = "GAMEOVER"
-
-    local state = ArcadiaNexus.TDG_Engine.activeGame
-        and ArcadiaNexus.TDG_Engine.activeGame:GetBoardState()
-
-    local UI     = ArcadiaNexus.UI
-    local L      = ArcadiaNexus.GetLocaleTable("2048")
-    local parent = self._fieldFrame
-    local size   = Renderer.selectedSize or (state and state.boardSize) or 4
-    local diff   = (size <= 3 and "easy") or (size >= 5 and "hard") or "normal"
-
-    UI.ShowArcadeResult(parent, {
-        title      = L["go_title"],
-        titleColor = { 1, 0.3, 0.3 },
-        subtitle   = L["go_score"] .. (state and state.score or 0),
-        score      = state and state.score,
-        gameId     = "2048",
-        difficulty = diff,
-        result     = "LOSS",
-        L          = L,
-        onRetry    = function()
-            ArcadiaNexus.TDG_Engine:StartGame({ size = Renderer.selectedSize })
-        end,
-        onExit = function()
-            ArcadiaNexus.TDG_Engine:StopGame()
-        end,
+    local E = ArcadiaNexus.TDG_Engine
+    local game = E.activeGame
+    if not game then return end
+    state = state or game:GetBoardState()
+    result = result or {}
+    local UI, L = ArcadiaNexus.UI, ArcadiaNexus.GetLocaleTable("2048")
+    self.state = state.phase == "AWAITING_WIN_CHOICE" and "WIN_PROMPT" or "FINISHED"
+    self.keyFrame:EnableKeyboard(false)
+    self:RefreshControls()
+    local buttons = {}
+    if state.phase == "AWAITING_WIN_CHOICE" then
+        buttons[#buttons+1] = {label=L.btn_keep_playing, onClick=function() E:ContinueAfterWin() end}
+        buttons[#buttons+1] = {label=L.btn_finish, onClick=function() if E:FinishRun() then Renderer:ShowSlotMenu() end end}
+    else
+        buttons[#buttons+1] = {label=L.btn_slots, onClick=function() E:StopGame(); Renderer:ShowSlotMenu() end}
+    end
+    local lines = { string.format(L.highest_tile, state.highestTile) }
+    if result.localReplay and state.result == "WIN" then lines[#lines+1] = L.win_already_recorded end
+    UI.ShowArcadeResult(self._fieldFrame, {
+        title = state.result == "WIN" and L.win_title or L.go_title,
+        result = state.result, score = state.score, gameId = "2048", difficulty = state.difficulty,
+        xp = result.awardedXP or 0, gold = result.awardedGold or 0,
+        newHighscore = result.newHighscore == true, highscore = ArcadiaNexus.ScoreManager:GetBestScore("2048", state.difficulty),
+        lines = lines, L = L, buttons = buttons,
     })
-
-    if self._startBtn   then self._startBtn:SetLabel(L["btn_start"]) end
-    if self._shuffleBtn then self._shuffleBtn:Hide() end
 end
+
 
 -- ============================================================
 -- REGISTRIERUNG

@@ -18,7 +18,7 @@ T.THEMES = {
     -- 01–09: INV_Misc_Rune. Hard: Spell-Icons (rune_10+ und alte DK-IDs fehlen).
     -- ──────────────────────────────────────────────────────────
     runes = {
-        name = "Oger-Magi Runen",
+        name = (ArcadiaNexus.ActiveLocale == "deDE" and "Oger-Magi Runen" or "Ogre-Mage Runes"),
         symbols = {
             -- Easy (1-4)
             { name="Rune I",     icon="Interface\\Icons\\INV_Misc_Rune_01", color={0.9,0.7,1.0} },
@@ -32,13 +32,13 @@ T.THEMES = {
             { name="Rune VIII",  icon="Interface\\Icons\\INV_Misc_Rune_08", color={1.0,0.4,0.4} },
             { name="Rune IX",    icon="Interface\\Icons\\INV_Misc_Rune_09", color={0.2,0.6,1.0} },
             -- Hard (10-16): nur Icons, die im Addon bereits genutzt werden
-            { name="Unheilig",   icon="Interface\\Icons\\Spell_Shadow_RaiseDead",         color={0.9,0.5,1.0} },
-            { name="Todesspiral",icon="Interface\\Icons\\Spell_Shadow_DeathCoil",         color={0.5,0.9,1.0} },
-            { name="Blut-Rune",  icon="Interface\\Icons\\Spell_Shadow_LifeDrain",         color={0.9,0.1,0.1} },
-            { name="Frost-Rune", icon="Interface\\Icons\\Spell_Frost_FrostNova",          color={0.4,0.8,1.0} },
-            { name="Tod-Rune",   icon="Interface\\Icons\\Spell_Shadow_ShadowForm",        color={0.5,0.0,0.8} },
-            { name="Chaos-Rune", icon="Interface\\Icons\\Spell_Shadow_SummonVoidWalker",  color={0.7,0.2,1.0} },
-            { name="Arkan-Rune", icon="Interface\\Icons\\Spell_Arcane_Blast",             color={0.6,0.4,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Unheilig" or "Unholy"),   icon="Interface\\Icons\\Spell_Shadow_RaiseDead",         color={0.9,0.5,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Todesspiral" or "Death Coil"),icon="Interface\\Icons\\Spell_Shadow_DeathCoil",         color={0.5,0.9,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Blut-Rune" or "Blood Rune"),  icon="Interface\\Icons\\Spell_Shadow_LifeDrain",         color={0.9,0.1,0.1} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Frost-Rune" or "Frost Rune"), icon="Interface\\Icons\\Spell_Frost_FrostNova",          color={0.4,0.8,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Tod-Rune" or "Death Rune"),   icon="Interface\\Icons\\Spell_Shadow_ShadowForm",        color={0.5,0.0,0.8} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Chaos-Rune" or "Chaos Rune"), icon="Interface\\Icons\\Spell_Shadow_SummonVoidWalker",  color={0.7,0.2,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Arkan-Rune" or "Arcane Rune"), icon="Interface\\Icons\\Spell_Arcane_Blast",             color={0.6,0.4,1.0} },
         },
     },
 
@@ -47,27 +47,27 @@ T.THEMES = {
     -- Icons: Interface\TargetingFrame\ sind direkte Dateipfade (kein Atlas!)
     -- ──────────────────────────────────────────────────────────
     raidmarker = {
-        name = "Raid-Marker",
+        name = (ArcadiaNexus.ActiveLocale == "deDE" and "Raid-Marker" or "Raid Markers"),
         symbols = {
             -- Easy (1-4)
-            { name="Stern",      icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_1", color={1.0,0.95,0.1} },
-            { name="Kreis",      icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_2", color={1.0,0.5,0.0}  },
-            { name="Diamant",    icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_3", color={0.8,0.2,1.0}  },
-            { name="Dreieck",    icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_4", color={0.2,0.9,0.2}  },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Stern" or "Star"),      icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_1", color={1.0,0.95,0.1} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Kreis" or "Circle"),      icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_2", color={1.0,0.5,0.0}  },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Diamant" or "Diamond"),    icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_3", color={0.8,0.2,1.0}  },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Dreieck" or "Triangle"),    icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_4", color={0.2,0.9,0.2}  },
             -- Normal (5-9)
-            { name="Mond",       icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_5", color={0.4,0.6,1.0}  },
-            { name="Quadrat",    icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_6", color={0.6,0.4,1.0}  },
-            { name="Kreuz",      icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_7", color={1.0,0.2,0.2}  },
-            { name="Totenkopf",  icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_8", color={0.7,0.7,0.7}  },
-            { name="Markieren",  icon="Interface\\Icons\\Ability_Hunter_AimedShot",        color={0.8,0.8,0.5}  },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Mond" or "Moon"),       icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_5", color={0.4,0.6,1.0}  },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Quadrat" or "Square"),    icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_6", color={0.6,0.4,1.0}  },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Kreuz" or "Cross"),      icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_7", color={1.0,0.2,0.2}  },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Totenkopf" or "Skull"),  icon="Interface\\TargetingFrame\\UI-RaidTargetingIcon_8", color={0.7,0.7,0.7}  },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Markieren" or "Mark"),  icon="Interface\\Icons\\Ability_Hunter_AimedShot",        color={0.8,0.8,0.5}  },
             -- Hard (10-16)
-            { name="Wache",      icon="Interface\\Icons\\Ability_TownWatch",               color={1.0,0.9,0.2}  },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Wache" or "Guard"),      icon="Interface\\Icons\\Ability_TownWatch",               color={1.0,0.9,0.2}  },
             { name="Horde",      icon="Interface\\Icons\\INV_BannerPVP_01",                color={1.0,0.5,0.1}  },
-            { name="Allianz",    icon="Interface\\Icons\\INV_BannerPVP_02",                color={0.3,0.8,1.0}  },
-            { name="Karte",      icon="Interface\\Icons\\INV_Misc_Map_01",                 color={0.2,0.9,0.2}  },
-            { name="Bombe",      icon="Interface\\Icons\\INV_Misc_Bomb_02",                color={0.8,0.3,1.0}  },
-            { name="Ziel",       icon="Interface\\Icons\\Ability_Hunter_SniperShot",       color={1.0,0.2,0.2}  },
-            { name="Schild",     icon="Interface\\Icons\\INV_Shield_06",                   color={0.6,0.6,0.6}  },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Allianz" or "Alliance"),    icon="Interface\\Icons\\INV_BannerPVP_02",                color={0.3,0.8,1.0}  },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Karte" or "Map"),      icon="Interface\\Icons\\INV_Misc_Map_01",                 color={0.2,0.9,0.2}  },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Bombe" or "Bomb"),      icon="Interface\\Icons\\INV_Misc_Bomb_02",                color={0.8,0.3,1.0}  },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Ziel" or "Target"),       icon="Interface\\Icons\\Ability_Hunter_SniperShot",       color={1.0,0.2,0.2}  },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Schild" or "Shield"),     icon="Interface\\Icons\\INV_Shield_06",                   color={0.6,0.6,0.6}  },
         },
     },
 
@@ -76,26 +76,26 @@ T.THEMES = {
     -- Alle Icons in WotLK verifiziert
     -- ──────────────────────────────────────────────────────────
     elements = {
-        name = "Elementare Mächte",
+        name = (ArcadiaNexus.ActiveLocale == "deDE" and "Elementare Mächte" or "Elemental Powers"),
         symbols = {
             -- Easy (1-4)
-            { name="Feuer",      icon="Interface\\Icons\\Spell_Fire_Fire",              color={1.0,0.3,0.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Feuer" or "Fire"),      icon="Interface\\Icons\\Spell_Fire_Fire",              color={1.0,0.3,0.0} },
             { name="Frost",      icon="Interface\\Icons\\Spell_Frost_Frost",            color={0.3,0.7,1.0} },
-            { name="Erde",       icon="Interface\\Icons\\Spell_Nature_Earthquake",      color={0.8,0.6,0.2} },
-            { name="Luft",       icon="Interface\\Icons\\Spell_Nature_Cyclone",         color={0.7,0.9,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Erde" or "Earth"),       icon="Interface\\Icons\\Spell_Nature_Earthquake",      color={0.8,0.6,0.2} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Luft" or "Air"),       icon="Interface\\Icons\\Spell_Nature_Cyclone",         color={0.7,0.9,1.0} },
             -- Normal (5-9)
-            { name="Blitz",      icon="Interface\\Icons\\Spell_Nature_Lightning",       color={1.0,0.9,0.1} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Blitz" or "Lightning"),      icon="Interface\\Icons\\Spell_Nature_Lightning",       color={1.0,0.9,0.1} },
             { name="Lava",       icon="Interface\\Icons\\Spell_Shaman_LavaBurst",       color={1.0,0.5,0.1} },
-            { name="Natur",      icon="Interface\\Icons\\Spell_Nature_Rejuvenation",    color={0.2,0.9,0.2} },
-            { name="Eis",        icon="Interface\\Icons\\Spell_Frost_FrostArmor02",     color={0.5,0.85,1.0} },
-            { name="Geist",      icon="Interface\\Icons\\Spell_Nature_SpiritWolf",      color={0.8,0.7,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Natur" or "Nature"),      icon="Interface\\Icons\\Spell_Nature_Rejuvenation",    color={0.2,0.9,0.2} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Eis" or "Ice"),        icon="Interface\\Icons\\Spell_Frost_FrostArmor02",     color={0.5,0.85,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Geist" or "Spirit"),      icon="Interface\\Icons\\Spell_Nature_SpiritWolf",      color={0.8,0.7,1.0} },
             -- Hard (10-16)
-            { name="Sturm",      icon="Interface\\Icons\\Spell_Nature_LightningOverload", color={0.6,0.8,1.0} },
-            { name="Knall",      icon="Interface\\Icons\\Spell_Nature_WispSplode",      color={0.9,1.0,0.5} },
-            { name="Donner",     icon="Interface\\Icons\\Spell_Nature_ThunderClap",     color={0.7,0.7,1.0} },
-            { name="Eis-Schock", icon="Interface\\Icons\\Spell_Frost_FrostShock",       color={0.3,0.6,1.0} },
-            { name="Flamme",     icon="Interface\\Icons\\Spell_Fire_Fireball02",        color={1.0,0.4,0.0} },
-            { name="Kette",      icon="Interface\\Icons\\Spell_Nature_ChainLightning",  color={0.9,0.9,0.3} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Sturm" or "Storm"),      icon="Interface\\Icons\\Spell_Nature_LightningOverload", color={0.6,0.8,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Knall" or "Blast"),      icon="Interface\\Icons\\Spell_Nature_WispSplode",      color={0.9,1.0,0.5} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Donner" or "Thunder"),     icon="Interface\\Icons\\Spell_Nature_ThunderClap",     color={0.7,0.7,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Eis-Schock" or "Frost Shock"), icon="Interface\\Icons\\Spell_Frost_FrostShock",       color={0.3,0.6,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Flamme" or "Flame"),     icon="Interface\\Icons\\Spell_Fire_Fireball02",        color={1.0,0.4,0.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Kette" or "Chain"),      icon="Interface\\Icons\\Spell_Nature_ChainLightning",  color={0.9,0.9,0.3} },
             { name="Totem",      icon="Interface\\Icons\\Spell_Nature_StoneSkinTotem",  color={0.6,0.5,0.3} },
         },
     },
@@ -105,27 +105,27 @@ T.THEMES = {
     -- Spec-Spell-Icons statt UI-HUD-Specialization-Atlanten (Midnight).
     -- ──────────────────────────────────────────────────────────
     lightandshadow = {
-        name = "Licht & Leere",
+        name = (ArcadiaNexus.ActiveLocale == "deDE" and "Licht & Leere" or "Light & Void"),
         symbols = {
             -- Easy (1-4) – Spell-Icons statt HUD-Atlanten (Midnight)
-            { name="Heilig-Paladin",    icon="Interface\\Icons\\Spell_Holy_HolyBolt",           color={1.0,0.9,0.3} },
-            { name="Schatten-Priester", icon="Interface\\Icons\\Spell_Shadow_ShadowWordPain",   color={0.6,0.0,0.9} },
-            { name="Gleichgewicht",     icon="Interface\\Icons\\Spell_Nature_StarFall",         color={0.5,0.5,1.0} },
-            { name="Arkan-Magier",      icon="Interface\\Icons\\Spell_Arcane_Blast",            color={0.8,0.4,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Heilig-Paladin" or "Holy Paladin"),    icon="Interface\\Icons\\Spell_Holy_HolyBolt",           color={1.0,0.9,0.3} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Schatten-Priester" or "Shadow Priest"), icon="Interface\\Icons\\Spell_Shadow_ShadowWordPain",   color={0.6,0.0,0.9} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Gleichgewicht" or "Balance"),     icon="Interface\\Icons\\Spell_Nature_StarFall",         color={0.5,0.5,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Arkan-Magier" or "Arcane Mage"),      icon="Interface\\Icons\\Spell_Arcane_Blast",            color={0.8,0.4,1.0} },
             -- Normal (5-9)
-            { name="Heilig-Priester",   icon="Interface\\Icons\\Spell_Holy_Heal",               color={1.0,1.0,0.7} },
-            { name="Heimsuchung",       icon="Interface\\Icons\\Spell_Shadow_DeathCoil",        color={0.4,0.8,0.3} },
-            { name="Frost-Magier",      icon="Interface\\Icons\\Spell_Frost_FrostBolt02",       color={0.4,0.7,1.0} },
-            { name="Feuer-Magier",      icon="Interface\\Icons\\Spell_Fire_Fireball02",         color={1.0,0.4,0.1} },
-            { name="Disziplin",         icon="Interface\\Icons\\Spell_Holy_PowerWordShield",    color={0.9,0.7,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Heilig-Priester" or "Holy Priest"),   icon="Interface\\Icons\\Spell_Holy_Heal",               color={1.0,1.0,0.7} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Heimsuchung" or "Affliction"),       icon="Interface\\Icons\\Spell_Shadow_DeathCoil",        color={0.4,0.8,0.3} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Frost-Magier" or "Frost Mage"),      icon="Interface\\Icons\\Spell_Frost_FrostBolt02",       color={0.4,0.7,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Feuer-Magier" or "Fire Mage"),      icon="Interface\\Icons\\Spell_Fire_Fireball02",         color={1.0,0.4,0.1} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Disziplin" or "Discipline"),         icon="Interface\\Icons\\Spell_Holy_PowerWordShield",    color={0.9,0.7,1.0} },
             -- Hard (10-16)
-            { name="Vergeltung",        icon="Interface\\Icons\\Spell_Holy_AuraOfLight",        color={1.0,0.6,0.1} },
-            { name="Zerstörung",        icon="Interface\\Icons\\Spell_Shadow_RainOfFire",       color={0.9,0.2,0.2} },
-            { name="Blut-DK",           icon="Interface\\Icons\\Spell_Shadow_LifeDrain",        color={0.8,0.1,0.1} },
-            { name="Frost-DK",          icon="Interface\\Icons\\Spell_Frost_FrostNova",         color={0.5,0.8,1.0} },
-            { name="Unheilig-DK",       icon="Interface\\Icons\\Spell_Shadow_Possession",       color={0.3,0.7,0.2} },
-            { name="Wiederherst.",      icon="Interface\\Icons\\Spell_Nature_HealingTouch",     color={0.2,0.9,0.4} },
-            { name="Schutz-Paladin",    icon="Interface\\Icons\\Spell_Holy_DevotionAura",       color={0.6,0.7,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Vergeltung" or "Retribution"),        icon="Interface\\Icons\\Spell_Holy_AuraOfLight",        color={1.0,0.6,0.1} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Zerstörung" or "Destruction"),        icon="Interface\\Icons\\Spell_Shadow_RainOfFire",       color={0.9,0.2,0.2} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Blut-DK" or "Blood DK"),           icon="Interface\\Icons\\Spell_Shadow_LifeDrain",        color={0.8,0.1,0.1} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Frost-DK" or "Frost DK"),          icon="Interface\\Icons\\Spell_Frost_FrostNova",         color={0.5,0.8,1.0} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Unheilig-DK" or "Unholy DK"),       icon="Interface\\Icons\\Spell_Shadow_Possession",       color={0.3,0.7,0.2} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Wiederherst." or "Restoration"),      icon="Interface\\Icons\\Spell_Nature_HealingTouch",     color={0.2,0.9,0.4} },
+            { name=(ArcadiaNexus.ActiveLocale == "deDE" and "Schutz-Paladin" or "Protection Paladin"),    icon="Interface\\Icons\\Spell_Holy_DevotionAura",       color={0.6,0.7,1.0} },
         },
     },
 }
@@ -134,9 +134,9 @@ T.THEMES = {
 -- Schwierigkeits-Konfiguration
 -- ============================================================
 T.DIFFICULTY = {
-    easy   = { grid = 2, startLen = 3, label = "Easy",   maxSpeed = 0.4 },
-    normal = { grid = 3, startLen = 3, label = "Normal", maxSpeed = 0.3 },
-    hard   = { grid = 4, startLen = 3, label = "Hard",   maxSpeed = 0.2 },
+    easy   = { grid = 2, startLen = 1, label = "Easy",   maxSpeed = 0.4 },
+    normal = { grid = 3, startLen = 1, label = "Normal", maxSpeed = 0.3 },
+    hard   = { grid = 4, startLen = 1, label = "Hard",   maxSpeed = 0.2 },
 }
 
 -- ============================================================

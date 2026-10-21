@@ -1,793 +1,407 @@
--- ============================================================
---  ArcadiaNexus
---  Games/Hangman/Renderer.lua
---  Version: 2.0.0  (Blueprint v3 Typ-3 + Background/Border/Logo)
---
---  Layout:
---    - _fieldFrame als CENTER-Anker (kein bgFile)
---    - Background / Border / Logo via CFG
---    - _leftPanel  (Runenkreis) haengt an _fieldFrame
---    - _rightPanel (Spielbereich) haengt an _fieldFrame
---    - Controls: CreateGameControlsBar "narrow"
---        Seg.1: DD Kategorie + DD Schwierigkeit
---        Seg.2: Toggle Neues Raetsel / Beenden
---    - Spielfeld erst sichtbar nach Spielstart
---    - Popup: goldener Rahmen, UI.CreateArcadiaButton
--- ============================================================
-
-ArcadiaNexus = ArcadiaNexus or {}
-ArcadiaNexus.HGM_Renderer = {}
-local R = ArcadiaNexus.HGM_Renderer
-R.state = "IDLE"
-
-local Engine   = ArcadiaNexus.HGM_Engine
-local Settings = ArcadiaNexus.HGM_Settings
-
-local RUNE_ICONS = {
-    "Interface\\Icons\\INV_Misc_Rune_01",
-    "Interface\\Icons\\INV_Misc_Rune_02",
-    "Interface\\Icons\\INV_Misc_Rune_03",
-    "Interface\\Icons\\INV_Misc_Rune_04",
-    "Interface\\Icons\\INV_Misc_Rune_05",
-    "Interface\\Icons\\INV_Misc_Rune_06",
-    "Interface\\Icons\\INV_Misc_Rune_07",
-    "Interface\\Icons\\INV_Misc_Rune_08",
-    "Interface\\Icons\\Spell_Shadow_RaiseDead",
-    "Interface\\Icons\\Spell_Deathknight_ClassSymbol",
+-- Nether Bound: direct rounds, native runes and configurable presentation.
+local A=ArcadiaNexus
+local R={state='IDLE'}; A.HGM_Renderer=R
+local E,S=A.HGM_Engine,A.HGM_Settings
+local UI=A.UI
+local function T() return A.GetLocaleTable('HANGMAN') end
+local PATH='Interface\\AddOns\\ArcadiaNexus\\Games\\Hangman\\assets\\nether_bound\\'
+-- Nether Bound: Games/Hangman/Renderer.lua
+-- Offsets: CENTER -> CENTER, relative to the respective parent.
+local CFG={
+ bg_alpha=1,
+ bg_h=520,
+ bg_ofs_x=0,
+ bg_ofs_y=0,
+ bg_w=700,
+ border_alpha=1,
+ border_h=550,
+ border_ofs_x=0,
+ border_ofs_y=7,
+ border_w=800,
+ category_text_h=32,
+ category_text_ofs_x=0,
+ category_text_ofs_y=110,
+ category_text_w=454,
+ errors_h=20,
+ errors_ofs_x=0,
+ errors_ofs_y=-130,
+ errors_w=220,
+ feedback_text_h=24,
+ feedback_text_ofs_x=0,
+ feedback_text_ofs_y=-204,
+ feedback_text_w=470,
+ field_h=550,
+ field_ofs_x=0,
+ field_ofs_y=10,
+ field_w=750,
+ hint_text_h=30.3,
+ hint_text_ofs_x=0,
+ hint_text_ofs_y=5,
+ hint_text_w=454,
+ hints_alpha=1,
+ hints_h=129.3,
+ hints_ofs_x=0,
+ hints_ofs_y=125,
+ hints_w=476,
+ keyboard_alpha=1,
+ keyboard_col_step=31,
+ keyboard_h=85,
+ keyboard_key_h=27,
+ keyboard_key_w=28,
+ keyboard_ofs_x=0,
+ keyboard_ofs_y=-183,
+ keyboard_row_step=29,
+ keyboard_w=307,
+ logo_alpha=1,
+ logo_h=280,
+ logo_ofs_x=0,
+ logo_ofs_y=0,
+ logo_w=280,
+ modelscene_alpha_end=1,
+ modelscene_alpha_start=0.15,
+ modelscene_h=128,
+ modelscene_ofs_x=0,
+ modelscene_ofs_y=5,
+ modelscene_w=106,
+ portal_alpha=1,
+ portal_h=210,
+ portal_image_h=188,
+ portal_image_ofs_x=0,
+ portal_image_ofs_y=5,
+ portal_image_w=188,
+ portal_ofs_x=0,
+ portal_ofs_y=-23.46,
+ portal_seal_h=132,
+ portal_seal_ofs_x=0,
+ portal_seal_ofs_y=5,
+ portal_seal_w=132,
+ portal_w=210,
+ rune_ofs_y=5,
+ rune_radius=92,
+ rune_size=25,
+ solution_alpha=1,
+ solution_col_step=18,
+ solution_h=84,
+ solution_letter_h=26,
+ solution_letter_w=17,
+ solution_ofs_x=0,
+ solution_ofs_y=200,
+ solution_row_step=30,
+ solution_text_h=84,
+ solution_text_ofs_x=0,
+ solution_text_ofs_y=-15,
+ solution_text_w=476,
+ solution_w=476,
+ wrong_text_h=28,
+ wrong_text_ofs_x=0,
+ wrong_text_ofs_y=-20,
+ wrong_text_w=454,
 }
-local RUNE_COLOR_START = {r=0.3, g=0.0, b=0.5}
-local RUNE_COLOR_END   = {r=1.0, g=0.1, b=0.0}
-
-local KEYBOARD_ROWS = {
-    {"Q","W","E","R","T","Y","U","I","O","P"},
-    {"A","S","D","F","G","H","J","K","L"},
-    {"Z","X","C","V","B","N","M"},
+-- Text defaults inherit the current, manually tuned HUD geometry. Exports include
+-- these keys; explicit values in CFG take precedence on subsequent reloads.
+local textDefaults={
+ solution_text_w=CFG.solution_w,solution_text_h=CFG.solution_h,solution_text_ofs_x=0,solution_text_ofs_y=0,
+ category_text_w=CFG.hints_w-22,category_text_h=32,category_text_ofs_x=0,category_text_ofs_y=CFG.hints_h/2-26,
+ hint_text_w=CFG.hints_w-22,hint_text_h=math.max(1,CFG.hints_h-99),hint_text_ofs_x=0,hint_text_ofs_y=5,
+ wrong_text_w=CFG.hints_w-22,wrong_text_h=28,wrong_text_ofs_x=0,wrong_text_ofs_y=-CFG.hints_h/2+26,
+ feedback_text_w=470,feedback_text_h=24,feedback_text_ofs_x=0,feedback_text_ofs_y=-204,
 }
-local BTN_SIZE = 28
-local BTN_GAP  = 3
-
--- ============================================================
--- CFG – alle Layout-Konstanten zentral, unabhaengig positionierbar
--- ============================================================
-local CFG = {
-    -- _fieldFrame (gemeinsamer CENTER-Anker, kein bgFile)
-    field_w      = 500,
-    field_h      = 400,
-    field_ofs_x  = 0,
-    field_ofs_y  = 10,
-
-    -- Hintergrund-Textur (relativ zu _fieldFrame CENTER)
-    bg_w         = 790,
-    bg_h         = 550,
-    bg_ofs_x     = 0,
-    bg_ofs_y     = 10,
-    bg_alpha     = 1.0,
-
-    -- Border-Textur (relativ zu _fieldFrame CENTER)
-    border_w     = 790,
-    border_h     = 545,
-    border_ofs_x = 0,
-    border_ofs_y = 5,
-
-    -- Logo-Textur (relativ zu _fieldFrame CENTER)
-    logo_w       = 280,
-    logo_h       = 220,
-    logo_ofs_x   = 0,
-    logo_ofs_y   = 50,
-
-    -- Linkes Panel (Runenkreis) relativ zu _fieldFrame TOPLEFT
-    left_w       = 190,   -- ca. 42% von field_w
-    left_ofs_x   = 145,
-    left_ofs_y   = 15,
-
-    -- Runenkreis-Radius-Faktor (relativ zu left_w)
-    circle_r_fac = 0.32,
-    circle_ofs_y = 10,   -- Versatz Mittelpunkt Y
-
-    -- Rechtes Panel relativ zu _fieldFrame TOPLEFT
-    right_ofs_x  = 200,   -- = left_w + 6px Luecke
-    right_pad_r  = 10,
-
-    -- Controls-Widgets
-    dd_w         = 120,
-    btn_w        = 144,
-    btn_h        = 32,
-
-    -- Kategorie-Anzeige (relativ zu gameArea TOPLEFT)
-    cat_ofs_x    = 0,     -- X-Versatz vom gameArea TOPLEFT
-    cat_ofs_y    = 0,   -- Y-Versatz vom gameArea TOPLEFT
-
-    -- Hinweis-Box (relativ zu gameArea TOPLEFT)
-    hint_w       = 260,   -- Breite der Hinweis-Box
-    hint_h       = 52,    -- Hoehe der Hinweis-Box
-    hint_ofs_x   = -90,     -- X-Versatz vom gameArea CENTER
-    hint_ofs_y   = -260,  -- Y-Versatz vom gameArea TOP
-
-    -- Virtuelle Tastatur (relativ zu gameArea BOTTOM)
-    kb_w         = 290,   -- Breite des Tastatur-Containers
-    kb_h         = 100,   -- Hoehe des Tastatur-Containers (3 Zeilen BTN_SIZE+BTN_GAP)
-    kb_ofs_x     = -90,     -- X-Versatz vom gameArea BOTTOM CENTER
-    kb_ofs_y     = -15,     -- Y-Versatz (Abstand vom unteren Rand)
-
-    -- Portal-Titel + Fehler-Label (gemeinsamer Container, relativ zu leftPanel TOP)
-    lbl_w        = 200,   -- Breite des Label-Containers
-    lbl_h        = 50,    -- Hoehe des Label-Containers (Titel + Fehler-Label)
-    lbl_ofs_x    = 0,     -- X-Versatz vom leftPanel CENTER
-    lbl_ofs_y    = -70,   -- Y-Versatz vom leftPanel TOP
-
-    -- Popup (GameOver)
-    ov_w         = 380,
-    ov_h         = 210,
-    ov_ofs_x     = 0,
-    ov_ofs_y     = 0,
-    ov_title_y   = 60,
-    ov_word_gap  = -12,
-    ov_stats_gap = -10,
-    ov_btn_gap   = -18,
-    ov_btn_w     = 140,
-    ov_btn_h     = 30,
-    ov_btn_space = 80,    -- Abstand der 2 Buttons von Mitte
-}
-
--- ============================================================
--- ASSET-PFADE
--- ============================================================
-local HGM_ASSETS = {
-    bg     = "Interface\\AddOns\\ArcadiaNexus\\Games\\Hangman\\assets\\background\\bg_hgm",
-    border = "Interface\\AddOns\\ArcadiaNexus\\Games\\Hangman\\assets\\border\\border_hgm",
-    logo   = "Interface\\AddOns\\ArcadiaNexus\\Games\\Hangman\\assets\\logo\\logo_hgm",
-}
-
--- ============================================================
--- INIT
--- ============================================================
+for k,v in pairs(textDefaults) do if CFG[k]==nil then CFG[k]=v end end
+R.CFG=CFG
+local function Texture(parent,path,w,h,x,y,layer)
+ local t=parent:CreateTexture(nil,layer or 'BACKGROUND'); t:SetTexture(PATH..path); t:SetSize(w,h); t:SetPoint('CENTER',parent,'CENTER',x or 0,y or 0); return t
+end
+local function Label(parent,text,w,h,x,y,font)
+ local f=parent:CreateFontString(nil,'OVERLAY',font or 'GameFontNormal'); f:SetSize(w,h); f:SetPoint('CENTER',parent,'CENTER',x,y)
+ f:SetText(text or ''); f:SetTextColor(.88,.94,.85); return f
+end
 function R:Init()
-    if self._initialized then return end
-    self._initialized = true
-
-    self:_CreateMainFrame()
-    self:_CreateFieldFrame()
-    self:_CreateBackground()
-    self:_CreateBorderFrame()
-    self:_CreateLogo()
-    self:_CreateLeftPanel()
-    self:_CreateRightPanel()
-    self:_CreateKeyboardInput()
-    self:_CreateControls()
-    self:EnterIdleState()
+ if self.frame then return end
+ local panel=_G.ArcadiaNexusUI and _G.ArcadiaNexusUI.GetGamesPanel and _G.ArcadiaNexusUI.GetGamesPanel(); if not panel then return end
+ local vp=UI.CreateGameViewport(panel,{outerName='ArcadiaNexus_HGM_Container',designW=600,designH=498})
+ self.frame=vp.outer; self._canvas=vp.canvas; A._hangmanContainer=self.frame; self.frame:Hide()
+ local field=CreateFrame('Frame',nil,self._canvas); field:SetSize(CFG.field_w,CFG.field_h)
+ field:SetPoint('CENTER',self._canvas,'CENTER',CFG.field_ofs_x,CFG.field_ofs_y); self._fieldFrame=field
+ self._bg=Texture(field,'bg_a_v1',CFG.bg_w,CFG.bg_h,CFG.bg_ofs_x,CFG.bg_ofs_y); self._bg:SetAlpha(CFG.bg_alpha)
+ self._border=Texture(field,'border_a_v1',CFG.border_w,CFG.border_h,CFG.border_ofs_x,CFG.border_ofs_y,'BORDER'); self._border:SetAlpha(CFG.border_alpha)
+ self._logo=Texture(field,'logo_a_v1',CFG.logo_w,CFG.logo_h,CFG.logo_ofs_x,CFG.logo_ofs_y,'ARTWORK'); self._logo:SetAlpha(CFG.logo_alpha)
+ local play=CreateFrame('Frame',nil,field); play:SetAllPoints(field); self._play=play
+ local solution=CreateFrame('Frame',nil,play); self._solution=solution
+ solution:SetSize(CFG.solution_w,CFG.solution_h); solution:SetPoint('CENTER',play,'CENTER',CFG.solution_ofs_x,CFG.solution_ofs_y); solution:SetAlpha(CFG.solution_alpha)
+ self._solutionBG=Texture(solution,'hud_a_v1',CFG.solution_w,CFG.solution_h,0,0)
+ self._solutionText=CreateFrame('Frame',nil,solution)
+ self._solutionText:SetSize(CFG.solution_text_w,CFG.solution_text_h)
+ self._solutionText:SetPoint('CENTER',solution,'CENTER',CFG.solution_text_ofs_x,CFG.solution_text_ofs_y)
+ self._letters={}
+ -- Preallocate the catalog's maximum. Rendering never creates additional frames.
+ local max=0; for _,locale in ipairs({'deDE','enUS'}) do for _,id in ipairs(A.HGM_Words:GetIds()) do max=math.max(max,#A.HGM_Words:GetLocalizedWord(id,locale)) end end
+ for i=1,max do
+  local slot=CreateFrame('Frame',nil,self._solutionText); slot:SetSize(CFG.solution_letter_w,CFG.solution_letter_h)
+  slot.text=Label(slot,'',CFG.solution_letter_w,CFG.solution_letter_h-3,0,1,'GameFontNormalLarge')
+  slot.line=slot:CreateTexture(nil,'BACKGROUND'); slot.line:SetColorTexture(.48,.65,.38,.9); slot.line:SetSize(CFG.solution_letter_w-2,2); slot.line:SetPoint('BOTTOM',0,0)
+  self._letters[i]=slot
+ end
+ self._portalHolder=CreateFrame('Frame',nil,play); self._portalHolder:SetSize(CFG.portal_w,CFG.portal_h); self._portalHolder:SetPoint('CENTER',play,'CENTER',CFG.portal_ofs_x,CFG.portal_ofs_y); self._portalHolder:SetAlpha(CFG.portal_alpha)
+ self._portal=Texture(self._portalHolder,'portal_a_v1',CFG.portal_image_w,CFG.portal_image_h,CFG.portal_image_ofs_x,CFG.portal_image_ofs_y,'ARTWORK')
+ self._pet=A.HGM_PetScene.Create(self._portalHolder,CFG.modelscene_w,CFG.modelscene_h,'game'); self._pet.holder:SetPoint('CENTER',self._portalHolder,'CENTER',CFG.modelscene_ofs_x,CFG.modelscene_ofs_y)
+ -- A texture on the portal parent cannot cover a child ModelScene reliably.
+ self._sealLayer=CreateFrame('Frame',nil,self._portalHolder); self._sealLayer:SetAllPoints(self._portalHolder)
+ self._sealLayer:SetFrameLevel(self._pet.scene and self._pet.scene:GetFrameLevel()+1 or self._pet.holder:GetFrameLevel()+2)
+ self._seal=Texture(self._sealLayer,'seal_a_v1',CFG.portal_seal_w,CFG.portal_seal_h,CFG.portal_seal_ofs_x,CFG.portal_seal_ofs_y,'OVERLAY'); self._seal:Hide()
+ self._runes={}
+ for i=1,8 do
+  local f=CreateFrame('Frame',nil,self._portalHolder); f:SetSize(CFG.rune_size,CFG.rune_size)
+  f.tex=f:CreateTexture(nil,'OVERLAY'); f.tex:SetAllPoints(f)
+  f.marker=Label(f,'',CFG.rune_size,14,0,-CFG.rune_size*.64,'GameFontNormalSmall'); self._runes[i]=f
+ end
+ self._errorText=Label(play,'',CFG.errors_w,CFG.errors_h,CFG.errors_ofs_x,CFG.errors_ofs_y,'GameFontNormalSmall')
+ local hints=CreateFrame('Frame',nil,play); self._hints=hints
+ hints:SetSize(CFG.hints_w,CFG.hints_h); hints:SetPoint('CENTER',play,'CENTER',CFG.hints_ofs_x,CFG.hints_ofs_y); hints:SetAlpha(CFG.hints_alpha)
+ self._hintsBG=Texture(hints,'hud_a_v1',CFG.hints_w,CFG.hints_h,0,0)
+ self._category=Label(hints,'',CFG.category_text_w,CFG.category_text_h,CFG.category_text_ofs_x,CFG.category_text_ofs_y,'GameFontNormalSmall')
+ self._hint=Label(hints,'',CFG.hint_text_w,CFG.hint_text_h,CFG.hint_text_ofs_x,CFG.hint_text_ofs_y,'GameFontNormal'); self._hint:SetJustifyV('TOP')
+ self._status=Label(hints,'',CFG.wrong_text_w,CFG.wrong_text_h,CFG.wrong_text_ofs_x,CFG.wrong_text_ofs_y,'GameFontNormalSmall')
+ self._keyboard=CreateFrame('Frame',nil,play); self._keyboard:SetSize(CFG.keyboard_w,CFG.keyboard_h)
+ self._keyboard:SetPoint('CENTER',play,'CENTER',CFG.keyboard_ofs_x,CFG.keyboard_ofs_y); self._keyboard:SetAlpha(CFG.keyboard_alpha)
+ self._keys={}
+ for letter in ('ABCDEFGHIJKLMNOPQRSTUVWXYZ'):gmatch('.') do
+  local key=letter; local btn=UI.CreateArcadiaButton(self._keyboard,key,CFG.keyboard_key_w,CFG.keyboard_key_h)
+  btn:SetScript('OnClick',function() E:GuessLetter(key) end); self._keys[key]=btn
+ end
+ self:_LayoutKeyboard()
+ self._feedback=Label(field,'',CFG.feedback_text_w,CFG.feedback_text_h,CFG.feedback_text_ofs_x,CFG.feedback_text_ofs_y,'GameFontNormalSmall')
+ self._loop=A.GameLoop.Create('ArcadiaNexus_HGM_PortalLoop',self.frame)
+ self._resultLoop=A.GameLoop.Create('ArcadiaNexus_HGM_SealLoop',self.frame)
+ self:_CreateControls()
+ self.frame:EnableKeyboard(true)
+ self.frame:SetScript('OnKeyDown',function(f,key)
+  local focus=GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+  local owns=E.state=='PLAYING' and self.frame:IsShown() and A.GameSession:IsSession(E,E._sessionId)
+  if focus or not owns then f:SetPropagateKeyboardInput(true); return end
+  if key=='ESCAPE' then f:SetPropagateKeyboardInput(false); E:StopGame()
+  elseif type(key)=='string' and key:match('^[a-zA-Z]$') then f:SetPropagateKeyboardInput(false); E:GuessLetter(key)
+  else f:SetPropagateKeyboardInput(true) end
+ end)
+ self.frame:SetPropagateKeyboardInput(true)
+ self.frame:SetScript('OnHide',function()
+  if A.HGM_DevLayout then A.HGM_DevLayout:Disable() end
+  self:_StopVisual(); A.GameSession:HandleRendererHide('HANGMAN',E,function(engine) engine:SaveAndPause() end)
+ end)
+ self:EnterIdleState()
 end
-
--- ============================================================
--- MAIN FRAME
--- ============================================================
-function R:_CreateMainFrame()
-    local gamesPanel = _G.ArcadiaNexusUI and _G.ArcadiaNexusUI.GetGamesPanel
-        and _G.ArcadiaNexusUI.GetGamesPanel()
-    if not gamesPanel then return end
-
-    local viewport = ArcadiaNexus.UI.CreateGameViewport(gamesPanel, {
-        outerName = "ArcadiaNexus_HGM_Container",
-        designW   = 600,
-        designH   = 498,
-    })
-    local f = viewport.outer
-    f:Hide()
-    self.frame = f
-    self._canvas = viewport.canvas
-    if _G.ArcadiaNexus then _G.ArcadiaNexus._hangmanContainer = f end
-
-    f:SetScript("OnHide", function()
-        ArcadiaNexus.GameSession:HandleRendererHide("HANGMAN", ArcadiaNexus.HGM_Engine, function(E)
-            E:StopGame()
-        end)
-    end)
+-- Client locale determines key positions; addon text language does not.
+function R:_LayoutKeyboard()
+ local locale=GetLocale and GetLocale() or 'enUS'
+ local layouts={deDE={'QWERTZUIOP','ASDFGHJKL','YXCVBNM'},frFR={'AZERTYUIOP','QSDFGHJKLM','WXCVBN'}}
+ local rows=layouts[locale] or {'QWERTYUIOP','ASDFGHJKL','ZXCVBNM'}
+ for row,letters in ipairs(rows) do for col=1,#letters do
+  local btn=self._keys[letters:sub(col,col)]; btn:ClearAllPoints()
+  btn:SetPoint('CENTER',self._keyboard,'CENTER',(col-(#letters+1)/2)*CFG.keyboard_col_step,CFG.keyboard_h/2-CFG.keyboard_key_h/2-(row-1)*CFG.keyboard_row_step)
+ end end
 end
-
--- ============================================================
--- FIELD FRAME (CENTER-Anker, kein bgFile)
--- ============================================================
-function R:_CreateFieldFrame()
-    local canvas = self._canvas
-    local ff = CreateFrame("Frame", nil, canvas)
-    ff:SetSize(CFG.field_w, CFG.field_h)
-    ff:SetPoint("CENTER", canvas, "CENTER", CFG.field_ofs_x, CFG.field_ofs_y)
-    self._fieldFrame = ff
-end
-
--- ============================================================
--- BACKGROUND
--- ============================================================
-function R:_CreateBackground()
-    local ff  = self._fieldFrame
-    local tex = ff:CreateTexture(nil, "BACKGROUND", nil, -1)
-    tex:SetTexture(HGM_ASSETS.bg)
-    tex:SetSize(CFG.bg_w, CFG.bg_h)
-    tex:SetPoint("CENTER", ff, "CENTER", CFG.bg_ofs_x, CFG.bg_ofs_y)
-    tex:SetAlpha(CFG.bg_alpha)
-    self._bgTex = tex
-end
-
--- ============================================================
--- BORDER FRAME
--- ============================================================
-function R:_CreateBorderFrame()
-    local ff          = self._fieldFrame
-    local borderFrame = CreateFrame("Frame", nil, self._canvas)
-    borderFrame:SetSize(CFG.border_w, CFG.border_h)
-    borderFrame:SetPoint("CENTER", ff, "CENTER", CFG.border_ofs_x, CFG.border_ofs_y)
-    borderFrame:SetFrameLevel(ff:GetFrameLevel() + 10)
-
-    local tex = borderFrame:CreateTexture(nil, "OVERLAY", nil, 1)
-    tex:SetTexture(HGM_ASSETS.border)
-    tex:SetAllPoints(borderFrame)
-
-    self._borderFrame = borderFrame
-    self._borderTex   = tex
-end
-
--- ============================================================
--- LOGO
--- ============================================================
-function R:_CreateLogo()
-    local UI = ArcadiaNexus.UI
-    self._logoTex = UI.CreateGameLogo(
-        self._fieldFrame,
-        HGM_ASSETS.logo,
-        { w = CFG.logo_w, h = CFG.logo_h, x = CFG.logo_ofs_x, y = CFG.logo_ofs_y }
-    )
-end
-
--- ============================================================
--- LINKES PANEL (Runenkreis)
--- ============================================================
-function R:_CreateLeftPanel()
-    local ff = self._fieldFrame
-
-    local leftPanel = CreateFrame("Frame", nil, ff)
-    leftPanel:SetSize(CFG.left_w, CFG.field_h)
-    leftPanel:SetPoint("TOPLEFT", ff, "TOPLEFT", CFG.left_ofs_x, CFG.left_ofs_y)
-    self._leftPanel = leftPanel
-
-    -- Portal-Titel + Fehler-Label: gemeinsamer Container
-    local lblContainer = CreateFrame("Frame", nil, leftPanel)
-    lblContainer:SetSize(CFG.lbl_w, CFG.lbl_h)
-    lblContainer:SetPoint("TOP", leftPanel, "TOP", CFG.lbl_ofs_x, CFG.lbl_ofs_y)
-    self._lblContainer = lblContainer
-
-    local portalTitle = lblContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    portalTitle:SetPoint("TOP", lblContainer, "TOP", 0, 0)
-    portalTitle:SetWidth(CFG.lbl_w)
-    portalTitle:SetText(ArcadiaNexus.GetLocaleTable("HANGMAN")["portal_title"])
-    portalTitle:SetFont("Fonts\\MORPHEUS.TTF", 15, "OUTLINE")
-    portalTitle:SetJustifyH("CENTER")
-    self._portalTitle = portalTitle
-
-    local errorLabel = lblContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    errorLabel:SetPoint("TOP", portalTitle, "BOTTOM", 0, -5)
-    errorLabel:SetWidth(CFG.lbl_w)
-    errorLabel:SetTextColor(0.8, 0.6, 0.2)
-    errorLabel:SetJustifyH("CENTER")
-    self._errorLabel = errorLabel
-
-    -- Runenkreis: 10 Frames ohne feste Winkelposition (wird in _resetRunes gesetzt)
-    local circleR = CFG.left_w * CFG.circle_r_fac
-    self._runeFrames = {}
-    for i = 1, 10 do
-        local runeFrame = CreateFrame("Frame", nil, leftPanel, "BackdropTemplate")
-        runeFrame:SetSize(44, 44)
-        runeFrame:SetPoint("CENTER", leftPanel, "CENTER", 0, CFG.circle_ofs_y)
-        runeFrame:SetBackdrop({
-            bgFile   = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            tile = false, edgeSize = 1,
-            insets = { left=1, right=1, top=1, bottom=1 },
-        })
-        runeFrame:SetBackdropColor(0.05, 0.0, 0.1, 0.9)
-        runeFrame:SetBackdropBorderColor(0.3, 0.0, 0.5, 0.6)
-
-        local runeTex = runeFrame:CreateTexture(nil, "ARTWORK")
-        runeTex:SetPoint("TOPLEFT",     runeFrame, "TOPLEFT",     2, -2)
-        runeTex:SetPoint("BOTTOMRIGHT", runeFrame, "BOTTOMRIGHT", -2,  2)
-        runeTex:SetTexture(RUNE_ICONS[i] or RUNE_ICONS[1])
-        runeTex:SetAlpha(0.0)
-        runeFrame._tex = runeTex
-
-        self._runeFrames[i] = runeFrame
-    end
-
-    -- Portal-Kern
-    local coreFrame = CreateFrame("Frame", nil, leftPanel, "BackdropTemplate")
-    coreFrame:SetSize(56, 56)
-    coreFrame:SetPoint("CENTER", leftPanel, "CENTER", 0, CFG.circle_ofs_y)
-    coreFrame:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        tile = false, edgeSize = 2,
-        insets = { left=2, right=2, top=2, bottom=2 },
-    })
-    coreFrame:SetBackdropColor(0.1, 0.0, 0.2, 0.95)
-    coreFrame:SetBackdropBorderColor(0.6, 0.2, 1.0, 0.8)
-
-    local coreTex = coreFrame:CreateTexture(nil, "ARTWORK")
-    coreTex:SetPoint("TOPLEFT",     coreFrame, "TOPLEFT",     3, -3)
-    coreTex:SetPoint("BOTTOMRIGHT", coreFrame, "BOTTOMRIGHT", -3,  3)
-    coreTex:SetTexture("Interface\\Icons\\Spell_Shadow_SummonVoidWalker")
-    coreTex:SetAlpha(0.7)
-    self._coreFrame = coreFrame
-    self._coreTex   = coreTex
-
-    local victoryTex = coreFrame:CreateTexture(nil, "OVERLAY")
-    victoryTex:SetAllPoints(coreTex)
-    victoryTex:SetTexture("Interface\\Icons\\Achievement_GuildPerk_EverybodysFriend")
-    victoryTex:SetAlpha(0.0)
-    self._victoryTex = victoryTex
-end
-
--- ============================================================
--- RECHTES PANEL (Spielbereich)
--- ============================================================
-function R:_CreateRightPanel()
-    local ff    = self._fieldFrame
-    local rightW = CFG.field_w - CFG.right_ofs_x - CFG.right_pad_r
-
-    local rightPanel = CreateFrame("Frame", nil, ff)
-    rightPanel:SetPoint("TOPLEFT",    ff, "TOPLEFT",    CFG.right_ofs_x, 0)
-    rightPanel:SetPoint("BOTTOMRIGHT",ff, "BOTTOMRIGHT", -CFG.right_pad_r, 0)
-    self._rightPanel = rightPanel
-
-    -- Spielbereich (gameArea) – innerhalb rightPanel, unterhalb Controls
-    local gameArea = CreateFrame("Frame", nil, rightPanel)
-    gameArea:SetPoint("TOPLEFT",    rightPanel, "TOPLEFT",    0,  0)
-    gameArea:SetPoint("BOTTOMRIGHT",rightPanel, "BOTTOMRIGHT",0,  0)
-    self._gameArea = gameArea
-
-    -- Kategorie-Anzeige (relativ zu gameArea TOPLEFT via CFG.cat_*)
-    local catDisplay = gameArea:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    catDisplay:SetPoint("TOPLEFT", gameArea, "TOPLEFT", CFG.cat_ofs_x, CFG.cat_ofs_y)
-    catDisplay:SetTextColor(0.6, 0.8, 1.0)
-    catDisplay:SetText("Kategorie: -")
-    self._catDisplay = catDisplay
-
-    -- Wort-Display
-    local wordDisplay = gameArea:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    wordDisplay:SetPoint("TOP", catDisplay, "BOTTOM", 0, -8)
-    wordDisplay:SetWidth(rightW - 10)
-    wordDisplay:SetFont("Fonts\\MORPHEUS.TTF", 22, "OUTLINE")
-    wordDisplay:SetTextColor(0.95, 0.85, 0.4)
-    wordDisplay:SetText("")
-    wordDisplay:SetJustifyH("CENTER")
-    self._wordDisplay = wordDisplay
-
-    -- Trennlinie
-    local sep = gameArea:CreateTexture(nil, "ARTWORK")
-    sep:SetHeight(1)
-    sep:SetPoint("TOPLEFT",  wordDisplay, "BOTTOMLEFT",  0, -8)
-    sep:SetPoint("TOPRIGHT", wordDisplay, "BOTTOMRIGHT", 0, -8)
-    sep:SetTexture("Interface\\Buttons\\WHITE8X8")
-    sep:SetVertexColor(0.4, 0.2, 0.7, 0.6)
-
-    -- Hinweis-Box (relativ zu gameArea TOP via CFG.hint_*, unabhaengig von catDisplay/sep)
-    local hintBox = CreateFrame("Frame", nil, gameArea, "BackdropTemplate")
-    hintBox:SetSize(CFG.hint_w, CFG.hint_h)
-    hintBox:SetPoint("TOP", gameArea, "TOP", CFG.hint_ofs_x, CFG.hint_ofs_y)
-    hintBox:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        tile = false, edgeSize = 1,
-        insets = { left=1, right=1, top=1, bottom=1 },
-    })
-    hintBox:SetBackdropColor(0.08, 0.04, 0.15, 0.9)
-    hintBox:SetBackdropBorderColor(0.5, 0.3, 0.8, 0.5)
-
-    local hintIcon = hintBox:CreateTexture(nil, "ARTWORK")
-    hintIcon:SetSize(24, 24)
-    hintIcon:SetPoint("TOPLEFT", hintBox, "TOPLEFT", 6, -6)
-    hintIcon:SetTexture("Interface\\Icons\\INV_Misc_Note_02")
-
-    local hintTitle = hintBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    hintTitle:SetPoint("TOPLEFT", hintBox, "TOPLEFT", 36, -8)
-    hintTitle:SetText(ArcadiaNexus.GetLocaleTable("HANGMAN")["hint_label"])
-
-    local hintText = hintBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    hintText:SetPoint("TOPLEFT",  hintTitle, "BOTTOMLEFT", 0, -2)
-    hintText:SetPoint("TOPRIGHT", hintBox,   "TOPRIGHT",  -6, -8)
-    hintText:SetJustifyH("LEFT")
-    hintText:SetWordWrap(true)
-    hintText:SetTextColor(0.85, 0.75, 0.95)
-    self._hintText = hintText
-
-    -- Tastatur (zentriert via CFG.kb_*)
-    local kbAnchor = CreateFrame("Frame", nil, gameArea)
-    kbAnchor:SetSize(CFG.kb_w, CFG.kb_h)
-    kbAnchor:SetPoint("BOTTOM", gameArea, "BOTTOM", CFG.kb_ofs_x, CFG.kb_ofs_y)
-    self._kbAnchor = kbAnchor
-
-    self._letterBtns = {}
-    for row = 1, #KEYBOARD_ROWS do
-        local letters  = KEYBOARD_ROWS[row]
-        local rowWidth = #letters * BTN_SIZE + (#letters - 1) * BTN_GAP
-        local startX   = math.floor((CFG.kb_w - rowWidth) / 2)
-        for col = 1, #letters do
-            local letter = letters[col]
-            local bx = startX + (col - 1) * (BTN_SIZE + BTN_GAP)
-            local by = -(row - 1) * (BTN_SIZE + BTN_GAP)
-
-            local btn = CreateFrame("Button", nil, kbAnchor, "BackdropTemplate")
-            btn:SetSize(BTN_SIZE, BTN_SIZE)
-            btn:SetPoint("TOPLEFT", kbAnchor, "TOPLEFT", bx, by)
-            btn:SetBackdrop({
-                bgFile   = "Interface\\Buttons\\WHITE8X8",
-                edgeFile = "Interface\\Buttons\\WHITE8X8",
-                tile = false, edgeSize = 1,
-                insets = { left=1, right=1, top=1, bottom=1 },
-            })
-            btn:SetBackdropColor(0.12, 0.06, 0.22, 0.95)
-            btn:SetBackdropBorderColor(0.5, 0.3, 0.8, 0.7)
-
-            local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            lbl:SetAllPoints()
-            lbl:SetText(letter)
-            lbl:SetTextColor(0.9, 0.8, 1.0)
-            btn._label = lbl
-
-            local cap = letter
-            btn:SetScript("OnClick", function() Engine:GuessLetter(cap) end)
-            btn:SetScript("OnEnter", function(s) if not s._used then s:SetBackdropBorderColor(0.8, 0.5, 1.0, 1.0) end end)
-            btn:SetScript("OnLeave", function(s) if not s._used then s:SetBackdropBorderColor(0.5, 0.3, 0.8, 0.7) end end)
-            self._letterBtns[letter] = btn
-        end
-    end
-
-    -- Fehlversuche-Header + Text (über Tastatur)
-    local wrongHeader = gameArea:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    wrongHeader:SetPoint("BOTTOM", kbAnchor, "TOP", 0, 6)
-    wrongHeader:SetWidth(rightW)
-    wrongHeader:SetJustifyH("CENTER")
-    wrongHeader:SetText("")
-    self._wrongHeader = wrongHeader
-
-    local wrongText = gameArea:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    wrongText:SetPoint("BOTTOM", wrongHeader, "TOP", 0, 2)
-    wrongText:SetWidth(rightW)
-    wrongText:SetJustifyH("CENTER")
-    wrongText:SetTextColor(1.0, 0.3, 0.3)
-    wrongText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
-    wrongText:SetText("")
-    self._wrongText = wrongText
-end
-
--- ============================================================
--- KEYBOARD INPUT FRAME
--- ============================================================
-function R:_CreateKeyboardInput()
-    local f = self.frame
-    local kf = CreateFrame("Frame", nil, f)
-    kf:SetAllPoints(f)
-    kf:EnableKeyboard(false)
-    kf:SetPropagateKeyboardInput(false)
-    kf:SetScript("OnKeyDown", function(_, key)
-        if #key == 1 then
-            local upper = string.upper(key)
-            if upper:match("[A-Z]") then Engine:GuessLetter(upper) end
-        end
-    end)
-    self._keyFrame = kf
-end
-
--- ============================================================
--- CONTROLS – CreateGameControlsBar "narrow"
--- DD Kategorie + DD Schwierigkeit in Segment 1 / Start in Segment 2
--- ============================================================
 function R:_CreateControls()
-    local L  = ArcadiaNexus.GetLocaleTable("HANGMAN")
-    local UI = ArcadiaNexus.UI
-
-    local bar = UI.CreateGameControlsBar(self.frame, "narrow")
-    local cf = bar.frame
-    self._controlsFrame = cf
-
-    -- Segment 1: Kategorie + Schwierigkeit nebeneinander
-    local _cats   = ArcadiaNexus.HGM_Logic:GetCategories()
-    local catOpts = {}
-    for _, cat in ipairs(_cats) do
-        catOpts[#catOpts + 1] = { key = cat.id, label = cat.label }
-    end
-    local DIFFICULTIES = {
-        { key = "Easy",   label = L["diff_easy"]   },
-        { key = "Normal", label = L["diff_normal"]  },
-        { key = "Hard",   label = L["diff_hard"]    },
-    }
-
-    local ddGap = 10
-    local pair = CreateFrame("Frame", nil, cf)
-    pair:SetSize(CFG.dd_w * 2 + ddGap, CFG.btn_h)
-    pair:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
-
-    local ddCatAnchor = CreateFrame("Frame", nil, pair)
-    ddCatAnchor:SetSize(CFG.dd_w, CFG.btn_h)
-    ddCatAnchor:SetPoint("LEFT", pair, "LEFT", 0, 0)
-    UI.CreateSimpleDropdown(ddCatAnchor, 0, 0, CFG.dd_w, "", catOpts,
-        function() return Settings:Get("category") end,
-        function(value) Settings:Set("category", value) end
-    )
-
-    local ddDiffAnchor = CreateFrame("Frame", nil, pair)
-    ddDiffAnchor:SetSize(CFG.dd_w, CFG.btn_h)
-    ddDiffAnchor:SetPoint("RIGHT", pair, "RIGHT", 0, 0)
-    UI.CreateSimpleDropdown(ddDiffAnchor, 0, 0, CFG.dd_w, "", DIFFICULTIES,
-        function() return Settings:Get("difficulty") end,
-        function(value) Settings:Set("difficulty", value) end
-    )
-
-    -- Segment 2: Toggle-Button
-    local startBtn = UI.CreateArcadiaButton(cf, L["btn_start"], CFG.btn_w, CFG.btn_h)
-    startBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
-    startBtn:SetScript("OnClick", function()
-        local Eng = ArcadiaNexus.HGM_Engine
-        if not Eng then return end
-        if R.state == "PLAYING" then
-            ArcadiaNexus.UI.HideResultDialog(R._fieldFrame)
-            Eng:StopGame()
-        else
-            Eng:StartGame()
-        end
-    end)
-    self._startBtn = startBtn
+ local bar=UI.CreateGameControlsBar(self.frame,'narrow'); local cf=bar.frame
+ local pair=CreateFrame('Frame',nil,cf); pair:SetSize(250,32); pair:SetPoint('CENTER',cf,'CENTER',bar.segX[1],bar.y.dropdownOfs)
+ local cats={}; for _,cat in ipairs(A.HGM_Logic:GetCategories()) do cats[#cats+1]={key=cat.id,label=cat.label} end
+ self._categoryDD=UI.CreateSimpleDropdown(pair,0,0,120,'',cats,function() return S:Get('category') end,function(v) S:Set('category',v) end)
+ local anchor=CreateFrame('Frame',nil,pair); anchor:SetSize(120,32); anchor:SetPoint('LEFT',pair,'LEFT',130,0)
+ local opts={}; for _,d in ipairs({'easy','normal','hard'}) do opts[#opts+1]={key=d,label=T()['diff_'..d]} end
+ self._difficultyDD=UI.CreateSimpleDropdown(anchor,0,0,120,'',opts,function() return S:Get('difficulty') end,function(v) S:Set('difficulty',v) end)
+ local btn=UI.CreateArcadiaButton(cf,T().btn_start,144,32); btn:SetPoint('BOTTOM',cf,'BOTTOM',bar.segX[2],bar.y.button)
+ btn:SetScript('OnClick',function() if E.state=='RESULT_PENDING' then E:RetryResult() elseif E.state=='PLAYING' then E:StopGame() else E:StartGame() end end)
+ self._startBtn=btn
 end
-
--- ============================================================
--- HILFSFUNKTIONEN
--- ============================================================
-function R:_resetKeyboard()
-    if not self._letterBtns then return end
-    for _, btn in pairs(self._letterBtns) do
-        btn._used = false
-        btn:SetBackdropColor(0.12, 0.06, 0.22, 0.95)
-        btn:SetBackdropBorderColor(0.5, 0.3, 0.8, 0.7)
-        btn._label:SetTextColor(0.9, 0.8, 1.0)
-        btn:Enable()
-    end
+function R:_UpdateControlLabels()
+ if not self.frame then return end
+ local unlocked=not E:IsConfigLocked()
+ for _,dd in ipairs({self._categoryDD,self._difficultyDD}) do dd:SetEnabled(unlocked); dd:RefreshDisplay() end
+ self._startBtn:SetLabel(E.state=='PLAYING' and T().btn_exit or E.state=='RESULT_PENDING' and T().btn_book or T().btn_start)
+ self._startBtn:SetEnabled(not E._layoutEditing)
 end
-
-function R:_resetRunes(maxSlots)
-    if not self._runeFrames then return end
-    maxSlots = maxSlots or 6
-    local circleR = CFG.left_w * CFG.circle_r_fac
-    for i = 1, 10 do
-        local rf = self._runeFrames[i]
-        if i <= maxSlots then
-            -- 360°-Verteilung: Winkel gleichmaessig auf maxSlots aufteilen
-            -- Start oben (-pi/2), gleichmaessige Schritte
-            local angle = ((i - 1) / maxSlots) * (2 * math.pi) - math.pi / 2
-            local px    = math.floor(math.cos(angle) * circleR)
-            local py    = math.floor(math.sin(angle) * circleR)
-            rf:ClearAllPoints()
-            rf:SetPoint("CENTER", self._leftPanel, "CENTER", px, py + CFG.circle_ofs_y)
-            rf:Show()
-            rf._tex:SetAlpha(0.0)
-            rf._tex:SetVertexColor(1, 1, 1)
-            rf:SetBackdropBorderColor(0.3, 0.0, 0.5, 0.5)
-            rf:SetBackdropColor(0.05, 0.0, 0.1, 0.9)
-        else
-            rf:Hide()
-        end
-    end
-    if self._coreFrame then
-        self._coreFrame:SetBackdropBorderColor(0.6, 0.2, 1.0, 0.8)
-        self._coreFrame:SetBackdropColor(0.1, 0.0, 0.2, 0.95)
-    end
-    if self._coreTex    then self._coreTex:SetAlpha(0.7)  end
-    if self._victoryTex then self._victoryTex:SetAlpha(0.0) end
+function R:_StopVisual()
+ self:_CancelResultReveal()
+ if self._loop then self._loop:Stop() end; self._pulse=0
+ if self._portal then self._portal:SetRotation(0); self._portal:SetAlpha(1) end
+ if self._pet then self._pet.holder:Hide() end
 end
-
--- ============================================================
--- IDLE STATE
--- ============================================================
 function R:EnterIdleState()
-    self.state = "IDLE"
-    if self._keyFrame  then self._keyFrame:EnableKeyboard(false) end
-    ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
-    if self._leftPanel then self._leftPanel:Hide() end
-    if self._gameArea  then self._gameArea:Hide() end
-    if self._logoTex   then self._logoTex:Show()  end
-
-    if self._startBtn then
-        self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("HANGMAN")["btn_start"])
-    end
-    self:_resetKeyboard()
-    self:_resetRunes(Settings and Settings:GetMaxErrors() or 6)
+ if not self.frame then return end
+ self.state='IDLE'; self:_StopVisual(); self._play:Hide(); self._logo:Show(); self._feedback:SetText('')
+ UI.HideResultDialog(self._fieldFrame); self:_UpdateControlLabels()
 end
-
--- ============================================================
--- BOARD RENDERN (Spielstart + Updates)
--- ============================================================
+function R:ShowFeedback(key) if self._feedback then self._feedback:SetText(T()[key] or key) end end
+-- Reflow existing regions for the DevMode preview; never rebuild the game UI.
+function R:ApplyLayout(board)
+ if not self.frame then return end
+ local function place(region,parent,prefix)
+  region:ClearAllPoints(); region:SetSize(CFG[prefix..'_w'],CFG[prefix..'_h'])
+  region:SetPoint('CENTER',parent,'CENTER',CFG[prefix..'_ofs_x'],CFG[prefix..'_ofs_y'])
+  if CFG[prefix..'_alpha'] then region:SetAlpha(CFG[prefix..'_alpha']) end
+ end
+ place(self._fieldFrame,self._canvas,'field')
+ for _,p in ipairs({'bg','border','logo'}) do place(self['_'..p],self._fieldFrame,p) end
+ place(self._solution,self._play,'solution'); self._solutionBG:SetSize(CFG.solution_w,CFG.solution_h)
+ place(self._solutionText,self._solution,'solution_text')
+ place(self._hints,self._play,'hints'); self._hintsBG:SetSize(CFG.hints_w,CFG.hints_h)
+ place(self._keyboard,self._play,'keyboard'); place(self._portalHolder,self._play,'portal')
+ place(self._portal,self._portalHolder,'portal_image'); place(self._seal,self._portalHolder,'portal_seal')
+ place(self._pet.holder,self._portalHolder,'modelscene'); self._pet:Fit()
+ place(self._errorText,self._play,'errors')
+ for _,f in ipairs(self._letters) do
+  f:SetSize(CFG.solution_letter_w,CFG.solution_letter_h); f.text:SetSize(CFG.solution_letter_w,CFG.solution_letter_h-3)
+  f.line:SetWidth(CFG.solution_letter_w-2)
+ end
+ for _,f in ipairs(self._runes) do
+  f:SetSize(CFG.rune_size,CFG.rune_size); f.marker:ClearAllPoints()
+  f.marker:SetSize(CFG.rune_size,14); f.marker:SetPoint('CENTER',f,'CENTER',0,-CFG.rune_size*.64)
+ end
+ for _,btn in pairs(self._keys) do btn:SetSize(CFG.keyboard_key_w,CFG.keyboard_key_h) end
+ place(self._category,self._hints,'category_text'); place(self._hint,self._hints,'hint_text')
+ place(self._status,self._hints,'wrong_text'); place(self._feedback,self._fieldFrame,'feedback_text')
+ self:_LayoutKeyboard()
+ if board then self:RenderBoard(board) end
+end
+function R:_CancelResultReveal()
+ if self._resultLoop then self._resultLoop:Stop() end
+ self._sealResult=nil
+ if self._seal then self._seal:SetAlpha(1) end
+end
+-- The layout is computed from pixel capacity and preserves word gaps and separators.
+function R:LetterLayout(word)
+ local out={}; local row,col=0,0; local capacity=math.max(1,math.floor((CFG.solution_text_w-26)/CFG.solution_col_step))
+ local i=1
+ while i<=#word do
+  local ch=word:sub(i,i)
+  if ch==' ' then
+   col=col+1
+   if col>=capacity then row=row+1; col=0 end
+   out[i]={row=row,col=col,space=true}; i=i+1
+  else
+   local finish=word:find(' ',i,true) or #word+1; local len=finish-i
+   if col>0 and col+math.min(len,capacity)>capacity then row=row+1; col=0 end
+   for j=i,finish-1 do
+    if col>=capacity then row=row+1; col=0 end
+    out[j]={row=row,col=col}; col=col+1
+   end
+   i=finish
+  end
+ end
+ local counts={}; for _,p in ipairs(out) do counts[p.row]=math.max(counts[p.row] or 0,p.col+1) end
+ for _,p in ipairs(out) do p.x=(p.col-(counts[p.row]-1)/2)*CFG.solution_col_step; p.y=CFG.solution_text_h/2-21-p.row*CFG.solution_row_step end
+ return out,row+1
+end
 function R:RenderBoard(board)
-    if not board then return end
-
-    -- Beim ersten Aufruf (Spielstart) Spielfeld einblenden
-    if self.state ~= "PLAYING" then
-        self.state = "PLAYING"
-        if self._logoTex   then self._logoTex:Hide()  end
-        if self._leftPanel then self._leftPanel:Show() end
-        if self._gameArea  then self._gameArea:Show()  end
-        if self._keyFrame  then self._keyFrame:EnableKeyboard(true) end
-        if self._startBtn  then
-            self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("HANGMAN")["btn_exit"])
-        end
-        self:_resetKeyboard()
-        self:_resetRunes(board.maxErrors)
-    end
-
-    -- Kategorie-Anzeige
-    if self._catDisplay then
-        self._catDisplay:SetText(
-            string.format(ArcadiaNexus.GetLocaleTable("HANGMAN")["cat_display"], board.category or "?"))
-    end
-
-    -- Wort-Display
-    if self._wordDisplay then
-        local wordLength = #(board.word or "")
-        local fontSize = wordLength <= 10 and 22
-            or (wordLength <= 16 and 18)
-            or (wordLength <= 27 and 15)
-            or 12
-        if self._wordFontSize ~= fontSize then
-            self._wordDisplay:SetFont("Fonts\\MORPHEUS.TTF", fontSize, "OUTLINE")
-            self._wordFontSize = fontSize
-        end
-        self._wordDisplay:SetText(ArcadiaNexus.HGM_Logic:GetDisplayWord(board))
-    end
-
-    -- Hinweis
-    if self._hintText then
-        self._hintText:SetText(board.hint or "")
-    end
-
-    -- Fehler-Label
-    local maxErr = board.maxErrors
-    local errors = board.errors
-    if self._errorLabel then
-        local col = errors == 0 and "|cff44ff44" or
-                    (errors >= maxErr - 1 and "|cffff2222" or "|cffff8822")
-        self._errorLabel:SetText(
-            string.format(ArcadiaNexus.GetLocaleTable("HANGMAN")["error_label"], col, errors, maxErr))
-    end
-
-    -- Runen
-    for i = 1, 10 do
-        local rf = self._runeFrames[i]
-        if i <= maxErr then
-            rf:Show()
-            if i <= errors then
-                local t = errors > 1 and ((i-1)/(errors-1)) or 1
-                local r2 = RUNE_COLOR_START.r + (RUNE_COLOR_END.r - RUNE_COLOR_START.r) * t
-                local g2 = RUNE_COLOR_START.g + (RUNE_COLOR_END.g - RUNE_COLOR_START.g) * t
-                local b2 = RUNE_COLOR_START.b + (RUNE_COLOR_END.b - RUNE_COLOR_START.b) * t
-                rf._tex:SetAlpha(0.95)
-                rf._tex:SetVertexColor(r2, g2, b2)
-                rf:SetBackdropBorderColor(r2, g2, b2, 1.0)
-                rf:SetBackdropColor(r2*0.2, g2*0.2, b2*0.2, 0.95)
-            else
-                rf._tex:SetAlpha(0.0)
-                rf._tex:SetVertexColor(1, 1, 1)
-                rf:SetBackdropBorderColor(0.3, 0.0, 0.5, 0.5)
-                rf:SetBackdropColor(0.05, 0.0, 0.1, 0.9)
-            end
-        else
-            rf:Hide()
-        end
-    end
-
-    -- Portal-Kern
-    if self._coreFrame then
-        local danger = maxErr > 0 and (errors / maxErr) or 0
-        self._coreFrame:SetBackdropBorderColor(0.4 + danger*0.6, 0.1, 1.0 - danger*0.7, 0.9)
-        self._coreFrame:SetBackdropColor(0.1 + danger*0.4, 0.0, 0.3 - danger*0.25, 0.95)
-    end
-
-    -- Falsche Buchstaben
-    if self._wrongText then
-        local wrong = ArcadiaNexus.HGM_Logic:GetWrongLetters(board)
-        if #wrong > 0 then
-            if self._wrongHeader then self._wrongHeader:SetText(ArcadiaNexus.GetLocaleTable("HANGMAN")["wrong_header"]) end
-            self._wrongText:SetText(table.concat(wrong, "  "))
-        else
-            if self._wrongHeader then self._wrongHeader:SetText("") end
-            self._wrongText:SetText("")
-        end
-    end
-
-    -- Buchstaben-Buttons
-    if self._letterBtns then
-        for letter, btn in pairs(self._letterBtns) do
-            if board.guessed[letter] and not btn._used then
-                btn._used = true
-                btn:Disable()
-                local inWord = false
-                for i = 1, #board.word do
-                    if board.word:sub(i,i) == letter then inWord = true; break end
-                end
-                if inWord then
-                    btn:SetBackdropColor(0.0, 0.25, 0.05, 0.9)
-                    btn:SetBackdropBorderColor(0.2, 0.8, 0.3, 0.9)
-                    btn._label:SetTextColor(0.4, 1.0, 0.5)
-                else
-                    btn:SetBackdropColor(0.25, 0.03, 0.03, 0.9)
-                    btn:SetBackdropBorderColor(0.8, 0.2, 0.2, 0.9)
-                    btn._label:SetTextColor(1.0, 0.3, 0.3)
-                end
-            end
-        end
-    end
+ if not self.frame or not board then return end
+ self:_LayoutKeyboard(); self._pet:SetVisibility(CFG.modelscene_alpha_start+(CFG.modelscene_alpha_end-CFG.modelscene_alpha_start)*board.errors/board.maxErrors)
+ self.state=E.state; self._seal:SetShown(board.won); self._logo:Hide(); self._play:Show(); self._feedback:SetText('')
+ local layout=self:LetterLayout(board.word)
+ local newGuess=self._renderedRun==E._runId and #board.guesses>(self._renderedGuesses or 0) and board.guesses[#board.guesses]
+ self._renderedRun=E._runId; self._renderedGuesses=#board.guesses
+ for i,f in ipairs(self._letters) do
+  local p=layout[i]
+  if p and not p.space then
+   f:ClearAllPoints(); f:SetPoint('CENTER',self._solutionText,'CENTER',p.x,p.y); f:Show()
+   local ch=board.word:sub(i,i); local letter=ch:match('[A-Z]')
+   local shown=board.revealed[i] or board.lost
+   f.justHit=newGuess==ch and board.revealed[i] and E.state=='PLAYING'
+   if f.justHit then self._letterPulse=.3 end
+   f.text:SetText(shown and ch or ''); f.text:SetTextColor(board.lost and not board.revealed[i] and 1 or .75,.95,.65)
+   f.line:SetShown(letter~=nil)
+  else f:Hide() end
+ end
+ for i,f in ipairs(self._runes) do
+  if i<=board.maxErrors then
+   local angle=-math.pi/2+(i-1)*2*math.pi/board.maxErrors
+   f:ClearAllPoints(); f:SetPoint('CENTER',self._portalHolder,'CENTER',math.cos(angle)*CFG.rune_radius,math.sin(angle)*CFG.rune_radius+CFG.rune_ofs_y); f:Show()
+   local on=i<=board.errors; local atlas=string.format('Rune-%02d-%s',i,on and 'light' or 'dark')
+   if C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas) then f.tex:SetAtlas(atlas)
+   else f.tex:SetTexture('Interface\\Icons\\INV_Misc_Rune_0'..i) end
+   f.tex:SetAlpha(on and 1 or .5); f.marker:SetText(on and '×' or '')
+  else f:Hide() end
+ end
+ self._errorText:SetText(string.format(T().errors_plain,board.errors,board.maxErrors))
+ self._category:SetText((T()['diff_'..board.difficulty] or board.difficulty)..' · '..board.category)
+ self._hint:SetText(T().hint_plain..'\n'..board.hint)
+ local wrong=A.HGM_Logic:GetWrongLetters(board)
+ self._status:SetText(board.won and T().sealed or board.lost and T().opened or T().wrong_plain..table.concat(wrong,' '))
+ for letter,btn in pairs(self._keys) do
+  local used=board.guessed[letter]; local found=board.word:find(letter,1,true)
+  btn:SetLabel(used and ('|cff'..(found and '88ee66' or 'ff7777')..letter..'|r') or letter)
+  if E.state~='PLAYING' or used then btn:Disable() else btn:Enable() end
+ end
+ self:_UpdateControlLabels()
 end
-
--- ============================================================
--- GAME OVER POPUP
--- ============================================================
-function R:ShowGameOver(won, board)
-    if self._keyFrame then self._keyFrame:EnableKeyboard(false) end
-    local field  = self._fieldFrame
-    if not field then return end
-    local L      = ArcadiaNexus.GetLocaleTable("HANGMAN")
-    local UI     = ArcadiaNexus.UI
-    local wins   = Settings:Get("wins")
-    local losses = Settings:Get("losses")
-
-    if self._startBtn then
-        self._startBtn:SetLabel(L["btn_start"])
-    end
-    self.state = "IDLE"
-
-    if won then
-        if self._victoryTex then self._victoryTex:SetAlpha(0.9) end
-    else
-        if self._wordDisplay then self._wordDisplay:SetText(board.word) end
-        for i = 1, board.maxErrors do
-            local rf = self._runeFrames[i]
-            if rf then
-                rf._tex:SetAlpha(0.95)
-                rf._tex:SetVertexColor(1.0, 0.1, 0.0)
-                rf:SetBackdropBorderColor(1.0, 0.1, 0.0, 1.0)
-                rf:SetBackdropColor(0.3, 0.0, 0.0, 0.95)
-            end
-        end
-        if self._coreFrame then
-            self._coreFrame:SetBackdropBorderColor(1.0, 0.1, 0.0, 1.0)
-            self._coreFrame:SetBackdropColor(0.4, 0.0, 0.0, 0.95)
-        end
-    end
-
-    UI.ShowArcadeResult(field, {
-        title      = won and L["go_win_title"] or L["go_loss_title"],
-        titleColor = won and { 1, 0.84, 0 } or { 1, 0.3, 0.3 },
-        gameId     = "HANGMAN",
-        result     = won and "WIN" or "LOSS",
-        lines      = {
-            string.format(L["go_word"], won and "88ff88" or "ff8844", board.word),
-            string.format(L["go_stats"], wins, losses),
-        },
-        L = L,
-        onRetry = function()
-            local Eng = ArcadiaNexus.HGM_Engine
-            if Eng then Eng:StartGame() end
-        end,
-        onExit = function()
-            local Eng = ArcadiaNexus.HGM_Engine
-            if Eng then Eng:StopGame() end
-        end,
-    })
+function R:ShowPlaying(board)
+ if not self.frame then return end
+ self:_CancelResultReveal()
+ UI.HideResultDialog(self._fieldFrame); self._renderedRun=nil; self._renderedGuesses=0; self:RenderBoard(board)
+ self._pet.holder:SetShown(not board.won); self._pet:SetPet(board.petId); self._phase=0; self:_Animate()
 end
-
--- ============================================================
--- REGISTRIERUNG (Datei-Ebene)
--- ============================================================
-ArcadiaNexus.RegisterGame({
-    id        = "HANGMAN",
-    label     = "Hangman",
-    renderer  = "HGM_Renderer",
-    engine    = "HGM_Engine",
-    container = "_hangmanContainer",
-    category  = "WORT",
-    logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\Hangman\\assets\\logo\\logo_hgm",
-    xp        = 10,
+function R:_Animate()
+ if not self._loop then return end
+ if S:Get('reducedMotion') or E.state~='PLAYING' and (self._pulse or 0)<=0 then
+  self._loop:Stop(); self._portal:SetRotation(0); self._portal:SetAlpha(1); return
+ end
+ self._loop:Start(function(dt)
+  if not self.frame:IsShown() or S:Get('reducedMotion') then self._loop:Stop(); self._portal:SetRotation(0); self._portal:SetAlpha(1); return end
+  self._letterPulse=math.max(0,(self._letterPulse or 0)-dt)
+  for _,f in ipairs(self._letters) do if f.justHit then
+   if self._letterPulse>0 then f.text:SetTextColor(1,1,.85) else f.justHit=nil; f.text:SetTextColor(.75,.95,.65) end
+  end end
+  self._phase=(self._phase or 0)+dt; self._pulse=math.max(0,(self._pulse or 0)-dt)
+  if E.state~='PLAYING' and self._pulse==0 then self._loop:Stop(); self._portal:SetRotation(0); self._portal:SetAlpha(1); return end
+  self._portal:SetRotation(E.state=='PLAYING' and math.sin(self._phase*.6)*.012 or 0)
+  self._portal:SetAlpha(self._pulse>0 and .72+.28*math.abs(math.cos(self._phase*10)) or .94+.06*math.sin(self._phase*.8))
+ end)
+end
+function R:Pulse(kind)
+ if kind=='win' and self._pet then self._pet.holder:Hide() end
+ self._pulse=.25
+ -- A short transition never delays rules, saving, or result booking.
+ if kind=='win' or kind=='loss' then self._pulse=.6 end
+ self:_Animate()
+end
+function R:ShowPending(data)
+ self:_CancelResultReveal()
+ if self._loop then self._loop:Stop() end
+ UI.ShowArcadeResult(self._fieldFrame,{gameId='HANGMAN',difficulty=data.difficulty,result=data.result,title=T().msg_pending,
+ lines={T().pending_detail},L=T(),hideHighscore=true,isCurrent=function() return E._result==data end,
+ buttons={{label=T().btn_book,onClick=function() E:RetryResult() end},{label=T().btn_exit,onClick=function() E:StopGame() end}}})
+end
+function R:ShowResult(data)
+ if not self.frame or E._result~=data or not data.processed then return end
+ if self._sealResult==data then return end
+ self:_CancelResultReveal()
+ if data.result~='WIN' then return self:_PresentResult(data) end
+ UI.HideResultDialog(self._fieldFrame)
+ self._pet.holder:Hide(); self._seal:Show()
+ self._sealResult=data
+ local elapsed=0; local fade=S:Get('reducedMotion') and 0 or .8
+ self._seal:SetAlpha(fade==0 and 1 or 0)
+ self._resultLoop:Start(function(dt)
+  -- The gameplay session has already ended; guard the booked result identity.
+  if self._sealResult~=data or E._result~=data or E.state~='WON' or not self.frame:IsShown() then
+   self:_CancelResultReveal(); return
+  end
+  elapsed=elapsed+dt
+  if S:Get('reducedMotion') then fade=0 end
+  self._seal:SetAlpha(fade==0 and 1 or math.min(1,elapsed/fade))
+  if elapsed>=fade+.35 then
+   self:_CancelResultReveal(); self:_PresentResult(data)
+  end
+ end)
+end
+function R:_PresentResult(data)
+ if E._result~=data or not data.processed or not self.frame:IsShown() then return end
+ UI.ShowArcadeResult(self._fieldFrame,{gameId='HANGMAN',difficulty=data.difficulty,result=data.result,L=T(),
+ title=data.result=='WIN' and T().sealed or T().opened,score=data.score,xp=data.awardedXP,gold=data.awardedGold,hideHighscore=true,
+ lines={string.format(T().go_word,data.result=='WIN' and 'aaff88' or 'ff8844',data.board.word),
+ string.format(T().go_errors,data.board.errors,data.board.maxErrors,data.board.maxErrors-data.board.errors),
+ string.format(T().go_stats,S:Get('wins'),S:Get('losses')),string.format(T().perfect_count,S:GetStats().perfectWins)},
+ isCurrent=function() return E._result==data and data.processed end,
+ onRetry=function() E:RetryPuzzle() end,onExit=function() E:StopGame() end})
+end
+A.RegisterGame({
+ id="HANGMAN", label="Nether Bound", renderer="HGM_Renderer", engine="HGM_Engine",
+ container="_hangmanContainer", category="WORT", logo=PATH.."logo_a_v1", xp=10,
 })

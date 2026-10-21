@@ -277,8 +277,11 @@ local function ConfigureRecentRow(row, entry, parent, yOff, rowW)
     local tierColor = string.format("|cff%02x%02x%02x",
         math.floor(tc[1] * 255), math.floor(tc[2] * 255), math.floor(tc[3] * 255))
     row._desc:SetText(H().TierIconMarkup(entry.tierName, 14) .. " " ..
-        tierColor .. entry.tierName .. "|r  |cff00cc55+" .. entry.tierXP .. " XP|r")
+        tierColor .. H().TierLabel(entry.tierName) .. "|r  |cff00cc55+" .. entry.tierXP .. " XP|r")
     row._shieldPts:SetText(tostring(entry.tierXP))
+    if entry.retired then
+        row._desc:SetText(H().TierIconMarkup(entry.tierName,14).." "..H().TierLabel(entry.tierName).." · "..ArcadiaNexus.GetLocaleTable("UI").ach_retired)
+    end
 
     row:SetScript("OnEnter", function() row._hl:Show() end)
     row:SetScript("OnLeave", function() row._hl:Hide() end)

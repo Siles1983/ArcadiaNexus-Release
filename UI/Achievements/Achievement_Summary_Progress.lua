@@ -219,7 +219,7 @@ local function GetStatsByCategory(catKey)
     local total, unlocked = 0, 0
     for _, group in ipairs(ad) do
         local groupCat = group.category or group.gameId
-        if groupCat == catKey then
+        if not group.retired and groupCat == catKey then
             for _, tier in ipairs(group.tiers or {}) do
                 total = total + 1
                 if ul[tier.id] then unlocked = unlocked + 1 end
@@ -236,9 +236,11 @@ local function GetOverallStats()
     local ul = (ArcadiaNexus.AchievementStore and ArcadiaNexus.AchievementStore.GetUnlocked()) or {}
     local total, unlocked = 0, 0
     for _, group in ipairs(ad) do
-        for _, tier in ipairs(group.tiers or {}) do
-            total = total + 1
-            if ul[tier.id] then unlocked = unlocked + 1 end
+        if not group.retired then
+            for _, tier in ipairs(group.tiers or {}) do
+                total = total + 1
+                if ul[tier.id] then unlocked = unlocked + 1 end
+            end
         end
     end
     return { total = total, unlocked = unlocked }

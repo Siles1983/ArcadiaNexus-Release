@@ -4,11 +4,29 @@
 ]]
 
 ArcadiaNexus.RegisterLocale("LOA", "deDE", {
+    capture_arrived="Gegner zurück in der Basis",
+    btn_back = "Zurück",
+    legacy_stats = "Historische Partien",
+    opponents_suffix = " KI",
+    slot_info = "%d KI · %s",
+    status_rolling = "Würfel läuft …",
+    status_moving = "Figur unterwegs …",
+    status_pending = "Zugwechsel …",
+    attempts_hint = " · Versuch %d/3 · Sechserfolge %d/3",
+    target_capture = "Ziel: Gegner schlagen",
+    target_move = "Ziel: markiertes Feld",
+    legacy_title = "Alten Spielstand fortsetzen",
+    legacy_body = "Dieser alte Spielstand unterscheidet die offene Auswahl nicht von einem bereits ausgeführten Zug. Welche Situation war gespeichert? Das Brett bleibt erhalten.",
+    legacy_open = "Wurf noch offen",
+    legacy_consumed = "Zug bereits ausgeführt",
+    bad_save_title = "Spielstand nicht ladbar",
+    bad_save_body = "Ungültige oder bereits beendete Partie. Der gespeicherte Stand bleibt erhalten.",
+
     btn_exit        = "Beenden",
     btn_new_game    = "Neues Spiel",
     btn_new_game_ov = "Neues Spiel",
 
-    hint_start      = "|cffaaaaaa Einstellungen wählen und Neues Spiel starten.\n\nKlicke auf den Würfel um zu würfeln,\ndann auf deine Figur um sie zu ziehen.\n\n|cffff8800Positions-Kalibrierung: /loa debug path|r",
+    hint_start      = "|cffaaaaaa Einstellungen wählen und Neues Spiel starten.\n\nKlicke auf den Würfel um zu würfeln,\ndann auf deine Figur um sie zu ziehen.",
 
     status_human    = "|cff%02x%02x%02xDu (%s)|r  %d/4",
     status_ai       = "|cff%02x%02x%02xKI (%s)|r  %d/4  %s",
@@ -68,19 +86,37 @@ ArcadiaNexus.RegisterLocale("LOA", "deDE", {
     guide_move      = "|cffffff00Figur ziehen:|r Gültige Figuren leuchten gelb.",
     guide_capture   = "|cffffff00Schlagen:|r Landest du auf einer gegnerischen Figur, muss sie zurück ins Haus (auch das Startfeld). Eigene Figuren werden nie geschlagen und dürfen sich stapeln.",
     guide_safe      = "|cffffff00Stapeln:|r Mehrere Figuren derselben Farbe dürfen auf einem Feld stehen. Sie werden leicht nach links/rechts versetzt, damit du sie einzeln anklicken kannst.",
-    guide_home      = "|cffffff00Zielfelder:|r Die vier Felder werden nacheinander belegt. Figuren bleiben sichtbar. Exakte Augenzahl, kein Besetzen eines belegten Zielfelds.",
+    guide_home = "Ziel: Exakte Zahl bis Feld 44, kein belegtes eigenes Zielfeld als Landepunkt. Überspringen ist erlaubt. Vier Figuren auf den vier Zielfeldern gewinnen; der erste KI-Sieg beendet deine Partie.",
     guide_ai        = "|cffffff00KI:|r Schlägt bevorzugt, sonst vorderste Figur.",
-    guide_hint      = "|cffaaaaaa Positions-Kalibrierung: /loa debug path|r",
+    guide_hint = "Reihenfolge Rot > Gelb > Grün > Blau; die erste vorhandene Farbe beginnt. Drei vollständige Slots speichern Wurf, Bewegung und Zugwechsel mit Restzeit. Fraktion und KI-Anzahl bleiben während der Partie fest.",
 
     btn_reset       = "Reset",
 })
 
 ArcadiaNexus.RegisterLocale("LOA", "enUS", {
+    capture_arrived="Opponent returned to base",
+    btn_back = "Back",
+    legacy_stats = "Historical games",
+    opponents_suffix = " AI",
+    slot_info = "%d AI · %s",
+    status_rolling = "Dice rolling …",
+    status_moving = "Piece moving …",
+    status_pending = "Changing turn …",
+    attempts_hint = " · Attempt %d/3 · Six streak %d/3",
+    target_capture = "Destination: capture opponent",
+    target_move = "Destination: highlighted square",
+    legacy_title = "Continue an old save",
+    legacy_body = "This old save cannot distinguish an open selection from an already completed move. Which situation was saved? The board is preserved.",
+    legacy_open = "Roll still open",
+    legacy_consumed = "Move already played",
+    bad_save_title = "Cannot load save",
+    bad_save_body = "Invalid or already completed game. The stored save is preserved.",
+
     btn_exit        = "Exit",
     btn_new_game    = "New Game",
     btn_new_game_ov = "New Game",
 
-    hint_start      = "|cffaaaaaa Choose settings and start a New Game.\n\nClick the dice to roll,\nthen click your piece to move.\n\n|cffff8800Position calibration: /loa debug path|r",
+    hint_start      = "|cffaaaaaa Choose settings and start a New Game.\n\nClick the dice to roll,\nthen click your piece to move.",
 
     status_human    = "|cff%02x%02x%02xYou (%s)|r  %d/4",
     status_ai       = "|cff%02x%02x%02xAI (%s)|r  %d/4  %s",
@@ -140,9 +176,9 @@ ArcadiaNexus.RegisterLocale("LOA", "enUS", {
     guide_move      = "|cffffff00Move:|r Valid pieces glow yellow.",
     guide_capture   = "|cffffff00Capture:|r Landing on an opponent sends them back to base (including the start square). Your own pieces are never captured and may stack.",
     guide_safe      = "|cffffff00Stacking:|r Several pieces of the same color may share a square. They are offset left/right so you can click them separately.",
-    guide_home      = "|cffffff00Home:|r Fill the four home squares one by one. Pieces stay visible. Exact count; no landing on an occupied home square.",
+    guide_home = "Home: exact number up to square 44, no landing on an occupied own home square. Jumping over is allowed. Four pieces on the four home squares win; the first AI win ends your game.",
     guide_ai        = "|cffffff00AI:|r Prefers captures, else leading piece.",
-    guide_hint      = "|cffaaaaaa Position calibration: /loa debug path|r",
+    guide_hint = "Order Red > Yellow > Green > Blue; the first participating color starts. Three complete slots retain dice, movement and turn transitions with remaining time. Faction and AI count stay fixed during the game.",
 
     btn_reset       = "Reset",
 })

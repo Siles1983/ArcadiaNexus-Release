@@ -56,6 +56,7 @@ function L.EnsureNode()
         onResult = function(_, resultId)
             Say("Ergebnis " .. tostring(resultId) .. " (count=" ..
                 tostring(node:GetPublicState() and node:GetPublicState().count) .. ")")
+            return true
         end,
     })
     return node
@@ -162,6 +163,7 @@ end
 
 SLASH_ANLIVE1 = "/anlive"
 SlashCmdList["ANLIVE"] = function(msg)
+    if not ArcadiaNexus.RequireDevMode() then return end
     msg = tostring(msg or ""):gsub("^%s+", ""):gsub("%s+$", "")
     local cmd, rest = msg:match("^(%S+)%s*(.*)$")
     cmd = cmd and string.lower(cmd) or "status"

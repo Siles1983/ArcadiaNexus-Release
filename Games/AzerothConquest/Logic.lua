@@ -98,6 +98,7 @@ end
 -- ============================================================
 
 function Logic:IsValidPlacement(board, r, c, length, horizontal)
+    if type(r) ~= "number" or type(c) ~= "number" or r % 1 ~= 0 or c % 1 ~= 0 then return false end
     local size = board.size
     for i = 0, length - 1 do
         local tr = r + (horizontal and 0 or i)
@@ -155,34 +156,53 @@ end
 -- ============================================================
 
 function Logic:PlaceShipsRandom(board)
-    local defs = self:GetShipDefinitions(board.size)
-
-    -- Board-Zellen leeren (nur Schiff-Felder, nicht Treffer)
-    for r = 1, board.size do
-        for c = 1, board.size do
-            board.cells[r][c] = 0
-        end
+    local fresh, queue, budget = self:CreateBoard(board.size), {}, 10000
+    for _, def in ipairs(self:GetShipDefinitions(board.size)) do
+        for _ = 1, def.count do queue[#queue + 1] = def end
     end
-    board.ships      = {}
-    board._nextShipID = 1
-
-    for _, def in ipairs(defs) do
-        for _ = 1, def.count do
-            local placed  = false
-            local attempts = 0
-            while not placed and attempts < 200 do
-                attempts = attempts + 1
-                local r          = math.random(1, board.size)
-                local c          = math.random(1, board.size)
-                local horizontal = (math.random(0, 1) == 1)
-                if self:IsValidPlacement(board, r, c, def.length, horizontal) then
-                    self:PlaceShip(board, def, r, c, horizontal)
-                    placed = true
+    local function place(index)
+        if index > #queue then return true end
+        local candidates = {}
+        for r = 1, fresh.size do for c = 1, fresh.size do
+            for _, horiz in ipairs({true, false}) do
+                if self:IsValidPlacement(fresh, r, c, queue[index].length, horiz) then
+                    candidates[#candidates + 1] = {r=r, c=c, horiz=horiz}
                 end
             end
+        end end
+        ArcadiaNexus.ArrayUtils.Shuffle(candidates)
+        for _, pos in ipairs(candidates) do
+            budget = budget - 1
+            if budget < 0 then return false end
+            local ship = self:PlaceShip(fresh, queue[index], pos.r, pos.c, pos.horiz)
+            if place(index + 1) then return true end
+            self:RemoveLastShip(fresh, ship.id)
         end
+        return false
     end
+    if not place(1) then return false end
+    board.cells, board.hits, board.ships, board._nextShipID = fresh.cells, fresh.hits, fresh.ships, fresh._nextShipID
+    return true
 end
+
+function Logic:RemoveLastShip(board, id)
+    if id ~= board._nextShipID - 1 then return false end
+    local ship = board.ships[id]
+    if not ship or ship.hits ~= 0 then return false end
+    for _, cell in ipairs(ship.cells) do board.cells[cell.r][cell.c] = 0 end
+    board.ships[id], board._nextShipID = nil, id
+    return true
+end
+
+function Logic:Copy(value)
+    if type(value) ~= "table" then return value end
+    local out = {}
+    for k, v in pairs(value) do out[k] = self:Copy(v) end
+    return out
+end
+
+function Logic:IsDifficulty(value) return value == "easy" or value == "normal" or value == "hard" end
+function Logic:NormalizeDifficulty(value) return self:IsDifficulty(value) and value or "easy" end
 
 -- ============================================================
 -- GetShipAt
@@ -200,6 +220,7 @@ end
 -- ============================================================
 
 function Logic:Shoot(board, r, c)
+    if type(r) ~= "number" or type(c) ~= "number" or r % 1 ~= 0 or c % 1 ~= 0 then return "INVALID" end
     if r < 1 or r > board.size or c < 1 or c > board.size then
         return "INVALID"
     end

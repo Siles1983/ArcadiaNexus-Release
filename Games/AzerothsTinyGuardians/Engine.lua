@@ -396,13 +396,15 @@ function E:_EnsureSession()
         ArcadiaNexus.Lifecycle:ResumeGame(GAME_ID, E._sessionId)
         return
     end
-    E._sessionId = ArcadiaNexus.Lifecycle:RestartGame(GAME_ID, E._sessionId)
+    local sid = ArcadiaNexus.Lifecycle:ClaimRestart(GAME_ID, E._sessionId)
+    if not sid then return false end
+    E._sessionId = sid
 end
 
 function E:StartGame()
     if E.state == "PLAYING" then return end
     _timerGuard:Cancel()
-    self:_EnsureSession()
+    if self:_EnsureSession() == false then return end
     E.state = "PLAYING"
     self:EnterHub()
 end
@@ -518,7 +520,7 @@ function E:AdoptPet(petType, name)
     local S = GetSettings()
     if not Logic or not S then return end
     if E.state ~= "PLAYING" then
-        self:_EnsureSession()
+        if self:_EnsureSession() == false then return end
         E.state = "PLAYING"
     end
 

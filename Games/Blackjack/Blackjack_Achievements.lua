@@ -1,25 +1,17 @@
 local ArcadiaNexus = _G.ArcadiaNexus
 
-local function getTotalWins(db, gameId)
-    if not db.leaderboard or not db.leaderboard[gameId] then return 0 end
-    local total = 0
-    for _, entry in pairs(db.leaderboard[gameId]) do
-        total = total + (entry.wins or 0)
-    end
-    return total
-end
-
 ArcadiaNexus.RegisterAchievements({
 
-    -- BJ_PROFIT: kumulativer Win-Zähler via Leaderboard
+    -- BJ_PROFIT: profitable rounds added to preserved achievement progress.
     {
         id="BJ_PROFIT", gameId="BLACKJACK", category="KARTEN",
         title_de="Im Gewinn", title_en="In Profit",
         desc_de="Erziele Gewinne in Blackjack.", desc_en="Achieve profits in Blackjack.",
         icon="Interface\\Icons\\INV_Misc_Coin_01",
         condition = function(data, db)
-            if data.gameId ~= "BLACKJACK" then return 0 end
-            return getTotalWins(db, "BLACKJACK")
+            if data.gameId ~= "BLACKJACK" or data.difficulty~="table" then return 0 end
+            local p=db.achievements and db.achievements.progress and db.achievements.progress.BJ_PROFIT
+            return (p and p.current or 0)+(data.result=="WIN" and 1 or 0)
         end,
         tiers = {
             { id="BJ_PROFIT_BRONZE", tierName="Bronze", target=1,  xp=15, desc_de="Gewinne 1x.",   desc_en="Win once."        },
@@ -35,7 +27,7 @@ ArcadiaNexus.RegisterAchievements({
         desc_de="Erreiche ein hohes Kapital.", desc_en="Reach a high capital.",
         icon="Interface\\Icons\\INV_Misc_Coin_04",
         condition = function(data, db)
-            if data.gameId ~= "BLACKJACK" then return 0 end
+            if data.gameId ~= "BLACKJACK" or data.difficulty~="table" then return 0 end
             local chips = data.stats and data.stats.finalChips or 0
             if chips >= 1000 then return 3 end
             if chips >= 500  then return 2 end
@@ -43,9 +35,9 @@ ArcadiaNexus.RegisterAchievements({
             return 0
         end,
         tiers = {
-            { id="BJ_HIGHROLLER_BRONZE", tierName="Bronze", target=1, xp=20, desc_de="300 Gold erreicht.",  desc_en="Reach 300 Gold."  },
-            { id="BJ_HIGHROLLER_SILBER", tierName="Silber", target=2, xp=50, desc_de="500 Gold erreicht.",  desc_en="Reach 500 Gold."  },
-            { id="BJ_HIGHROLLER_GOLD",   tierName="Gold",   target=3, xp=90, desc_de="1000 Gold erreicht!", desc_en="Reach 1000 Gold!" },
+            { id="BJ_HIGHROLLER_BRONZE", tierName="Bronze", target=1, xp=20, desc_de="300 Chips erreicht.",  desc_en="Reach 300 Chips."  },
+            { id="BJ_HIGHROLLER_SILBER", tierName="Silber", target=2, xp=50, desc_de="500 Chips erreicht.",  desc_en="Reach 500 Chips."  },
+            { id="BJ_HIGHROLLER_GOLD",   tierName="Gold",   target=3, xp=90, desc_de="1000 Chips erreicht!", desc_en="Reach 1000 Chips!" },
         },
     },
 
@@ -74,16 +66,15 @@ ArcadiaNexus.RegisterAchievements({
     {
         id="BJ_SURVIVOR", gameId="BLACKJACK", category="KARTEN",
         title_de="Durchhalter", title_en="Survivor",
-        desc_de="Spiele auf Schwer und beende mit mehr als 100 Gold.", desc_en="Play on Hard and finish with over 100 Gold.",
+        desc_de="Erreiche nach einer abgeschlossenen Runde mehr als 100 Chips.", desc_en="Reach over 100 chips after a completed round.",
         icon="Interface\\Icons\\INV_Misc_Dice_01",
         condition = function(data, db)
-            if data.gameId ~= "BLACKJACK" then return 0 end
-            if data.difficulty ~= "hard"  then return 0 end
+            if data.gameId ~= "BLACKJACK" or data.difficulty~="table" then return 0 end
             local chips = data.stats and data.stats.finalChips or 0
             return chips > 100 and 1 or 0
         end,
         tiers = {
-            { id="BJ_SURVIVOR_GOLD", tierName="Gold", target=1, xp=80, desc_de="Schwer: über 100 Gold.", desc_en="Hard: over 100 Gold." },
+            { id="BJ_SURVIVOR_GOLD", tierName="Gold", target=1, xp=80, desc_de="Nach einer Runde: über 100 Chips.", desc_en="After a round: over 100 chips." },
         },
     },
 

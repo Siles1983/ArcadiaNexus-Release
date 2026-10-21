@@ -63,6 +63,13 @@ function ArcadiaNexus.IsDevMode()
     return _IsDevMode()
 end
 
+-- Gemeinsame Schranke für direkt aufrufbare Entwicklerbefehle.
+function ArcadiaNexus.RequireDevMode()
+    if _IsDevMode() then return true end
+    print("|cffffaa00[Arcadia]|r Dieser Befehl erfordert aktiven DevMode.")
+    return false
+end
+
 local PREFIX_INFO  = "|cff7ec8e3[GH INFO]|r "
 local PREFIX_WARN  = "|cffffaa00[GH WARN]|r "
 local PREFIX_ERROR = "|cffff4444[GH ERROR]|r "
@@ -180,6 +187,7 @@ end
 -- /anlogs [count] [level] – zeigt die letzten Log-Einträge
 SLASH_ANLOGS1 = "/anlogs"
 SlashCmdList["ANLOGS"] = function(input)
+    if not ArcadiaNexus.RequireDevMode() then return end
     local args = {}
     for word in (input or ""):gmatch("%S+") do
         args[#args + 1] = word
@@ -205,6 +213,7 @@ end
 -- /anclearlogs – leert den Buffer
 SLASH_ANCLEARLOGS1 = "/anclearlogs"
 SlashCmdList["ANCLEARLOGS"] = function()
+    if not ArcadiaNexus.RequireDevMode() then return end
     GH_ClearLogs()
     print("|cff7ec8e3[GH]|r Log-Buffer geleert.")
 end
@@ -212,6 +221,7 @@ end
 -- /anachcheck – Achievement-Icon-Audit (Dev-Log + Chat)
 SLASH_ANACHCHECK1 = "/anachcheck"
 SlashCmdList["ANACHCHECK"] = function()
+    if not ArcadiaNexus.RequireDevMode() then return end
     local AI = ArcadiaNexus and ArcadiaNexus.AchievementIcons
     if not AI then
         print("|cffff4444[GH]|r AchievementIcons-Modul nicht geladen.")

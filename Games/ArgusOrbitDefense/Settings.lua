@@ -36,16 +36,29 @@ local function GetDB()
 end
 
 function S:Get(key)
+    local E=ArcadiaNexus.AOD_Engine
+    if (key=="difficulty" or key=="gameMode") and E and E.gameState and E.state~="IDLE" then return E.gameState[key] end
     local db = GetDB()
     if db[key] ~= nil then return db[key] end
     return self.Defaults[key]
 end
 
-function S:Set(key, value) P:SetGameSetting(DB_KEY, key, value) end
+function S:Set(key,value)
+    local E=ArcadiaNexus.AOD_Engine
+    if (key=="difficulty" or key=="gameMode") and E and E.gameState and E.state~="IDLE" then return false end
+    if key=="difficulty" and not ArcadiaNexus.AOD_Logic.DIFFICULTY_DEFS[value] then return false end
+    if key=="gameMode" and value~="levels" and value~="endless" then return false end
+    P:SetGameSetting(DB_KEY,key,value); return true
+end
 
 function S:Reset()
     local db = GetDB()
-    for k in pairs(self.Defaults) do db[k] = nil end
+    local E=ArcadiaNexus.AOD_Engine
+    for k in pairs(self.Defaults) do
+        if (k~="difficulty" and k~="gameMode") or not (E and E.gameState and E.state~="IDLE") then db[k]=nil end
+    end
+    local R=ArcadiaNexus.AOD_Renderer
+    if R and R.RefreshConfig then R:RefreshConfig() end
 end
 
 function S:GetAll()
@@ -98,7 +111,7 @@ function S:SaveSlot(slot, data)
     if not slot or slot < 1 or slot > S.MAX_SLOTS then return end
     local db = GetDB()
     EnsureSaves(db)[slot] = data
-    if data then data.timestamp = data.timestamp or time() end
+    if data then data.timestamp = time() end
 end
 
 function S:DeleteSlot(slot)
@@ -109,31 +122,31 @@ function S:DeleteSlot(slot)
     db.saves[slot] = nil
 end
 
-function S:ResetSlot(slot)
-    self:SaveSlot(slot, {
-        level = 1, score = 0, lives = 3,
-        diff = self:Get("difficulty") or "normal",
-        mode = "levels",
-    })
+function S:ResetSlot(slot) self:DeleteSlot(slot) end
+function S:SaveProgress(state,slot,phase)
+    local save=ArcadiaNexus.AOD_Logic:Snapshot(state,phase)
+    if save then self:SaveSlot(slot,save) end
 end
-
-function S:SaveProgress(level, score, lives, diff, mode)
-    self:SaveSlot(self:GetActiveSlot(), {
-        level = level, score = score, lives = lives,
-        diff = diff, mode = mode,
-    })
+function S:LoadProgress(slot) return ArcadiaNexus.AOD_Logic:Copy(self:LoadSlot(slot)) end
+function S:SavePending(data)
+    local db=GetDB(); db.pendingResults=db.pendingResults or {}
+    db.pendingResults[data.runId]=ArcadiaNexus.AOD_Logic:Copy(data)
 end
-
-function S:LoadProgress(slot)
-    local save = self:LoadSlot(slot or self:GetActiveSlot())
-    if not save then return nil end
-    return {
-        level = save.level,
-        score = save.score or 0,
-        lives = save.lives or 3,
-        diff  = save.diff or "normal",
-        mode  = save.mode or "levels",
-    }
+function S:ClearPending(id) local db=GetDB(); if db.pendingResults then db.pendingResults[id]=nil end end
+function S:GetPending() return GetDB().pendingResults or {} end
+function S:ApplyResult(data)
+    local db=GetDB()
+    if not db.counterVersion then
+        db.legacyCounters={wins=db.wins or 0,losses=db.losses or 0,played=db.played or 0}
+        db.wins,db.losses,db.played=0,0,0; db.counterVersion=2
+    end
+    db.totalMeteors=(db.totalMeteors or 0)+(data.meteorDelta or 0)
+    db.totalHunters=(db.totalHunters or 0)+(data.hunterDelta or 0)
+    db.stagesCleared=(db.stagesCleared or 0)+(data.stagesDelta or 0)
+    if data.recordPlayed then
+        db.played=db.played+1
+        local key=data.result=="WIN" and "wins" or "losses"; db[key]=db[key]+1
+    end
 end
 
 function S:ClearProgress(slot)

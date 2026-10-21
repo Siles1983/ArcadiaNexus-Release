@@ -49,7 +49,7 @@ ArcadiaNexus.RegisterLocale("ARCADIAPAIRS", "deDE", {
     -- Overlay: Sieg (Renderer)
     result_win_title    = "|cffffd700Alle Paare gefunden!|r",
     result_win_sub      = "|cffaaaaaa Züge:|r |cffffff00%d|r    |cffaaaaaa Paare:|r |cffffff00%d|r",
-    result_win_time     = "\n|cffaaaaaa Verbleibende Zeit:|r |cffffff00%d:%02d|r",
+    result_win_time     = "\n|cffaaaaaa Verbleibende Zeit:|r |cffffff00%s|r",
 
     -- Overlay: Verloren (Renderer)
     result_lose_title   = "|cffff4444Zeit abgelaufen!|r",
@@ -133,7 +133,7 @@ ArcadiaNexus.RegisterLocale("ARCADIAPAIRS", "enUS", {
     -- Overlay: Win
     result_win_title    = "|cffffd700All pairs found!|r",
     result_win_sub      = "|cffaaaaaa Moves:|r |cffffff00%d|r    |cffaaaaaa Pairs:|r |cffffff00%d|r",
-    result_win_time     = "\n|cffaaaaaa Time remaining:|r |cffffff00%d:%02d|r",
+    result_win_time     = "\n|cffaaaaaa Time remaining:|r |cffffff00%s|r",
 
     -- Overlay: Lost
     result_lose_title   = "|cffff4444Time's up!|r",

@@ -3,7 +3,7 @@ local function getTotalWins(db, gameId)
     if not db.leaderboard or not db.leaderboard[gameId] then return 0 end
     local total = 0
     for _, entry in pairs(db.leaderboard[gameId]) do
-        total = total + (entry.wins or 0)
+        total = total + (entry.runRuleVersion==2 and (entry.legacyWins or 0)+(entry.clearedStages or 0) or (entry.wins or 0))
     end
     return total
 end
@@ -13,16 +13,16 @@ ArcadiaNexus.RegisterAchievements({
     {
         id="GB_WINS", gameId="GOBLINBLAST", category="ARCADE",
         title_de="Sprengmeister", title_en="Demolition Expert",
-        desc_de="Gewinne Goblin Blast-Runden.", desc_en="Win Goblin Blast rounds.",
+        desc_de="Gewinne Goblin Blast-Level.", desc_en="Win Goblin Blast levels.",
         icon="Interface\\Icons\\INV_Misc_Bomb_02",
         condition = function(data, db)
             if data.gameId ~= "GOBLINBLAST" then return 0 end
             return getTotalWins(db, "GOBLINBLAST")
         end,
         tiers = {
-            { id="GB_WINS_BRONZE", tierName="Bronze", target=3,  xp=15, desc_de="Gewinne 3x.",  desc_en="Win 3 rounds."  },
-            { id="GB_WINS_SILBER", tierName="Silber", target=10, xp=30, desc_de="Gewinne 10x.", desc_en="Win 10 rounds." },
-            { id="GB_WINS_GOLD",   tierName="Gold",   target=30, xp=55, desc_de="Gewinne 30x.", desc_en="Win 30 rounds." },
+            { id="GB_WINS_BRONZE", tierName="Bronze", target=3,  xp=15, desc_de="Schaffe 3 Level.",  desc_en="Clear 3 levels."  },
+            { id="GB_WINS_SILBER", tierName="Silber", target=10, xp=30, desc_de="Schaffe 10 Level.", desc_en="Clear 10 levels." },
+            { id="GB_WINS_GOLD",   tierName="Gold",   target=30, xp=55, desc_de="Schaffe 30 Level.", desc_en="Clear 30 levels." },
         },
     },
 
@@ -45,11 +45,11 @@ ArcadiaNexus.RegisterAchievements({
     {
         id="GB_LEVEL", gameId="GOBLINBLAST", category="ARCADE",
         title_de="Levelstürmer", title_en="Level Crusher",
-        desc_de="Erreiche hohe Level in einem Durchlauf.", desc_en="Reach high levels in a single run.",
+        desc_de="Schließe hohe Level ab in einem Durchlauf.", desc_en="Clear high levels in a single run.",
         icon="Interface\\Icons\\INV_Misc_Bomb_04",
         condition = function(data, db)
             if data.gameId ~= "GOBLINBLAST" then return 0 end
-            return data.stats and data.stats.levelReached or 0
+            return data.stats and data.stats.clearedLevel or 0
         end,
         tiers = {
             { id="GB_LEVEL_BRONZE", tierName="Bronze", target=4,  xp=20, desc_de="Schaffe Level 4.",   desc_en="Clear level 4."   },

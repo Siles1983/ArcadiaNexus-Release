@@ -23,7 +23,7 @@ ArcadiaNexus.RegisterAchievements({
     {
         id = "BS_LEVELS", gameId = "BUBBLESHOOTER", category = "ARCADE",
         title_de = "Ley-Kartograph", title_en = "Ley Cartographer",
-        desc_de = "Schließe Kampagnen-Level ab.", desc_en = "Complete campaign levels.",
+        desc_de = "Schließe Kampagnen-Level ab; erfolgreiche Wiederholungen zählen.", desc_en = "Complete campaign levels; successful replays count.",
         icon = "Interface\\Icons\\INV_Misc_Gem_Amethyst_01",
         condition = function(data, db)
             if data.gameId ~= "BUBBLESHOOTER" then return 0 end

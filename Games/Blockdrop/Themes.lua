@@ -61,10 +61,10 @@ T["REAGENTS"] = {
 -- Theme-Liste fuer Dropdown
 -- ============================================================
 T.LIST = {
-    { id="CLASSIC",     label="Klassisch"         },
-    { id="CLASSCOLORS", label="Klassen-Farben"    },
-    { id="RAIDMARKER",  label="Raid-Marker"       },
-    { id="REAGENTS",    label="Berufe / Reagents" },
+    { id="CLASSIC",     label=(ArcadiaNexus.ActiveLocale == "deDE" and "Klassisch" or "Classic")         },
+    { id="CLASSCOLORS", label=(ArcadiaNexus.ActiveLocale == "deDE" and "Klassen-Farben" or "Class Colors")    },
+    { id="RAIDMARKER",  label=(ArcadiaNexus.ActiveLocale == "deDE" and "Raid-Marker" or "Raid Markers")       },
+    { id="REAGENTS",    label=(ArcadiaNexus.ActiveLocale == "deDE" and "Berufe / Reagents" or "Professions / Reagents") },
 }
 
 function T:Get(themeID)

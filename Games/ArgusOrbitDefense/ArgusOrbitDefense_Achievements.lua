@@ -3,8 +3,8 @@ local ArcadiaNexus = _G.ArcadiaNexus
 local function getTotalGames(db, gameId)
     if not db.leaderboard or not db.leaderboard[gameId] then return 0 end
     local total = 0
-    for _, entry in pairs(db.leaderboard[gameId]) do
-        total = total + (entry.wins or 0) + (entry.losses or 0) + (entry.draws or 0)
+    for key, entry in pairs(db.leaderboard[gameId]) do
+        if key:match("^levels_") or key:match("^endless_") then total = total + (entry.wins or 0) + (entry.losses or 0) + (entry.draws or 0) end
     end
     return total
 end
@@ -13,7 +13,7 @@ ArcadiaNexus.RegisterAchievements({
 
     { id="AOD_FIRST", gameId="ARGUSORBDEFENSE", category="ARCADE",
       title_de="Erster Orbit", title_en="First Orbit",
-      desc_de="Starte dein erstes Spiel.", desc_en="Start your first game.",
+      desc_de="Schließe deinen ersten Lauf ab.", desc_en="Complete your first run.",
       icon=236349, -- Achievement_BG_CaptureFlag_EOS
       condition = function(data, db)
           if data.gameId ~= "ARGUSORBDEFENSE" then return 0 end
@@ -45,7 +45,7 @@ ArcadiaNexus.RegisterAchievements({
       icon=133231, -- INV_Ingot_FelSteel
       condition = function(data, db)
           if data.gameId ~= "ARGUSORBDEFENSE" then return 0 end
-          local killed = data.stats and data.stats.meteorsKilled or 0
+          local killed = data.meteorDelta or 0
           if killed <= 0 then return 0 end
           local prog = db.achievements and db.achievements.progress
                        and db.achievements.progress["AOD_METEORS"]
@@ -64,7 +64,7 @@ ArcadiaNexus.RegisterAchievements({
       icon="Interface\\Icons\\Ability_Hunter_AspectOfTheViper",
       condition = function(data, db)
           if data.gameId ~= "ARGUSORBDEFENSE" then return 0 end
-          local killed = data.stats and data.stats.huntersKilled or 0
+          local killed = data.hunterDelta or 0
           if killed <= 0 then return 0 end
           local prog = db.achievements and db.achievements.progress
                        and db.achievements.progress["AOD_HUNTERS"]
@@ -83,7 +83,7 @@ ArcadiaNexus.RegisterAchievements({
       icon="Interface\\Icons\\Ability_Warrior_Charge",
       condition = function(data, db)
           if data.gameId ~= "ARGUSORBDEFENSE" then return 0 end
-          return (data.stats and data.stats.waveReached) or 0
+          return data.gameMode=="endless" and (data.stats and data.stats.clearedWave or 0) or 0
       end,
       tiers = {
           { id="AOD_WAVE_BRONZE", tierName="Bronze", target=5,  xp=20, desc_de="Welle 5.",   desc_en="Wave 5."   },
@@ -97,8 +97,8 @@ ArcadiaNexus.RegisterAchievements({
       desc_de="Schließe Level ab.", desc_en="Complete levels.",
       icon=236442, -- Achievement_Character_Draenei_Male
       condition = function(data, db)
-          if data.gameId ~= "ARGUSORBDEFENSE" or data.result ~= "WIN" then return 0 end
-          return (data.stats and data.stats.levelReached) or 0
+          if data.gameId ~= "ARGUSORBDEFENSE" or data.gameMode ~= "levels" then return 0 end
+          return (data.stats and data.stats.clearedLevel) or 0
       end,
       tiers = {
           { id="AOD_LEVEL_BRONZE", tierName="Bronze", target=10, xp=20, desc_de="Level 10.",        desc_en="Level 10."         },
@@ -109,30 +109,29 @@ ArcadiaNexus.RegisterAchievements({
 
     { id="AOD_HARD", gameId="ARGUSORBDEFENSE", category="ARCADE",
       title_de="Draenei-Krieger", title_en="Draenei Warrior",
-      desc_de="Gewinne auf Schwer.", desc_en="Win on Hard.",
+      desc_de="Schließe ein Level auf Schwer ab.", desc_en="Complete one level on Hard.",
       icon=135878, -- Spell_Holy_BlessedResillience (Blizzard spelling)
       condition = function(data, db)
           if data.gameId ~= "ARGUSORBDEFENSE" then return 0 end
-          if data.result ~= "WIN" or data.difficulty ~= "hard" then return 0 end
+          if not data.stats or (data.stats.hardLevelsCleared or 0)<1 then return 0 end
           return 1
       end,
       tiers = {
-          { id="AOD_HARD_GOLD", tierName="Gold", target=1, xp=100, desc_de="Einmal auf Schwer.", desc_en="Win on Hard." },
+          { id="AOD_HARD_GOLD", tierName="Gold", target=1, xp=100, desc_de="Einmal auf Schwer.", desc_en="Complete one level on Hard." },
       },
     },
 
     { id="AOD_NAARU", gameId="ARGUSORBDEFENSE", category="ARCADE",
       title_de="Naaru-Segen", title_en="Naaru Blessing",
-      desc_de="Setze die Naaru-Bombe ein und gewinne.", desc_en="Use the Naaru Bomb and win.",
+      desc_de="Schließe ein Level nach Einsatz der Naaru-Bombe ab.", desc_en="Complete a level after using the Naaru Bomb.",
       icon="Interface\\Icons\\Spell_Holy_SealOfSacrifice",
       condition = function(data, db)
           if data.gameId ~= "ARGUSORBDEFENSE" then return 0 end
-          if data.result ~= "WIN" then return 0 end
-          if not (data.stats and data.stats.usedBomb) then return 0 end
+          if not data.stats or (data.stats.bombLevelsCleared or 0)<1 then return 0 end
           return 1
       end,
       tiers = {
-          { id="AOD_NAARU_GOLD", tierName="Gold", target=1, xp=60, desc_de="Bombe + Sieg.", desc_en="Bomb and win." },
+          { id="AOD_NAARU_GOLD", tierName="Gold", target=1, xp=60, desc_de="Bombe + Levelabschluss.", desc_en="Bomb and level clear." },
       },
     },
 

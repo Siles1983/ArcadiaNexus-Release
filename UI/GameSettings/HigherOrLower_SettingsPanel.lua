@@ -5,6 +5,7 @@
 ]]
 
 local GS = ArcadiaNexus.GameSettings
+local UI = ArcadiaNexus.UI
 
 local SHARED_BACKS = "Interface\\AddOns\\ArcadiaNexus\\Shared\\CardBacks\\"
 local THEME_KEYS   = { "neutral", "alliance", "horde" }
@@ -14,6 +15,20 @@ local function BuildHigherOrLowerSettingsPanel(parent)
     if not S then return end
     local L = ArcadiaNexus.GetLocaleTable("HIGHERORLOWER")
     if not L then return end
+
+    local section = GS.GuideSection(nil, L, {
+        "guide_1", "guide_2", "guide_3", "guide_4",
+        "guide_5", "guide_6", "guide_7", "guide_8", "guide_9",
+    }, 15)
+    local measure = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    measure:SetWidth(GS.GetTotalWidth(parent) - UI.PAD * 2)
+    measure:SetWordWrap(true)
+    local guideHeight = 64
+    for _, line in ipairs(section.lines) do
+        measure:SetText(line)
+        guideHeight = guideHeight + math.max(14, measure:GetStringHeight()) + 2
+    end
+    measure:Hide()
 
     GS.Build(parent, {
         settings = S,
@@ -50,15 +65,7 @@ local function BuildHigherOrLowerSettingsPanel(parent)
                 })
             end,
         },
-        guide = {
-            minHeight = 110,
-            sections = {
-                GS.GuideSection(nil, L, {
-                    "guide_1", "guide_2", "guide_3", "guide_4",
-                    "guide_5", "guide_6", "guide_7",
-                }, 15),
-            },
-        },
+        guide = { minHeight = guideHeight, sections = { section } },
     })
 end
 

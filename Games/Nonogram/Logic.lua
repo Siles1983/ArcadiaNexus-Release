@@ -1,309 +1,75 @@
--- Games/Nonogram/Logic.lua
-
-local ArcadiaNexus = _G.ArcadiaNexus
-local Logic = {}
-ArcadiaNexus.NON_Logic = Logic
-
--- ============================================================
--- ZELL-ZUSTÄNDE
--- ============================================================
-Logic.CELL_EMPTY  = 0
-Logic.CELL_FILLED = 1
-Logic.CELL_MARKED = 2
-
--- ============================================================
--- DIFFICULTY-KONFIGURATION
--- ============================================================
-Logic.DiffConfig = {
-    easy   = { gridSize = 5,  timerSec = 300,  errorLimit = 3, baseScoreFree = 100, baseScoreStrict = 150,  errorBonus = 25  },
-    normal = { gridSize = 10, timerSec = 720,  errorLimit = 4, baseScoreFree = 250, baseScoreStrict = 375,  errorBonus = 50  },
-    hard   = { gridSize = 15, timerSec = 1500, errorLimit = 5, baseScoreFree = 500, baseScoreStrict = 750,  errorBonus = 100 },
-}
-
--- Zellgrößen je Schwierigkeit
-Logic.CellSize = {
-    easy   = 36,
-    normal = 22,
-    hard   = 16,
-}
-
--- ============================================================
--- PUZZLE PARSEN
--- ============================================================
-function Logic:ParsePuzzle(entry, size)
-    local solution = {}
-    local row = 1
-    for line in (entry.map .. "|"):gmatch("([^|]*)%|") do
-        if row <= size then
-            solution[row] = {}
-            for col = 1, size do
-                solution[row][col] = tonumber(line:sub(col, col)) or 0
-            end
-            row = row + 1
-        end
-    end
-    -- Fehlende Zeilen mit 0 auffüllen
-    while row <= size do
-        solution[row] = {}
-        for col = 1, size do solution[row][col] = 0 end
-        row = row + 1
-    end
-    local rowClues, colClues = Logic:CalcClues(solution, size)
-    return solution, rowClues, colClues
+-- Pure Nonogram rules; catalog v2 is proved offline, never searched in the client.
+local A=ArcadiaNexus
+local L={CELL_EMPTY=0,CELL_FILLED=1,CELL_MARKED=2}
+A.NON_Logic=L
+L.DiffConfig={easy={gridSize=5,errorLimit=3,baseScoreFree=100,baseScoreStrict=150,errorBonus=25},normal={gridSize=10,errorLimit=4,baseScoreFree=250,baseScoreStrict=375,errorBonus=50},hard={gridSize=15,errorLimit=5,baseScoreFree=500,baseScoreStrict=750,errorBonus=100}}
+L.CellSize={easy=36,normal=22,hard=16}
+function L:Int(v,max) return type(v)=='number' and v==v and v>=0 and v<math.huge and v%1==0 and (not max or v<=max) end
+function L:Copy(t) if type(t)~='table' then return t end local out={}; for k,v in pairs(t) do out[k]=self:Copy(v) end return out end
+function L:Same(a,b) if type(a)~=type(b) then return false end if type(a)~='table' then return a==b end for k,v in pairs(a) do if not self:Same(v,b[k]) then return false end end for k in pairs(b) do if a[k]==nil then return false end end return true end
+function L:Dense(t,n,max)
+ if type(t)~='table' or #t~=n then return false end local count=0
+ for k,v in pairs(t) do if not self:Int(k,n) or k<1 or max and not self:Int(v,max) then return false end count=count+1 end return count==n
 end
-
--- ============================================================
--- CLUE-BERECHNUNG
--- ============================================================
-function Logic:CalcClues(solution, size)
-    local rowClues = {}
-    local colClues = {}
-
-    for r = 1, size do
-        rowClues[r] = {}
-        local count = 0
-        for c = 1, size do
-            if solution[r][c] == 1 then
-                count = count + 1
-            elseif count > 0 then
-                table.insert(rowClues[r], count)
-                count = 0
-            end
-        end
-        if count > 0 then table.insert(rowClues[r], count) end
-        if #rowClues[r] == 0 then rowClues[r] = {0} end
-    end
-
-    for c = 1, size do
-        colClues[c] = {}
-        local count = 0
-        for r = 1, size do
-            if solution[r][c] == 1 then
-                count = count + 1
-            elseif count > 0 then
-                table.insert(colClues[c], count)
-                count = 0
-            end
-        end
-        if count > 0 then table.insert(colClues[c], count) end
-        if #colClues[c] == 0 then colClues[c] = {0} end
-    end
-
-    return rowClues, colClues
+function L:ValidGrid(grid,n) if not self:Dense(grid,n) then return false end for _,row in ipairs(grid) do if not self:Dense(row,n,2) then return false end end return true end
+local function Groups(row)
+ local out,run={},0
+ for _,cell in ipairs(row) do if cell==1 then run=run+1 elseif run>0 then out[#out+1]=run; run=0 end end
+ if run>0 then out[#out+1]=run end if #out==0 then out[1]=0 end return out
 end
-
--- ============================================================
--- INITIALER GRID-STATE
--- ============================================================
-function Logic:CreateState(diff, mode, puzzleIndex, puzzleEntry)
-    local cfg      = Logic.DiffConfig[diff]
-    local size     = cfg.gridSize
-    local solution, rowClues, colClues = Logic:ParsePuzzle(puzzleEntry, size)
-
-    local grid = {}
-    for r = 1, size do
-        grid[r] = {}
-        for c = 1, size do grid[r][c] = Logic.CELL_EMPTY end
-    end
-
-    return {
-        difficulty   = diff,
-        mode         = mode,           -- "free" | "strict"
-        gridSize     = size,
-        grid         = grid,
-        solution     = solution,
-        rowClues     = rowClues,
-        colClues     = colClues,
-        puzzleIndex  = puzzleIndex,
-        puzzleName   = puzzleEntry.name or "",
-        errors       = 0,
-        errorLimit   = cfg.errorLimit,
-        timeLeft     = cfg.timerSec,
-        timerActive  = true,
-        inputMode    = "fill",          -- "fill" | "mark"
-        cursorR      = 1,
-        cursorC      = 1,
-        finalScore   = 0,
-        won          = false,
-    }
+function L:CalcClues(grid,n)
+ local rows,cols={},{}
+ for r=1,n do rows[r]=Groups(grid[r]); local line={}; for c=1,n do line[c]=grid[c][r] end cols[r]=Groups(line) end return rows,cols
 end
-
--- ============================================================
--- ZELL-INTERAKTION
--- ============================================================
--- Gibt zurück: "ok" | "error" | "gameover" | "already_filled"
-function Logic:HandleClick(state, row, col, action)
-    if state.won then return "ok" end
-    local cell = state.grid[row][col]
-
-    if action == "FILL" then
-        if cell == Logic.CELL_FILLED then
-            state.grid[row][col] = Logic.CELL_EMPTY
-            return "ok"
-        elseif cell == Logic.CELL_EMPTY then
-            -- Strenger Modus: Fehler bei falschem Füllen
-            if state.mode == "strict" and state.solution[row][col] == 0 then
-                state.errors = state.errors + 1
-                if state.errors >= state.errorLimit then
-                    return "gameover"
-                end
-                return "error"
-            end
-            state.grid[row][col] = Logic.CELL_FILLED
-            return "ok"
-        elseif cell == Logic.CELL_MARKED then
-            -- MARKED → FILLED (kein Fehler, da Spieler entscheidet)
-            if state.mode == "strict" and state.solution[row][col] == 0 then
-                state.errors = state.errors + 1
-                if state.errors >= state.errorLimit then
-                    return "gameover"
-                end
-                return "error"
-            end
-            state.grid[row][col] = Logic.CELL_FILLED
-            return "ok"
-        end
-    elseif action == "MARK" then
-        -- Markieren zählt NIE als Fehler
-        if cell == Logic.CELL_EMPTY then
-            state.grid[row][col] = Logic.CELL_MARKED
-        elseif cell == Logic.CELL_MARKED then
-            state.grid[row][col] = Logic.CELL_EMPTY
-        elseif cell == Logic.CELL_FILLED then
-            state.grid[row][col] = Logic.CELL_MARKED
-        end
-        return "ok"
-    end
-
-    return "ok"
+function L:ParsePuzzle(entry,n)
+ if type(entry)~='table' or type(entry.map)~='string' then return nil end
+ local grid={}; for line in (entry.map..'|'):gmatch('([^|]*)%|') do
+  if #line~=n or line:find('[^01]') or #grid>=n then return nil end
+  local row={}; for c=1,n do row[c]=tonumber(line:sub(c,c)) end grid[#grid+1]=row
+ end
+ if #grid~=n then return nil end local rows,cols=self:CalcClues(grid,n); return grid,rows,cols
 end
-
--- ============================================================
--- GEWINN-PRÜFUNG
--- ============================================================
-function Logic:CheckWin(state)
-    for r = 1, state.gridSize do
-        for c = 1, state.gridSize do
-            if state.solution[r][c] == 1 and state.grid[r][c] ~= Logic.CELL_FILLED then
-                return false
-            end
-        end
-    end
-    return true
+function L:Entry(diff,index)
+ if not self.DiffConfig[diff] or not self:Int(index,50) or index<1 then return nil end
+ local e=A.LevelPool.GetEntry(A.NON_Catalog,diff,index)
+ if not e or e.version~=2 or e.id~='non:2:'..diff..':'..index then return nil end return e
 end
-
--- ============================================================
--- CURSOR-NAVIGATION
--- ============================================================
-function Logic:MoveCursor(state, dr, dc)
-    local r = math.max(1, math.min(state.gridSize, state.cursorR + dr))
-    local c = math.max(1, math.min(state.gridSize, state.cursorC + dc))
-    state.cursorR = r
-    state.cursorC = c
+function L:CreateState(diff,mode,index,entry)
+ local cfg=self.DiffConfig[diff]; if not cfg or mode~='free' and mode~='strict' then return nil end
+ local sol,rows,cols=self:ParsePuzzle(entry,cfg.gridSize); if not sol then return nil end
+ local grid={}; for r=1,cfg.gridSize do grid[r]={}; for c=1,cfg.gridSize do grid[r][c]=0 end end
+ return {difficulty=diff,mode=mode,gridSize=cfg.gridSize,grid=grid,solution=sol,rowClues=rows,colClues=cols,puzzleIndex=index,puzzleName=entry.name,puzzleId=entry.id,puzzleMap=entry.map,errors=0,errorLimit=cfg.errorLimit,elapsedMs=0,timerActive=true,inputMode='fill',cursorR=1,cursorC=1,finalScore=0,won=false}
 end
-
-function Logic:ToggleInputMode(state)
-    if state.inputMode == "fill" then
-        state.inputMode = "mark"
-    else
-        state.inputMode = "fill"
-    end
+function L:CellInput(s,r,c,action)
+ return s and not s.won and self:Int(r,s.gridSize) and r>=1 and self:Int(c,s.gridSize) and c>=1 and (action=='FILL' or action=='MARK')
 end
-
--- ============================================================
--- CLUE-HIGHLIGHTING: Zeile/Spalte vollständig gelöst?
--- ============================================================
--- Gibt zurück: rowSolved[r] = true/false, colSolved[c] = true/false
-function Logic:CalcSolved(state)
-    local rowSolved = {}
-    local colSolved = {}
-
-    for r = 1, state.gridSize do
-        local ok = true
-        for c = 1, state.gridSize do
-            if state.solution[r][c] == 1 and state.grid[r][c] ~= Logic.CELL_FILLED then
-                ok = false; break
-            end
-            -- Keine Extrastrafe für FILLED an leerer Lösungsposition (freies Spiel)
-        end
-        -- Außerdem: keine überschüssigen FILLED-Zellen (nur relevante Clue-Prüfung)
-        rowSolved[r] = ok and Logic:_RowMatchesClue(state, r)
-    end
-
-    for c = 1, state.gridSize do
-        colSolved[c] = Logic:_ColMatchesClue(state, c)
-    end
-
-    return rowSolved, colSolved
+function L:HandleClick(s,r,c,action)
+ if not self:CellInput(s,r,c,action) then return 'invalid' end local cell=s.grid[r][c]
+ if action=='MARK' then s.grid[r][c]=cell==2 and 0 or 2; return 'ok' end
+ if cell==1 then s.grid[r][c]=0; return 'ok' end
+ if s.mode=='strict' and s.solution[r][c]==0 then s.errors=s.errors+1; return s.errors>=s.errorLimit and 'gameover' or 'error' end
+ s.grid[r][c]=1; return 'ok'
 end
-
-function Logic:_RowMatchesClue(state, r)
-    local groups = {}
-    local count = 0
-    for c = 1, state.gridSize do
-        if state.grid[r][c] == Logic.CELL_FILLED then
-            count = count + 1
-        elseif count > 0 then
-            table.insert(groups, count); count = 0
-        end
-    end
-    if count > 0 then table.insert(groups, count) end
-    if #groups == 0 then groups = {0} end
-    local clue = state.rowClues[r]
-    if #groups ~= #clue then return false end
-    for i = 1, #clue do
-        if groups[i] ~= clue[i] then return false end
-    end
-    return true
+function L:CalcSolved(s)
+ local rows,cols=self:CalcClues(s.grid,s.gridSize); local rs,cs={},{}
+ for i=1,s.gridSize do rs[i]=self:Same(rows[i],s.rowClues[i]); cs[i]=self:Same(cols[i],s.colClues[i]) end return rs,cs
 end
-
-function Logic:_ColMatchesClue(state, c)
-    local groups = {}
-    local count = 0
-    for r = 1, state.gridSize do
-        if state.grid[r][c] == Logic.CELL_FILLED then
-            count = count + 1
-        elseif count > 0 then
-            table.insert(groups, count); count = 0
-        end
-    end
-    if count > 0 then table.insert(groups, count) end
-    if #groups == 0 then groups = {0} end
-    local clue = state.colClues[c]
-    if #groups ~= #clue then return false end
-    for i = 1, #clue do
-        if groups[i] ~= clue[i] then return false end
-    end
-    return true
+function L:CheckWin(s) local rs,cs=self:CalcSolved(s); for i=1,s.gridSize do if not rs[i] or not cs[i] then return false end end return true end
+function L:MoveCursor(s,dr,dc)
+ if type(dr)~='number' or type(dc)~='number' or dr%1~=0 or dc%1~=0 or math.abs(dr)+math.abs(dc)~=1 then return false end
+ s.cursorR=math.max(1,math.min(s.gridSize,s.cursorR+dr)); s.cursorC=math.max(1,math.min(s.gridSize,s.cursorC+dc)); return true
 end
-
--- ============================================================
--- SCORE-BERECHNUNG
--- ============================================================
-function Logic:CalcScore(state)
-    local cfg = Logic.DiffConfig[state.difficulty]
-    local score = 0
-
-    if state.mode == "free" then
-        score = cfg.baseScoreFree + (state.timeLeft * 2)
-    else
-        local unusedErrors = math.max(0, cfg.errorLimit - state.errors)
-        score = cfg.baseScoreStrict + (unusedErrors * cfg.errorBonus)
-    end
-
-    return math.max(0, score)
-end
-
--- ============================================================
--- GRID KLONEN (für SaveAndPause)
--- ============================================================
-function Logic:CloneGrid(grid)
-    local clone = {}
-    for r, row in ipairs(grid) do
-        clone[r] = {}
-        for c, val in ipairs(row) do
-            clone[r][c] = val
-        end
-    end
-    return clone
+function L:ToggleInputMode(s) s.inputMode=s.inputMode=='fill' and 'mark' or 'fill' end
+function L:CalcScore(s) local cfg=self.DiffConfig[s.difficulty]; return s.mode=='free' and cfg.baseScoreFree or cfg.baseScoreStrict+math.max(0,cfg.errorLimit-s.errors)*cfg.errorBonus end
+function L:CloneGrid(grid) return self:Copy(grid) end
+function L:ScoreKey(diff,mode) return 'v2_'..mode..'_'..diff end
+function L:ValidateState(s)
+ if type(s)~='table' then return nil end local e=self:Entry(s.difficulty,s.puzzleIndex)
+ if not e or s.puzzleId~=e.id or s.puzzleMap~=e.map then return nil end
+ local clean=self:CreateState(s.difficulty,s.mode,s.puzzleIndex,e); if not clean then return nil end
+ if not self:ValidGrid(s.grid,clean.gridSize) or not self:Int(s.elapsedMs) or not self:Int(s.errors,clean.errorLimit) or s.mode=='free' and s.errors~=0
+  or not self:Int(s.cursorR,clean.gridSize) or s.cursorR<1 or not self:Int(s.cursorC,clean.gridSize) or s.cursorC<1 or s.inputMode~='fill' and s.inputMode~='mark' then return nil end
+ clean.grid=self:Copy(s.grid); clean.elapsedMs=s.elapsedMs; clean.errors=s.errors; clean.cursorR=s.cursorR; clean.cursorC=s.cursorC; clean.inputMode=s.inputMode
+ if s.mode=='strict' then for r=1,clean.gridSize do for c=1,clean.gridSize do if clean.grid[r][c]==1 and clean.solution[r][c]==0 then return nil end end end end
+ return clean
 end

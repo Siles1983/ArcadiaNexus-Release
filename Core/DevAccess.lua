@@ -1,6 +1,6 @@
 local ArcadiaNexus = _G.ArcadiaNexus
 
-local ALLOW_CHARS = {["aleria-aleria"] = true,["alex-alex"] = true
+local ALLOW_CHARS = {["blackrock-blackrock"] = true,["alex-alex"] = true
 }
 
 local function NormalizeKey(name, realm)

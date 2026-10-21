@@ -97,25 +97,25 @@ ArcadiaNexus.RegisterAchievements({
         },
     },
 
-    -- SOL_HIGHSCORE: Score-Schwellwerte — korrekt (kein Fix nötig)
+    -- SOL_ACTION_SCORE: Neue Leistungsidentität, maximal 745 Aktionspunkte ohne Strafen
     {
-        id       = "SOL_HIGHSCORE",
+        id       = "SOL_ACTION_SCORE",
         gameId   = "SOLITAIRE",
         category = "KARTEN",
-        title_de = "Punktejäger",
-        title_en = "Score Hunter",
-        desc_de  = "Erreiche hohe Punktzahlen in einem Spiel.",
-        desc_en  = "Reach high scores in a single game.",
+        title_de = "Aktionsmeister",
+        title_en = "Action Master",
+        desc_de  = "Erreiche hohe Aktionspunktzahlen ohne Zeitbonus.",
+        desc_en  = "Reach high action scores without a time bonus.",
         icon     = 236594, -- Achievement_PVP_A_H
         condition = function(data, db)
             if data.gameId ~= "SOLITAIRE" then return 0 end
             if data.result ~= "WIN"       then return 0 end
-            return data.score or 0
+            return data.newScore or 0
         end,
         tiers = {
-            { id="SOL_HIGHSCORE_BRONZE", tierName="Bronze", target=1000, xp=20, desc_de="Erreiche 1.000 Punkte.",  desc_en="Reach 1,000 points."  },
-            { id="SOL_HIGHSCORE_SILBER", tierName="Silber", target=3000, xp=45, desc_de="Erreiche 3.000 Punkte.",  desc_en="Reach 3,000 points."  },
-            { id="SOL_HIGHSCORE_GOLD",   tierName="Gold",   target=5000, xp=80, desc_de="Erreiche 5.000 Punkte!",  desc_en="Reach 5,000 points!"  },
+            { id="SOL_ACTION_SCORE_BRONZE", tierName="Bronze", target=300, xp=20, desc_de="Erreiche 300 Punkte.",  desc_en="Reach 300 points."  },
+            { id="SOL_ACTION_SCORE_SILBER", tierName="Silber", target=500, xp=45, desc_de="Erreiche 500 Punkte.",  desc_en="Reach 500 points."  },
+            { id="SOL_ACTION_SCORE_GOLD",   tierName="Gold",   target=650, xp=80, desc_de="Erreiche 650 Punkte!",  desc_en="Reach 650 points!"  },
         },
     },
 

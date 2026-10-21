@@ -62,14 +62,23 @@ ArcadiaNexus.RegisterLocale("ARCADIASECHO", "deDE", {
 
     -- Settings-Panel: Spielanleitung
     guide_goal      = "|cffffff00Ziel:|r Merke dir die angezeigte Sequenz aus leuchtenden Symbolen und wiederhole sie.",
-    guide_flow      = "|cffffff00Ablauf:|r Die Sequenz wird gezeigt – dann klickst du die Symbole in derselben Reihenfolge.",
+    guide_flow      = "|cffffff00Ablauf:|r Die Sequenz wird gezeigt – dann klickst du die Symbole in derselben Reihenfolge. Tastatur: Pfeiltasten wählen, Leertaste/Enter bestätigt; Gamepad per Cursor.",
     guide_diff      = "|cffffff00Schwierigkeit:|r Einfach=2x2 (4 Symbole), Normal=3x3 (9), Schwer=4x4 (16 Symbole).",
-    guide_seq       = "|cffffff00Sequenz:|r Startet bei 3 Symbolen, jede Runde +1. Die Anzeige wird mit der Zeit schneller.",
+    guide_seq       = "|cffffff00Sequenz:|r Start mit 1 Symbol bei 0,85 s; jede Runde +1 und 0,04 s schneller. Eingabe ohne Zeitlimit. Punkte zählen nur vollständig gemeisterte Sequenzen, auch beim Beenden.",
     guide_fail      = "|cffff4444Fehler:|r Ein falscher Klick beendet das Spiel sofort. Wie weit kommst du?",
     guide_tip       = "|cffaaaaaa Tipp: Spreche die Symbole laut mit – das hilft beim Merken!|r",
 
     -- Reset
     btn_reset       = "Reset",
+    hud_length = "Sequenzlänge: %d",
+    hud_best = "Gemeistert: %d",
+    hud_progress = "%d / %d",
+    phase_showing = "Merken",
+    phase_input = "Dein Zug",
+    phase_complete = "Gemeistert",
+    result_exit_title = "Lauf beendet",
+    result_mastered = "Längste gemeisterte Sequenz: %d",
+    error_symbols = "|cffff4444Gewählt: %s|r · |cff33ff33Erwartet: %s|r",
 })
 
 -- ============================================================
@@ -127,12 +136,21 @@ ArcadiaNexus.RegisterLocale("ARCADIASECHO", "enUS", {
 
     -- Guide
     guide_goal      = "|cffffff00Goal:|r Memorize the sequence of flashing symbols and repeat it.",
-    guide_flow      = "|cffffff00Flow:|r The sequence is shown – then click the symbols in the same order.",
+    guide_flow      = "|cffffff00Flow:|r The sequence is shown – then click the symbols in the same order. Keyboard: arrows select, Space/Enter confirm; gamepad uses the cursor.",
     guide_diff      = "|cffffff00Difficulty:|r Easy=2x2 (4 symbols), Normal=3x3 (9), Hard=4x4 (16 symbols).",
-    guide_seq       = "|cffffff00Sequence:|r Starts at 3 symbols, +1 each round. Display speed increases over time.",
+    guide_seq       = "|cffffff00Sequence:|r Start with 1 symbol at 0.85 s; +1 symbol and 0.04 s faster each round. No input time limit. Only fully mastered sequences score, including when ending a run.",
     guide_fail      = "|cffff4444Error:|r One wrong click ends the game immediately. How far can you go?",
     guide_tip       = "|cffaaaaaa Tip: Say the symbols out loud – it really helps with memorization!|r",
 
     -- Reset
     btn_reset       = "Reset",
+    hud_length = "Sequence length: %d",
+    hud_best = "Mastered: %d",
+    hud_progress = "%d / %d",
+    phase_showing = "Memorize",
+    phase_input = "Your turn",
+    phase_complete = "Mastered",
+    result_exit_title = "Run ended",
+    result_mastered = "Longest mastered sequence: %d",
+    error_symbols = "|cffff4444Chosen: %s|r · |cff33ff33Expected: %s|r",
 })

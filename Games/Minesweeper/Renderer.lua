@@ -58,16 +58,20 @@ local CFG = {
     bg_ofs_x     = 0,
     bg_ofs_y     = 0,
     bg_alpha     = 1.0,
-    hud_mine_w      = 180,
+    hud_mine_w      = 140,
     hud_mine_h      = 28,
-    hud_mine_x      = -135,
+    hud_mine_x      = -185,
     hud_mine_y      = 241,
     hud_mine_alpha  = 0.75,
-    hud_flag_w      = 180,
+    hud_flag_w      = 150,
     hud_flag_h      = 28,
-    hud_flag_x      = 135,
+    hud_flag_x      = 185,
     hud_flag_y      = 241,
     hud_flag_alpha  = 0.75,
+    hud_time_w      = 140,
+    hud_time_h      = 28,
+    hud_time_x      = 0,
+    hud_time_y      = 241,
     min_icon_size = 16,
 }
 
@@ -102,14 +106,14 @@ local ICON_MINE   = "Interface\\Icons\\INV_Misc_Bomb_03"
 -- FARBEN
 -- ============================================================
 local NUMBER_COLORS = {
-    [1] = { 0.26, 0.26, 1.00 },
-    [2] = { 0.13, 0.67, 0.13 },
-    [3] = { 1.00, 0.20, 0.20 },
+    [1] = { 0.02, 0.05, 0.35 },
+    [2] = { 0.02, 0.20, 0.03 },
+    [3] = { 0.45, 0.02, 0.02 },
     [4] = { 0.00, 0.00, 0.55 },
     [5] = { 0.55, 0.00, 0.00 },
-    [6] = { 0.00, 0.55, 0.55 },
+    [6] = { 0.00, 0.20, 0.20 },
     [7] = { 0.13, 0.13, 0.13 },
-    [8] = { 0.55, 0.55, 0.55 },
+    [8] = { 0.20, 0.20, 0.20 },
 }
 
 local CLR_HIDDEN_EVEN = { 0.18, 0.18, 0.18, 1 }
@@ -146,6 +150,11 @@ local function CreateCellPool()
             tf._iconFrame = iconFrame
             tf._iconTex   = iconTex
             tf._label     = lbl
+            local marker=iconFrame:CreateFontString(nil,"OVERLAY","GameFontNormal")
+            marker:SetAllPoints(iconFrame)
+            marker:SetJustifyH("CENTER")
+            marker:SetJustifyV("MIDDLE")
+            tf._marker=marker
             return tf
         end,
         onRelease = function(tf)
@@ -163,6 +172,7 @@ local function CreateCellPool()
                 tf._iconTex:Show()
             end
             if tf._label then tf._label:SetText("") end
+            if tf._marker then tf._marker:SetText("") end
             if poolParentRef then tf:SetParent(poolParentRef) end
         end,
     })
@@ -215,9 +225,21 @@ function R:Init()
     Engine:On("MS_GAME_STARTED",  function(s) R:OnGameStarted(s)  end)
     Engine:On("MS_CELL_REVEALED", function(s) R:OnBoardUpdated(s) end)
     Engine:On("MS_FLAG_TOGGLED",  function(s) R:OnBoardUpdated(s) end)
-    Engine:On("MS_GAME_WON",      function(s) R:OnGameWon(s)      end)
-    Engine:On("MS_GAME_LOST",     function(s) R:OnGameLost(s)     end)
-    Engine:On("MS_GAME_STOPPED",  function()  R:EnterIdleState()  end)
+    Engine:On("MS_GAME_WON",      function(s,d) R:OnGameWon(s,d) end)
+    Engine:On("MS_GAME_LOST",     function(s,d) R:OnGameLost(s,d) end)
+    Engine:On("MS_GAME_STOPPED", function() R:EnterIdleState() end)
+    Engine:On("MS_TIME_UPDATED",function(ms) R:UpdateTime(ms) end)
+    Engine:On("MS_RESULT_FAILED",function(state)
+        R.state="RESULT_PENDING"; R:RenderAll(state)
+        local L=ArcadiaNexus.GetLocaleTable("MINESWEEPER")
+        ArcadiaNexus.UI.ShowArcadeResult(R._fieldFrame,{
+            title=L.result_pending,subtitle=L.result_retry,hideHighscore=true,
+            buttons={
+                {label=L.btn_retry_result,onClick=function() ArcadiaNexus.MS_Engine:RetryResult() end},
+                {label=L.btn_pause,onClick=function() ArcadiaNexus.MS_Engine:SaveAndPause() end},
+            },
+        })
+    end)
 end
 
 -- ============================================================
@@ -242,7 +264,7 @@ function R:_CreateMainFrame()
     f:SetScript("OnHide", function()
         ArcadiaNexus.GameSession:HandleRendererHide("MINESWEEPER", ArcadiaNexus.MS_Engine, function(E)
             if E.activeGame then
-                E:StopGame()
+                return E:SaveAndPause()
             end
         end)
     end)
@@ -324,63 +346,47 @@ function R:_CreateStatusBar()
         text = (L["hud_flags"] or "Gesetzt") .. ": 0",
         shown = false,
     })
+    self._timeBox,self._timeFS=UI.CreateHudStatBox(canvas,{
+        w=CFG.hud_time_w,h=CFG.hud_time_h,point="CENTER",relativePoint="CENTER",
+        x=CFG.hud_time_x,y=CFG.hud_time_y,alpha=0.75,text=L.hud_time..": 00:00",shown=false,
+    })
 end
 
 function R:_CreateControls()
-    local L  = ArcadiaNexus.GetLocaleTable("MINESWEEPER")
-    local UI = ArcadiaNexus.UI
-
-    local bar = UI.CreateGameControlsBar(self.frame, "narrow")
-    local cf = bar.frame
-    self._controlsFrame = cf
-
-    -- Schwierigkeits-Dropdown (linkes Segment)
-    local S = ArcadiaNexus.MS_Settings
-    local ddOptions = {
-        { key = "easy",   label = L["diff_easy"]   },
-        { key = "normal", label = L["diff_normal"]  },
-        { key = "hard",   label = L["diff_hard"]    },
-    }
-
-    local ddAnchor = CreateFrame("Frame", nil, cf)
-    ddAnchor:SetSize(CFG.dd_w, CFG.btn_h)
-    ddAnchor:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
-
-    UI.CreateSimpleDropdown(
-        ddAnchor,
-        0, 0,
-        CFG.dd_w,
-        "",
-        ddOptions,
-        function()
-            return (S and S:Get("difficulty")) or "easy"
+    local L,UI,S=ArcadiaNexus.GetLocaleTable("MINESWEEPER"),ArcadiaNexus.UI,ArcadiaNexus.MS_Settings
+    local bar=UI.CreateGameControlsBar(self.frame,"narrow")
+    self._controlsFrame=bar.frame
+    local anchor=CreateFrame("Frame",nil,bar.frame)
+    anchor:SetSize(CFG.dd_w,CFG.btn_h)
+    anchor:SetPoint("CENTER",bar.frame,"CENTER",bar.segX[1],bar.y.dropdownOfs)
+    self._diffDropdown=UI.CreateSimpleDropdown(anchor,0,0,CFG.dd_w,"",{
+        {key="easy",label=L.diff_easy},{key="normal",label=L.diff_normal},{key="hard",label=L.diff_hard},
+    },function()
+        local E=ArcadiaNexus.MS_Engine
+        return E.activeConfig and E.activeConfig.difficulty or S:Get("difficulty")
+    end,function(key) S:Set("difficulty",key) end)
+    self._startBtn=UI.CreateArcadiaButton(bar.frame,L.btn_start,CFG.btn_w,CFG.btn_h)
+    self._startBtn:SetPoint("BOTTOM",bar.frame,"BOTTOM",bar.segX[2],bar.y.button)
+    self._startBtn:SetScript("OnClick",function()
+        if ArcadiaNexus.MS_Engine.activeGame then ArcadiaNexus.MS_Engine:SaveAndPause()
+        elseif R.state=="SLOT_MENU" then R:EnterIdleState()
+        else R:ShowSlotMenu() end
+    end)
+    self._slotMenu=UI.CreateSaveSlotMenu({
+        parent=self._fieldFrame,maxSlots=S.MAX_SLOTS,L=L,
+        loadSlot=function(slot) return S:LoadSlot(slot) end,
+        deleteSlot=function(slot) S:DeleteSlot(slot) end,
+        canContinue=function(save) return ArcadiaNexus.MS_Engine:CanContinueSave(save) end,
+        formatInfo=function(save)
+            if not ArcadiaNexus.MS_Logic:ValidateSave(save) then return L.slot_invalid end
+            return L["diff_"..save.difficulty].." · "..ArcadiaNexus.Format.SecondsMMSS(save.elapsedMs/1000)
+                .. (save.resultPending and (" · "..L.result_pending) or (save.phase~="PLAYING" and (" · "..L.slot_finished) or ""))
         end,
-        function(key)
-            R.selectedDiff = key
-            if S then S:Set("difficulty", key) end
-        end
-    )
-
-    -- Start / Beenden Button (mittleres Segment, CENTER)
-    local startBtn = UI.CreateArcadiaButton(cf, L["btn_start"], CFG.btn_w, CFG.btn_h)
-    startBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
-    startBtn:SetScript("OnClick", function()
-        if R.state == "PLAYING" then
-            ArcadiaNexus.MS_Engine:StopGame()
-        else
-            ArcadiaNexus.MS_Engine:StartGame({ difficulty = R.selectedDiff })
-        end
-    end)
-    self._startBtn = startBtn
-
-    -- Neues Spiel Button (rechtes Segment, CENTER+180)
-    local newGameBtn = UI.CreateArcadiaButton(cf, L["btn_new_game"], CFG.btn_w, CFG.btn_h)
-    newGameBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[3], bar.y.button)
-    newGameBtn:SetScript("OnClick", function()
-        ArcadiaNexus.MS_Engine:StartGame({ difficulty = R.selectedDiff })
-    end)
-    newGameBtn:Hide()
-    self._newGameBtn = newGameBtn
+        isPaused=function(save) return save.phase=="PLAYING" or save.resultPending end,
+        onNewGame=function(slot) ArcadiaNexus.MS_Engine:StartGame({slot=slot,overwrite=true}) end,
+        onContinue=function(slot) ArcadiaNexus.MS_Engine:StartGame({slot=slot,mode="continue"}) end,
+        onCancel=function() R:EnterIdleState() end,
+    })
 end
 
 -- ============================================================
@@ -439,6 +445,8 @@ function R:BuildBoard(size)
             local fontSize = math.max(10, cellSize - 16)
             tf._label:SetFont(tf._label:GetFont(), fontSize, "OUTLINE")
             tf._label:SetText("")
+            tf._marker:SetFont(tf._label:GetFont(),math.max(12,fontSize),"OUTLINE")
+            tf._marker:SetText("")
 
             tf._gridR = r
             tf._gridC = c
@@ -450,6 +458,7 @@ function R:BuildBoard(size)
                     ArcadiaNexus.MS_Engine:HandleReveal(selfBtn._gridR, selfBtn._gridC)
                 end
             end)
+            tf:Enable()
             tf:Show()
 
             self.cells[r][c] = {
@@ -458,6 +467,7 @@ function R:BuildBoard(size)
                 iconFrame = tf._iconFrame,
                 iconTex   = tf._iconTex,
                 label     = tf._label,
+                marker    = tf._marker,
                 isEven    = isEven,
             }
         end
@@ -474,13 +484,29 @@ end
 -- ============================================================
 -- ZELLE RENDERN
 -- ============================================================
-function R:RenderCell(r, c, cell)
+function R:RenderCell(r, c, cell, state)
     local cd = self.cells[r] and self.cells[r][c]
     if not cd then return end
 
     local isEven = cd.isEven
+    cd.marker:SetText("")
+    cd.iconTex:SetVertexColor(1,1,1,1)
 
-    if not cell.revealed then
+    if state and state.phase=="LOST" and cell.flagged and not cell.isMine then
+        cd.bg:SetVertexColor(0.35,0.12,0.04,1)
+        cd.iconTex:SetTexture(ICON_FLAG)
+        cd.iconTex:Show()
+        cd.label:SetText("")
+        cd.marker:SetText("X")
+        cd.marker:SetTextColor(1,1,1,1)
+    elseif state and state.exploded and state.exploded.r==r and state.exploded.c==c then
+        cd.bg:SetVertexColor(CLR_MINE_HIT[1],CLR_MINE_HIT[2],CLR_MINE_HIT[3],1)
+        cd.iconTex:SetTexture(ICON_MINE)
+        cd.iconTex:Show()
+        cd.label:SetText("")
+        cd.marker:SetText("!")
+        cd.marker:SetTextColor(1,1,1,1)
+    elseif not cell.revealed then
         if cell.flagged then
             cd.bg:SetVertexColor(CLR_FLAG[1], CLR_FLAG[2], CLR_FLAG[3], 1)
             cd.iconTex:SetTexture(ICON_FLAG)
@@ -520,55 +546,42 @@ end
 function R:RenderAll(state)
     for r = 1, state.size do
         for c = 1, state.size do
-            self:RenderCell(r, c, state.cells[r][c])
+            self:RenderCell(r, c, state.cells[r][c],state)
         end
     end
     self:UpdateStatusBar(state)
+    local playing=ArcadiaNexus.MS_Engine.state=="PLAYING"
+    for r=1,state.size do for c=1,state.size do
+        local button=self.cells[r][c].frame
+        if playing then button:Enable() else button:Disable() end
+    end end
 end
 
 -- ============================================================
 -- STATUS-BAR
 -- ============================================================
 function R:UpdateStatusBar(state)
-    local L = ArcadiaNexus.GetLocaleTable("MINESWEEPER")
-    local remaining = state.remaining or (state.mineCount - state.flagCount)
-    if self._mineCountFS then
-        self._mineCountFS:SetText((L["hud_mines"] or "Dynamit") .. ": " .. tostring(remaining))
-    end
-    if self._flagCountFS then
-        self._flagCountFS:SetText((L["hud_flags"] or "Gesetzt") .. ": " .. tostring(state.flagCount or 0))
-    end
+    local L=ArcadiaNexus.GetLocaleTable("MINESWEEPER")
+    if self._mineCountFS then self._mineCountFS:SetText(L.hud_mines..": "..state.mineCount) end
+    if self._flagCountFS then self._flagCountFS:SetText(L.hud_flags..": "..state.flagCount.."/"..state.mineCount) end
+    self:UpdateTime(state.elapsedMs or 0)
 end
 
 -- ============================================================
 -- EXPLOSION-EFFEKT
 -- ============================================================
 function R:PlayExplosionEffect(state)
-    if not state.minePositions then return end
-    for _, pos in ipairs(state.minePositions) do
-        local cd = self.cells[pos.r] and self.cells[pos.r][pos.c]
-        if cd then
-            cd.bg:SetVertexColor(CLR_MINE_HIT[1], CLR_MINE_HIT[2], CLR_MINE_HIT[3], 1)
-            cd.iconTex:SetTexture(ICON_MINE)
-            cd.iconTex:SetVertexColor(1, 1, 1, 1)
-            cd.iconTex:Show()
-            cd.label:SetText("")
-        end
-    end
-    C_Timer.After(0.3, function()
-        for _, pos in ipairs(state.minePositions or {}) do
-            local cd = self.cells[pos.r] and self.cells[pos.r][pos.c]
-            if cd then
-                cd.bg:SetVertexColor(CLR_MINE[1], CLR_MINE[2], CLR_MINE[3], 1)
-            end
-        end
-    end)
+    -- Permanent hit marker, no deferred callbacks into a later run.
+    self:RenderAll(state)
 end
 
 -- ============================================================
 -- IDLE STATE
 -- ============================================================
 function R:EnterIdleState()
+    if self._slotMenu then self._slotMenu:Hide() end
+    if self._timeBox then self._timeBox:Hide() end
+    if self._diffDropdown then self._diffDropdown:SetEnabled(true); self._diffDropdown:RefreshDisplay() end
     self.state = "IDLE"
     self:ClearBoard()
 
@@ -602,7 +615,10 @@ end
 -- EVENT-HANDLER
 -- ============================================================
 function R:OnGameStarted(state)
-    self.state        = "PLAYING"
+    if self._slotMenu then self._slotMenu:Hide() end
+    if self._timeBox then self._timeBox:Show() end
+    if self._diffDropdown then self._diffDropdown:SetEnabled(false); self._diffDropdown:RefreshDisplay() end
+    self.state = state.phase
     self.selectedDiff = state.difficulty or self.selectedDiff
 
     if self._fieldFrame and ArcadiaNexus.UI then
@@ -617,82 +633,28 @@ function R:OnGameStarted(state)
     if self._newGameBtn  then self._newGameBtn:Show()  end
 
     if self._startBtn then
-        self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("MINESWEEPER")["btn_exit"])
+        self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("MINESWEEPER").btn_pause)
     end
 
     self:BuildBoard(state.size)
     self:RenderAll(state)
+    if self._goldGrid then ArcadiaNexus.UI.FitGoldGridFrame(self._goldGrid,self.boardHolder); self._goldGrid:Show() end
 end
 
 function R:OnBoardUpdated(state)
     self:RenderAll(state)
 end
 
-function R:OnGameWon(state)
-    self.state = "WON"
+function R:OnGameWon(state,data)
+    self.state="WON"
     self:RenderAll(state)
-
-    if not self._fieldFrame then return end
-    local UI     = ArcadiaNexus.UI
-    local L      = ArcadiaNexus.GetLocaleTable("MINESWEEPER")
-    local parent = self._fieldFrame
-
-    UI.ShowArcadeResult(parent, {
-        title      = L["result_win_title"],
-        titleColor = { 1, 0.84, 0 },
-        subtitle   = string.format(L["result_win_sub"],
-            state.mineCount, state.difficulty:upper(), state.revealCount),
-        gameId     = "MINESWEEPER",
-        difficulty = state.difficulty,
-        result     = "WIN",
-        L          = L,
-        onRetry    = function()
-            ArcadiaNexus.MS_Engine:StartGame({ difficulty = R.selectedDiff })
-        end,
-        onExit = function()
-            ArcadiaNexus.MS_Engine:StopGame()
-        end,
-    })
-
-    if self._newGameBtn then self._newGameBtn:Hide() end
-    if self._startBtn   then
-        self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("MINESWEEPER")["btn_start"])
-    end
+    self:ShowResult(state,data)
 end
 
-function R:OnGameLost(state)
-    self.state = "LOST"
+function R:OnGameLost(state,data)
+    self.state="LOST"
     self:PlayExplosionEffect(state)
-
-    C_Timer.After(0.5, function()
-        self:RenderAll(state)
-        if not self._fieldFrame then return end
-        local UI     = ArcadiaNexus.UI
-        local L      = ArcadiaNexus.GetLocaleTable("MINESWEEPER")
-        local parent = self._fieldFrame
-
-        UI.ShowArcadeResult(parent, {
-            title      = L["result_loss_title"],
-            titleColor = { 1, 0.2, 0.2 },
-            subtitle   = string.format(L["result_loss_sub"],
-                state.revealCount, state.size * state.size - state.mineCount),
-            gameId     = "MINESWEEPER",
-            difficulty = state.difficulty,
-            result     = "LOSS",
-            L          = L,
-            onRetry    = function()
-                ArcadiaNexus.MS_Engine:StartGame({ difficulty = R.selectedDiff })
-            end,
-            onExit = function()
-                ArcadiaNexus.MS_Engine:StopGame()
-            end,
-        })
-
-        if self._newGameBtn then self._newGameBtn:Hide() end
-        if self._startBtn   then
-            self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("MINESWEEPER")["btn_start"])
-        end
-    end)
+    self:ShowResult(state,data)
 end
 
 -- ============================================================
@@ -709,3 +671,36 @@ ArcadiaNexus.RegisterGame({
     logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\Minesweeper\\assets\\logo\\logo_minesweeper",
     xp        = 10,
 })
+
+function R:UpdateTime(ms)
+    local L=ArcadiaNexus.GetLocaleTable("MINESWEEPER")
+    if self._timeFS then self._timeFS:SetText(L.hud_time..": "..ArcadiaNexus.Format.SecondsMMSS(ms/1000)) end
+end
+
+function R:ShowSlotMenu()
+    if ArcadiaNexus.MS_Engine.activeGame then ArcadiaNexus.MS_Engine:SaveAndPause() end
+    self.state="SLOT_MENU"
+    self._logoTex:Hide()
+    if self._hintFS then self._hintFS:Hide() end
+    self._slotMenu:Show()
+    self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("MINESWEEPER").btn_back)
+end
+
+function R:ShowResult(state,data)
+    local UI,L=ArcadiaNexus.UI,ArcadiaNexus.GetLocaleTable("MINESWEEPER")
+    local won=state.phase=="WON"
+    local lines={L.hud_time..": "..ArcadiaNexus.Format.Milliseconds(state.elapsedMs)}
+    if won and data and data.newMetricRecords and data.newMetricRecords.bestTimes then
+        lines[#lines+1]=L.result_time_record
+    end
+    UI.ShowArcadeResult(self._fieldFrame,{
+        title=won and L.result_win_title or L.result_loss_title,
+        subtitle=won and string.format(L.result_win_sub,state.revealCount) or
+            string.format(L.result_loss_sub,state.revealCount,state.size*state.size-state.mineCount),
+        gameId="MINESWEEPER",difficulty=state.difficulty,result=won and "WIN" or "LOSS",
+        score=state.score,xp=data and data.awardedXP or 0,gold=data and data.awardedGold or 0,
+        hideHighscore=true,lines=lines,L=L,
+        onRetry=function() R:ShowSlotMenu() end,
+        onExit=function() ArcadiaNexus.MS_Engine:SaveAndPause() end,
+    })
+end

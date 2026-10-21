@@ -103,68 +103,6 @@ function E:_SetTurnNotice(played, playerIndex)
     end
 end
 
-function E:_ScheduleUnoWindow(playerIndex)
-    local gs = E.gameState
-    local player = gs.players[playerIndex]
-    if player then player.unoCalled = false end
-    gs.unoWindow = { playerIndex = playerIndex, resolved = false }
-    E:_NotifyBoard()
-    _timerGuard:After(3, function()
-        if not E.gameState or not E.gameState.unoWindow then return end
-        local uw = E.gameState.unoWindow
-        if uw.resolved then return end
-        uw.resolved = true
-        local pi = uw.playerIndex
-        if not E.gameState.players[pi].unoCalled then
-            if pi == 1 and ArcadiaNexus.TC_AI:ShouldCatchUno(E.gameState) then
-                E.gameState.stats.unosMissed = (E.gameState.stats.unosMissed or 0) + 1
-                E.gameState.stats.unosCaught = (E.gameState.stats.unosCaught or 0) + 1
-                ArcadiaNexus.TC_Logic:DrawCardsForPlayer(E.gameState, pi, 2)
-                PlaySoundKey("penalty")
-            else
-                E.gameState.players[pi].unoCalled = true
-                E.gameState.stats.unosCalled = (E.gameState.stats.unosCalled or 0) + 1
-            end
-        end
-        E.gameState.unoWindow = nil
-        E:_AdvanceTurn()
-    end)
-end
-
-function E:_ResolveUnoWindow(advanceTurn)
-    local gs = E.gameState
-    if not gs or not gs.unoWindow or gs.unoWindow.resolved then return end
-    gs.unoWindow.resolved = true
-    gs.unoWindow = nil
-    if advanceTurn then E:_AdvanceTurn() end
-end
-
-function E:_AfterPlayVisual(playerIndex, played, continueFn)
-    local gs = E.gameState
-    local player = gs.players[playerIndex]
-    local R = ArcadiaNexus.TC_Renderer
-    self:_SetTurnNotice(played, playerIndex)
-    if player.isAI and R and R.ShowPlayFeedback then
-        R:ShowPlayFeedback(gs, playerIndex, played, continueFn)
-    else
-        self:_NotifyBoard()
-        if continueFn then continueFn() end
-    end
-end
-
-function E:_FinishPlayTurn(playerIndex, played)
-    local gs = E.gameState
-    local function cont()
-        if gs.pendingDraw and gs.pendingDraw > 0 and played
-        and (played.type == "DRAW2" or played.type == "WILD4") then
-            E:_AdvanceTurn()
-            return
-        end
-        E:_AdvanceTurn()
-    end
-    E:_AfterPlayVisual(playerIndex, played, cont)
-end
-
 function E:_BuildConfig(config)
     local S = ArcadiaNexus.TC_Settings
     local Logic = ArcadiaNexus.TC_Logic
@@ -251,24 +189,27 @@ function E:OnMatchReject(f)
 end
 
 function E:OnMatchResult(node, resultId)
+    if self._resultEmitted then return true end
     if self.match ~= node or not self._sessionId or node:GetState() ~= "FINISHED" then return end
-    if self._resultEmitted then return end
-    self._resultEmitted = true
     local board = self:GetBoardState()
     local result = (board and board.result) or "LOSS"
-    ArcadiaNexus.Engine:Emit("GAME_RESULT", {
+    local payload = {
         gameId = "TAVERNCARDS",
         resultId = resultId,
         matchHost = node.hostKey,
-        difficulty = "normal",
+        difficulty = "match",
         score = 0,
         result = result,
-        stats = { vsHuman = 1 },
-    })
+        stats = (function() local st=board and board.stats or {}; st.vsHuman=1; return st end)(),
+    }
+    ArcadiaNexus.Engine:Emit("GAME_RESULT", payload)
+    if payload.matchBooked ~= true then return false end
+    self._resultEmitted = true
     local R = ArcadiaNexus.TC_Renderer
     if R and R.ShowMatchResult then
         R:ShowMatchResult(result, board)
     end
+    return true
 end
 
 function E:SetReady(ready)
@@ -339,505 +280,176 @@ function E:StopMatchQuiet()
     if M and M.StopEngineMatch then M.StopEngineMatch(self) end
 end
 
+function E:CanContinueSave(gs)
+    if not ArcadiaNexus.TC_Logic:ValidateSave(gs) or gs.phase=="FINISHED" then return false end
+    local LR=ArcadiaNexus.LocalResults; local serial=LR:GetSerial("TAVERNCARDS",gs.runId)
+    if not serial then return false end
+    local j,r=LR:GetJournal(),LR:GetReceipt(gs.runId)
+    if not r and not j.issued[gs.runId] and serial<=j.retiredThrough then return false end
+    if r and (gs.phase~="RESULT_PENDING" or r.result~=gs.result or r.difficulty~="solo_"..gs.difficulty) then return false end
+    if r then
+        if r.roundsPlayed~=gs.roundsPlayed or r.gameMode~=gs.gameMode then return false end
+        local own=ArcadiaNexus.TC_Logic:PersonalStats(gs,1)
+        for _,key in ipairs({"unosCalled","unosMissed","unosCaught","wild4Played"}) do
+            if (r.personalStats and r.personalStats[key] or 0)~=(own[key] or 0) then return false end
+        end
+    end
+    return true
+end
+function E:_Save()
+    if self.mode=="hotseat" and self.gameState then ArcadiaNexus.TC_Settings:SaveGame(self.gameState) end
+end
 function E:StartGame(config)
-    config = config or {}
-    self._unoPending = false
-    local mode = config.mode or "hotseat"
-    if mode == "host" or mode == "join" or mode == "rejoin" then
-        local M = ArcadiaNexus.Match
-        if not M or not M.BeginNetworkedGame then
-            self._notice = "nomp"
-            self:_NotifyBoard()
-            return
-        end
-        M.BeginNetworkedGame(self, "TAVERNCARDS", config, function()
-            self:_NotifyBoard()
-        end, MatchOpts, {
-            onBefore = function()
-                self:_InvalidateTimers()
-                self.gameState = nil
-                local S = ArcadiaNexus.TC_Settings
-                self._mpChar = config.playerCharacter or (S and S:Get("playerCharacter")) or "thrall"
-            end,
-        })
-        return
+    config=config or {}; local mode=config.mode or "new"
+    if mode=="host" or mode=="join" or mode=="rejoin" then
+        local M=ArcadiaNexus.Match
+        if not ArcadiaNexus.HasMultiplayer or not ArcadiaNexus.HasMultiplayer() or not M or not M.BeginNetworkedGame then self._notice="nomp"; return false end
+        M.BeginNetworkedGame(self,"TAVERNCARDS",config,function() self:_NotifyBoard() end,MatchOpts,{
+            onBefore=function() self:_InvalidateTimers(); self.gameState=nil
+                self._mpChar=config.playerCharacter or (ArcadiaNexus.TC_Settings and ArcadiaNexus.TC_Settings:Get("playerCharacter")) or "thrall" end,
+        }); return self.match~=nil
     end
-    self.mode = mode
-    self._resultEmitted = false
-    self._notice = nil
-
-    self:StopMatchQuiet()
-    self:_InvalidateTimers()
-    local S = ArcadiaNexus.TC_Settings
-    if S then S:ClearPausedState() end
-    local cfg = self:_BuildConfig(config)
-    if cfg.aiCount < 1 or cfg.aiCount > 3 then return end
-
-    E._sessionId = ArcadiaNexus.Lifecycle:RestartGame("TAVERNCARDS", E._sessionId)
-    local Logic = ArcadiaNexus.TC_Logic
-    E.gameState = Logic:NewGameState(cfg)
-    self.mode = "hotseat"
-    E:_SetState("DEALING")
-    PlaySoundKey("shuffle")
-
-    _timerGuard:After(0.5, function()
-        if not E.gameState then return end
-        Logic:StartRound(E.gameState)
-        E:_SetState("PLAYING")
-        local R = ArcadiaNexus.TC_Renderer
-        if R and R.OnGameStarted then R:OnGameStarted(E.gameState) end
-        E:_BeginTurn()
-    end)
-end
-
-function E:ResumeGame()
-    local S = ArcadiaNexus.TC_Settings
-    local saved = S and S:LoadPausedState()
-    if not saved then return end
-    self:_InvalidateTimers()
-    E._sessionId = ArcadiaNexus.Lifecycle:RestartGame("TAVERNCARDS", E._sessionId)
-    E.gameState = saved
-    S:ClearPausedState()
-    E:_SetState("PLAYING")
-    local R = ArcadiaNexus.TC_Renderer
-    if R and R.OnGameStarted then R:OnGameStarted(E.gameState) end
-    E:_NotifyBoard()
-    E:_BeginTurn()
-end
-
-function E:StopGame()
-    if E._sessionId then
-        ArcadiaNexus.Lifecycle:EndGame("TAVERNCARDS", E._sessionId)
-        E._sessionId = nil
+    if self.gameState then return false end
+    local S,Logic=ArcadiaNexus.TC_Settings,ArcadiaNexus.TC_Logic
+    local slot=config.slot or S:GetActiveSlot(); if type(slot)~="number" or slot~=math.floor(slot) or slot<1 or slot>3 then return false end
+    local gs
+    if mode=="continue" then
+        local saved=S:LoadSlot(slot); if not self:CanContinueSave(saved) then return false end
+        gs=Logic:CloneGameState(saved)
+    else
+        if S:LoadSlot(slot) and not config.overwrite then return false end
+        local cfg=self:_BuildConfig(config)
+        if not Logic:IsDifficulty(cfg.difficulty) or type(cfg.aiCount)~="number" or cfg.aiCount~=math.floor(cfg.aiCount) or cfg.aiCount<1 or cfg.aiCount>3
+            or cfg.gameMode~="single" and cfg.gameMode~="multi" then return false end
+        cfg.pointTarget=500
+        gs=Logic:NewGameState(cfg); Logic:StartRound(gs)
+        gs.saveVersion=2; gs.phase="PLAYING"
     end
-    self:StopMatchQuiet()
-    self:_InvalidateTimers()
-    self.mode = "hotseat"
-
-    local gs = E.gameState
-    local S = ArcadiaNexus.TC_Settings
-    if gs and S and E.state ~= "IDLE" and not gs._gameOverFired and (gs.roundsPlayed or 0) > 0 then
-        local Logic = ArcadiaNexus.TC_Logic
-        local result, score = Logic:CalcGameResult(gs)
-        ArcadiaNexus.Engine:Emit("GAME_RESULT", {
-            gameId = "TAVERNCARDS", difficulty = gs.difficulty,
-            score = 0, result = result,
-            stats = gs.stats,
-        })
-        S:RecordGameResult(result, gs)
+    if self.match and not self.match._closed then return false end
+    local sid=ArcadiaNexus.Lifecycle:ClaimRestart("TAVERNCARDS",self._sessionId)
+    if not sid then return false end
+    if mode~="continue" then gs.runId=ArcadiaNexus.LocalResults:NewRun("TAVERNCARDS") end
+    self:StopMatchQuiet(); self:_InvalidateTimers(); self.mode="hotseat"; self._resultEmitted=false; self._lastResult=nil
+    self.gameState,self.activeSlot=gs,slot; S:SetActiveSlot(slot)
+    self._sessionId=sid
+    self:_SetState(gs.phase); self:_Save()
+    local R=ArcadiaNexus.TC_Renderer; if R and R.OnGameStarted then R:OnGameStarted(gs) end
+    self:_NotifyBoard()
+    if gs.phase=="RESULT_PENDING" then self:RetryResult()
+    elseif gs.phase=="ROUND_END" then if R and R.ShowRoundResult then R:ShowRoundResult(gs,gs.lastRoundWinner,gs.lastRoundPoints) end
+    elseif mode=="continue" then self:_Drive()
+    else
+        self:_SetState("DEALING"); local sid=self._sessionId
+        _timerGuard:After(0.5,function() if not ArcadiaNexus.GameSession:IsSession(E,sid) or E.gameState~=gs then return end; E:_SetState("PLAYING"); E:_Drive() end)
     end
-    if S then S:ClearPausedState() end
-    local R = ArcadiaNexus.TC_Renderer
-    if R and R.OnGameStopped then R:OnGameStopped() end
-    E.gameState = nil
-    E:_SetState("IDLE")
+    return true
 end
-
+function E:ResumeGame(slot) return self:StartGame({mode="continue",slot=slot}) end
 function E:SaveAndPause()
-    if self.mode ~= "hotseat" then
-        self:HideView()
-        return
+    if self.mode~="hotseat" then self:HideView(); return true end
+    local gs=self.gameState
+    if gs and gs.unoWindow and self._unoDeadline then gs.unoWindow.remainingMs=math.max(0,math.floor((self._unoDeadline-GetTime())*1000)) end
+    self:_InvalidateTimers(); self._unoDeadline=nil; self:_Save()
+    if self._sessionId then
+        ArcadiaNexus.Lifecycle:PauseGame("TAVERNCARDS",self._sessionId)
+        ArcadiaNexus.Lifecycle:EndGame("TAVERNCARDS",self._sessionId); self._sessionId=nil
     end
-    local gs = E.gameState
-    local S = ArcadiaNexus.TC_Settings
-    if E._sessionId then
-        ArcadiaNexus.Lifecycle:PauseGame("TAVERNCARDS", E._sessionId)
-    end
-    self:_InvalidateTimers()
-    if gs and (E.state == "PLAYING" or E.state == "DEALING") then
-        if S then S:SavePausedState(gs) end
-    end
-    E.gameState = nil
-    if E._sessionId then
-        ArcadiaNexus.Lifecycle:EndGame("TAVERNCARDS", E._sessionId)
-        E._sessionId = nil
-    end
-    E:_SetState("IDLE")
+    self.gameState,self.activeSlot=nil,nil; self:_SetState("IDLE")
+    local R=ArcadiaNexus.TC_Renderer; if R and R.OnGameStopped then R:OnGameStopped() end
+    return true
 end
-
+function E:StopGame()
+    if self.mode=="hotseat" then return self:SaveAndPause() end
+    if self._sessionId then ArcadiaNexus.Lifecycle:EndGame("TAVERNCARDS",self._sessionId); self._sessionId=nil end
+    self:StopMatchQuiet(); self:_InvalidateTimers(); self.mode="hotseat"; self.gameState=nil; self:_SetState("IDLE")
+    local R=ArcadiaNexus.TC_Renderer; if R and R.OnGameStopped then R:OnGameStopped() end
+end
 function E:NewRound()
-    if not E.gameState then return end
-    local Logic = ArcadiaNexus.TC_Logic
-    E:_SetState("DEALING")
-    _timerGuard:After(0.4, function()
-        if not E.gameState then return end
-        Logic:StartRound(E.gameState)
-        E:_SetState("PLAYING")
-        E:_NotifyBoard()
-        E:_BeginTurn()
-    end)
+    local gs=self.gameState
+    if not gs or gs.phase~="ROUND_END" or gs.gameMode~="multi" then return false end
+    self:_InvalidateTimers(); ArcadiaNexus.TC_Logic:StartRound(gs); gs.phase="PLAYING"; self:_Save(); self:_SetState("DEALING"); self:_NotifyBoard()
+    local sid=self._sessionId
+    _timerGuard:After(0.4,function() if not ArcadiaNexus.GameSession:IsSession(E,sid) or E.gameState~=gs then return end; E:_SetState("PLAYING"); E:_Drive() end)
+    return true
 end
-
-function E:_BeginTurn()
-    local gs = E.gameState
-    if not gs or E.state ~= "PLAYING" then return end
-    local Rules = ArcadiaNexus.TC_Rules
-    local player = gs.players[gs.currentPlayer]
-
-    if gs.forceDrawPlayer then
-        local victim = gs.forceDrawPlayer
-        self:_DrawPenaltyCards(gs.pendingDraw or 4, victim)
-        gs.forceDrawPlayer = nil
-        gs.pendingDraw = 0
-        gs.pendingType = nil
-        if victim == gs.currentPlayer then
-            self:_AdvanceTurn()
-            return
-        end
-    end
-
-    if gs.wild4Challengable and gs.currentPlayer ~= gs.wild4PlayedBy then
-        if player.isAI then
-            _timerGuard:After(ArcadiaNexus.TC_AI:GetDelay(gs.difficulty, "think"), function()
-                if not E.gameState then return end
-                if ArcadiaNexus.TC_AI:ShouldChallengeWild4(gs) then
-                    local g2 = E.gameState
-                    E:_ResolveChallenge(ArcadiaNexus.TC_Rules:PlayerHadPlayableBeforeWild4(g2, g2.wild4PlayedBy))
-                else
-                    gs.wild4Challengable = false
-                    E:_HandlePendingDrawStart()
-                end
-            end)
-        else
-            E:_NotifyBoard()
-        end
-        return
-    end
-
-    E:_HandlePendingDrawStart()
+function E:_Action(kind,extra,seat)
+    if self.mode~="hotseat" and self.match then self.match:SendIntent(kind,extra or {}); self:_NotifyBoard(); return true end
+    local gs=self.gameState
+    if not gs or self.state~="PLAYING" or not ArcadiaNexus.GameSession:IsSession(self,self._sessionId) then return false end
+    local playedCard=kind=="PLAY" and gs.players[seat or 1].hand[extra and extra.i]
+    local intent=extra or {}; intent.kind=kind
+    if not ArcadiaNexus.TC_Logic.ApplyAction(gs,intent,seat or 1) then return false end
+    self:_InvalidateTimers(); self._unoDeadline=nil
+    PlaySoundKey(kind=="PLAY" and (ArcadiaNexus.TC_Rules:IsWildType(playedCard) and "wild" or "play") or kind=="DRAW" and "draw" or kind=="UNO" and "uno" or "wild")
+    self:_Drive(); return true
 end
-
-function E:_HandlePendingDrawStart()
-    local gs = E.gameState
-    local Rules = ArcadiaNexus.TC_Rules
-    local player = gs.players[gs.currentPlayer]
-
-    if gs.pendingDraw and gs.pendingDraw > 0 and gs.pendingType ~= "PENALTY" then
-        if Rules:HasPlayableCard(player.hand, gs) then
-            if player.isAI then
-                E:_RunAITurn()
-            else
-                E:_NotifyBoard()
+function E:_Drive()
+    local gs=self.gameState; if not gs or self.state~="PLAYING" then return end
+    if gs.roundOver then return self:_EndRound(gs.lastRoundWinner) end
+    self:_Save(); self:_NotifyBoard()
+    local Logic,AI=ArcadiaNexus.TC_Logic,ArcadiaNexus.TC_AI
+    local sid=self._sessionId; local uw=gs.unoWindow
+    if uw then
+        if gs.players[uw.playerIndex].isAI then return self:_Action("UNO",{},uw.playerIndex) end
+        self._unoDeadline=GetTime()+(uw.remainingMs or 3000)/1000
+        _timerGuard:After((uw.remainingMs or 3000)/1000,function()
+            if not ArcadiaNexus.GameSession:IsSession(E,sid) or E.gameState~=gs or gs.unoWindow~=uw then return end
+            local catcher=ArcadiaNexus.TC_Rules:NextPlayerIndex(gs,1)
+            local caught=AI:ShouldCatchUno(gs); E:_Action(caught and "CATCH" or "UNO_EXPIRE",{},caught and catcher or 1)
+        end); return
+    end
+    if gs.pendingColorPick then return end
+    local seat=gs.currentPlayer; local p=gs.players[seat]
+    if p.isAI then
+        _timerGuard:After(AI:GetDelay(gs.difficulty,"think"),function()
+            if not ArcadiaNexus.GameSession:IsSession(E,sid) or E.gameState~=gs or gs.currentPlayer~=seat or E.state~="PLAYING" then return end
+            if gs.drawnThisTurn then
+                for index,c in ipairs(p.hand) do if c.id==gs.drawnThisTurn.id then E:_Action("PLAY",{i=index,c=AI:PickWildColor(p.hand)},seat); return end end
+                E:_Action("PASS",{},seat); return
             end
-            return
-        end
-        self:_DrawPenaltyCards(gs.pendingDraw)
-        gs.pendingDraw = 0
-        gs.pendingType = nil
-        self:_AdvanceTurn()
-        return
-    end
-
-    if player.isAI then
-        E:_RunAITurn()
-    else
-        E:_NotifyBoard()
-    end
-end
-
-function E:_RunAITurn()
-    local gs = E.gameState
-    if not gs then return end
-    local AI = ArcadiaNexus.TC_AI
-    local delay = AI:GetDelay(gs.difficulty, "think")
-
-    _timerGuard:After(delay, function()
-        if not E.gameState or E.state ~= "PLAYING" then return end
-        local action = AI:ChooseAction(gs, gs.currentPlayer)
-        if action.action == "play" then
-            E:_ExecutePlay(gs.currentPlayer, action.handIndex, action.wildColor)
-        elseif action.action == "draw_penalty" then
-            E:_DrawPenaltyCards(gs.pendingDraw)
-            gs.pendingDraw = 0
-            gs.pendingType = nil
-            E:_AdvanceTurn()
-        elseif action.action == "challenge" then
-            E:_ResolveChallenge(ArcadiaNexus.TC_Rules:PlayerHadPlayableBeforeWild4(gs, gs.wild4PlayedBy))
-        elseif action.action == "accept_draw" then
-            gs.wild4Challengable = false
-            E:_HandlePendingDrawStart()
-        else
-            E:PlayerDraw(true)
-        end
-    end)
-end
-
-function E:PlayerDraw(fromAI)
-    if E.mode ~= "hotseat" and E.match then
-        E.match:SendIntent("DRAW", {})
-        E:_NotifyBoard()
-        return
-    end
-    local gs = E.gameState
-    if not gs or E.state ~= "PLAYING" then return end
-    if not fromAI and gs.players[gs.currentPlayer].isAI then return end
-    if gs.pendingColorPick or gs.unoWindow then return end
-    if not fromAI and (gs.hasDrawnThisTurn or gs.drawnThisTurn) then return end
-
-    local Logic = ArcadiaNexus.TC_Logic
-    if not fromAI then gs.hasDrawnThisTurn = true end
-    local drawn = Logic:DrawCardsForPlayer(gs, gs.currentPlayer, 1)
-    if #drawn == 0 then
-        self:_AdvanceTurn()
-        return
-    end
-    PlaySoundKey("draw")
-    gs.drawnThisTurn = drawn[1]
-
-    local function afterDraw()
-        if not E.gameState then return end
-        local g2 = E.gameState
-        if g2.rules.playDrawn and ArcadiaNexus.TC_Rules:CanPlay(drawn[1], g2) and not fromAI then
-            E:_NotifyBoard()
-            return
-        end
-        if fromAI and g2.rules.playDrawn and ArcadiaNexus.TC_Rules:CanPlay(drawn[1], g2) then
-            for i, c in ipairs(g2.players[g2.currentPlayer].hand) do
-                if c.id == drawn[1].id then
-                    E:_ExecutePlay(g2.currentPlayer, i, ArcadiaNexus.TC_AI:PickWildColor(g2.players[g2.currentPlayer].hand))
-                    return
-                end
-            end
-        end
-        g2.drawnThisTurn = nil
-        E:_AdvanceTurn()
-    end
-
-    if not fromAI then
-        local R = ArcadiaNexus.TC_Renderer
-        if R and R.ShowDrawnCard then
-            R:ShowDrawnCard(drawn[1], gs.theme, afterDraw)
-            return
-        end
-    end
-    afterDraw()
-end
-
-function E:PlayerPlayCard(handIndex, wildColor)
-    if E.mode ~= "hotseat" and E.match then
-        local extra = { i = handIndex }
-        if wildColor then extra.c = wildColor end
-        E.match:SendIntent("PLAY", extra)
-        E:_NotifyBoard()
-        return
-    end
-    local gs = E.gameState
-    if not gs or E.state ~= "PLAYING" then return end
-    if gs.players[gs.currentPlayer].isAI then return end
-    if gs.pendingColorPick or gs.unoWindow then return end
-    self:_ExecutePlay(gs.currentPlayer, handIndex, wildColor)
-end
-
-function E:PlayerPassAfterDraw()
-    if E.mode ~= "hotseat" and E.match then
-        E.match:SendIntent("PASS", {})
-        E:_NotifyBoard()
-        return
-    end
-    local gs = E.gameState
-    if not gs or not gs.drawnThisTurn then return end
-    gs.drawnThisTurn = nil
-    self:_AdvanceTurn()
-end
-
-function E:_ExecutePlay(playerIndex, handIndex, wildColor)
-    local gs = E.gameState
-    local Logic = ArcadiaNexus.TC_Logic
-    local Rules = ArcadiaNexus.TC_Rules
-    local player = gs.players[playerIndex]
-    local card = player.hand[handIndex]
-    if not card or not Rules:CanPlay(card, gs) then return end
-
-    if card.type == "WILD4" then
-        gs.wild4Context = {
-            playerIndex = playerIndex,
-            handSnapshot = {},
-            activeColorBefore = Rules:GetActiveColor(gs),
-            topCard = Rules:GetTopCard(gs),
-        }
-        for _, c in ipairs(player.hand) do
-            gs.wild4Context.handSnapshot[#gs.wild4Context.handSnapshot + 1] = c
-        end
-    end
-
-    local played = Logic:RemoveCardFromHand(player, handIndex)
-    Logic:AddToDiscard(gs, played)
-    PlaySoundKey((played.type == "WILD" or played.type == "WILD4") and "wild" or "play")
-    gs.drawnThisTurn = nil
-
-    if Rules:IsWildType(played) and not wildColor and not player.isAI then
-        gs.pendingColorPick = { playerIndex = playerIndex, card = played }
-        E:_NotifyBoard()
-        return
-    end
-    if Rules:IsWildType(played) and not wildColor and player.isAI then
-        wildColor = ArcadiaNexus.TC_AI:PickWildColor(player.hand)
-    end
-    Rules:ApplyCardEffect(gs, played, wildColor)
-    gs.pendingColorPick = nil
-
-    local winner = Logic:CheckRoundWinner(gs)
-    if winner then
-        self:_EndRound(winner)
-        return
-    end
-
-    if #player.hand == 1 and gs.rules.unoCallRule then
-        if player.isAI then
-            player.unoCalled = true
-            gs.stats.unosCalled = (gs.stats.unosCalled or 0) + 1
-            PlaySoundKey("uno")
-            E:_FinishPlayTurn(playerIndex, played)
-        else
-            E:_AfterPlayVisual(playerIndex, played, function()
-                E:_ScheduleUnoWindow(playerIndex)
-            end)
-        end
-        return
-    end
-
-    E:_FinishPlayTurn(playerIndex, played)
-end
-
-function E:PlayerPickColor(color)
-    if E.mode ~= "hotseat" and E.match then
-        E.match:SendIntent("COLOR", { c = color })
-        E:_NotifyBoard()
-        return
-    end
-    local gs = E.gameState
-    if not gs or not gs.pendingColorPick then return end
-    local pick = gs.pendingColorPick
-    local Rules = ArcadiaNexus.TC_Rules
-    Rules:ApplyCardEffect(gs, pick.card, color)
-    gs.pendingColorPick = nil
-    gs.currentPlayer = pick.playerIndex
-
-    local winner = ArcadiaNexus.TC_Logic:CheckRoundWinner(gs)
-    if winner then
-        self:_EndRound(winner)
-        return
-    end
-    local pi = gs.currentPlayer
-    if #gs.players[pi].hand == 1 and gs.rules.unoCallRule then
-        E:_AfterPlayVisual(pi, pick.card, function()
-            E:_ScheduleUnoWindow(pi)
+            local action=AI:ChooseAction(gs,seat)
+            local kinds={play="PLAY",draw_penalty="DRAW",challenge="CHALLENGE",accept_draw="ACCEPT",draw="DRAW"}
+            E:_Action(kinds[action.action] or "DRAW",{i=action.handIndex,c=action.wildColor},seat)
         end)
-        return
     end
-    E:_FinishPlayTurn(pi, pick.card)
 end
-
-function E:PlayerCallUno()
-    if E.mode ~= "hotseat" and E.match then
-        E.match:SendIntent("UNO", {})
-        E:_NotifyBoard()
-        return
+function E:_BeginTurn() ArcadiaNexus.TC_Logic.MpBeginTurn(self.gameState); self:_Drive() end
+function E:PlayerDraw(fromAI) return self:_Action("DRAW",{},fromAI and self.gameState.currentPlayer or 1) end
+function E:PlayerPlayCard(index,color) return self:_Action("PLAY",{i=index,c=color}) end
+function E:PlayerPassAfterDraw() return self:_Action("PASS") end
+function E:PlayerPickColor(color) return self:_Action("COLOR",{c=color}) end
+function E:PlayerCallUno() return self:_Action("UNO") end
+function E:PlayerCatchUno() return self:_Action("CATCH") end
+function E:PlayerChallengeWild4() return self:_Action("CHALLENGE") end
+function E:PlayerAcceptWild4() return self:_Action("ACCEPT") end
+function E:_ExecutePlay(seat,index,color) return self:_Action("PLAY",{i=index,c=color},seat) end
+function E:RequestForfeit()
+    if self.mode~="hotseat" or not self.gameState or self.gameState.phase=="FINISHED" or self.gameState.phase=="RESULT_PENDING" then return false end
+    local R=ArcadiaNexus.TC_Renderer; if R and R.ConfirmForfeit then R:ConfirmForfeit(self._sessionId,self.gameState.runId) end; return true
+end
+function E:ConfirmForfeit(sid,runId)
+    local gs=self.gameState
+    if not gs or not ArcadiaNexus.GameSession:IsSession(self,sid) or self._sessionId~=sid or gs.runId~=runId or gs.phase=="FINISHED" or gs.phase=="RESULT_PENDING" then return false end
+    self:_InvalidateTimers(); gs.forfeited=true; gs.result="LOSS"; gs.phase="RESULT_PENDING"; self:_SetState("RESULT_PENDING"); self:_Save(); return self:RetryResult()
+end
+function E:_EndRound(winner)
+    local gs=self.gameState; local gameWinner=ArcadiaNexus.TC_Logic:CheckGameWinner(gs)
+    self:_InvalidateTimers()
+    if gs.gameMode=="single" or gameWinner then
+        gs.result=(gameWinner or winner)==1 and "WIN" or "LOSS"; gs.phase="RESULT_PENDING"; self:_SetState("RESULT_PENDING"); self:_Save(); return self:RetryResult()
     end
-    local gs = E.gameState
-    if not gs or not gs.unoWindow or gs.unoWindow.resolved then return end
-    if gs.unoWindow.playerIndex ~= 1 then return end
-    gs.players[1].unoCalled = true
-    gs.stats.unosCalled = (gs.stats.unosCalled or 0) + 1
-    PlaySoundKey("uno")
-    E:_ResolveUnoWindow(true)
-    E:_NotifyBoard()
+    gs.phase="ROUND_END"; self:_SetState("ROUND_END"); self:_Save()
+    local R=ArcadiaNexus.TC_Renderer; if R and R.ShowRoundResult then R:ShowRoundResult(gs,winner,gs.lastRoundPoints) end
 end
-
-function E:PlayerCatchUno()
-    if E.mode ~= "hotseat" and E.match then
-        E.match:SendIntent("CATCH", {})
-        E:_NotifyBoard()
-        return
-    end
-    local gs = E.gameState
-    if not gs or not gs.unoWindow or gs.unoWindow.resolved then return end
-    local target = gs.unoWindow.playerIndex
-    if gs.players[target].unoCalled then return end
-    gs.stats.unosMissed = (gs.stats.unosMissed or 0) + 1
-    gs.stats.unosCaught = (gs.stats.unosCaught or 0) + 1
-    ArcadiaNexus.TC_Logic:DrawCardsForPlayer(gs, target, 2)
-    PlaySoundKey("penalty")
-    E:_ResolveUnoWindow(true)
-    E:_NotifyBoard()
-end
-
-function E:PlayerChallengeWild4()
-    if E.mode ~= "hotseat" and E.match then
-        E.match:SendIntent("CHALLENGE", {})
-        E:_NotifyBoard()
-        return
-    end
-    self:_ResolveChallenge(ArcadiaNexus.TC_Rules:PlayerHadPlayableBeforeWild4(E.gameState, E.gameState.wild4PlayedBy))
-end
-
-function E:PlayerAcceptWild4()
-    if E.mode ~= "hotseat" and E.match then
-        E.match:SendIntent("ACCEPT", {})
-        E:_NotifyBoard()
-        return
-    end
-    local gs = E.gameState
-    if not gs then return end
-    gs.wild4Challengable = false
-    E:_HandlePendingDrawStart()
-end
-
-function E:_ResolveChallenge(challengerWins)
-    ArcadiaNexus.TC_Rules:ResolveChallenge(E.gameState, challengerWins)
-    E.gameState.wild4Challengable = false
-    E:_BeginTurn()
-end
-
-function E:_DrawPenaltyCards(n, playerIndex)
-    local gs = E.gameState
-    ArcadiaNexus.TC_Logic:DrawCardsForPlayer(gs, playerIndex or gs.currentPlayer, n)
-    PlaySoundKey("draw")
-    E:_NotifyBoard()
-end
-
-function E:_AdvanceTurn()
-    local gs = E.gameState
-    if not gs then return end
-    gs.turnNotice = nil
-    gs.drawnThisTurn = nil
-    gs.hasDrawnThisTurn = false
-    local Rules = ArcadiaNexus.TC_Rules
-    local steps = 1 + (gs.skipNext or 0)
-    gs.skipNext = 0
-    gs.currentPlayer = Rules:NextPlayerIndex(gs, steps)
-    E:_BeginTurn()
-end
-
-function E:_EndRound(winnerIndex)
-    local gs = E.gameState
-    local Logic = ArcadiaNexus.TC_Logic
-    local roundPts, winner = Logic:ScoreRound(gs, winnerIndex)
-    gs.lastRoundWinner = winnerIndex
-    PlaySoundKey(winnerIndex == 1 and "win" or "lose")
-
-    local gameWinner = Logic:CheckGameWinner(gs)
-    if gs.gameMode == "single" or gameWinner then
-        gs._gameOverFired = true
-        E:_SetState("ROUND_END")
-        local R = ArcadiaNexus.TC_Renderer
-        if R and R.ShowGameEnd then
-            R:ShowGameEnd(gs, winnerIndex, roundPts, gameWinner or winnerIndex)
-        end
-        if gameWinner or gs.gameMode == "single" then
-            local result = (winnerIndex == 1 or gameWinner == 1) and "WIN" or "LOSS"
-            ArcadiaNexus.Engine:Emit("GAME_RESULT", {
-                gameId = "TAVERNCARDS", difficulty = gs.difficulty,
-                score = 0, result = result, stats = gs.stats,
-            })
-            local S = ArcadiaNexus.TC_Settings
-            if S then S:RecordGameResult(result, gs) end
-        end
-    else
-        E:_SetState("ROUND_END")
-        local R = ArcadiaNexus.TC_Renderer
-        if R and R.ShowRoundResult then
-            R:ShowRoundResult(gs, winnerIndex, roundPts)
-        end
-    end
+function E:RetryResult()
+    local gs=self.gameState; if not gs or gs.phase~="RESULT_PENDING" then return false end
+    local data={gameId="TAVERNCARDS",difficulty="solo_"..gs.difficulty,score=0,result=gs.result,runId=gs.runId,
+        stats=ArcadiaNexus.TC_Logic:PersonalStats(gs,1),roundsPlayed=gs.roundsPlayed,gameMode=gs.gameMode,skipHighscores=true}
+    ArcadiaNexus.Engine:Emit("GAME_RESULT",data)
+    if not data.processed then self:_Save(); local R=ArcadiaNexus.TC_Renderer; if R and R.ShowResultPending then R:ShowResultPending() end; return false end
+    self._lastResult=data; gs.phase="FINISHED"; gs._gameOverFired=true; self:_SetState("FINISHED"); self:_Save()
+    PlaySoundKey(gs.result=="WIN" and "win" or "lose")
+    local R=ArcadiaNexus.TC_Renderer
+    if R and R.ShowGameEnd then R:ShowGameEnd(gs,gs.lastRoundWinner or (gs.result=="WIN" and 1 or 2),gs.lastRoundPoints or 0,gs.result=="WIN" and 1 or 2) end
+    return true
 end

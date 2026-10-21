@@ -22,9 +22,9 @@ ArcadiaNexus.RegisterAchievements({
             if data.gameId ~= "MOSAICOFAZEROTH" then return 0 end
             local gs = db and db.gameSettings and db.gameSettings["MOSAICOFAZEROTH"]
             local st = gs and gs.stats
-            if not st or not st.solved then return 0 end
-            local total = (st.solved.easy or 0) + (st.solved.medium or 0) + (st.solved.hard or 0)
-            return total >= 1 and 1 or 0
+            local solved=st and st.solved or {}
+            local total = (solved.easy or 0) + (solved.medium or 0) + (solved.hard or 0)
+            return total + ArcadiaNexus.SLP_Settings:GetModernSolved("easy") + ArcadiaNexus.SLP_Settings:GetModernSolved("medium") + ArcadiaNexus.SLP_Settings:GetModernSolved("hard") >= 1 and 1 or 0
         end,
         tiers = {
             { id="SLP_FIRST_WIN_BRONZE", tierName="Bronze", target=1, xp=10,
@@ -46,7 +46,7 @@ ArcadiaNexus.RegisterAchievements({
             if data.gameId ~= "MOSAICOFAZEROTH" then return 0 end
             local gs = db and db.gameSettings and db.gameSettings["MOSAICOFAZEROTH"]
             local st = gs and gs.stats
-            return (st and st.solved and st.solved.easy) or 0
+            return ((st and st.solved and st.solved.easy) or 0) + ArcadiaNexus.SLP_Settings:GetModernSolved("easy")
         end,
         tiers = {
             { id="SLP_EASY_BRONZE", tierName="Bronze", target=1,  xp=10,
@@ -61,6 +61,9 @@ ArcadiaNexus.RegisterAchievements({
     -- ── Medium-Meister ────────────────────────────────────────
     {
         id       = "SLP_MEDIUM_MASTER",
+        retired=true, retiredVersion=5, gameLabel="Mosaic of Azeroth",
+        retiredReason_de="Die ursprüngliche Brettgröße wurde durch die M7-Standardstaffel ersetzt.",
+        retiredReason_en="The original board size was replaced by the M7 standard sizes.",
         gameId   = "MOSAICOFAZEROTH",
         category = "RAETSEL",
         title_de = "Geduldsprobe",
@@ -87,6 +90,9 @@ ArcadiaNexus.RegisterAchievements({
     -- ── Hard-Meister ──────────────────────────────────────────
     {
         id       = "SLP_HARD_MASTER",
+        retired=true, retiredVersion=5, gameLabel="Mosaic of Azeroth",
+        retiredReason_de="Die ursprüngliche Brettgröße wurde durch die M7-Standardstaffel ersetzt.",
+        retiredReason_en="The original board size was replaced by the M7 standard sizes.",
         gameId   = "MOSAICOFAZEROTH",
         category = "RAETSEL",
         title_de = "Meisterpuzzler",
@@ -169,3 +175,17 @@ ArcadiaNexus.RegisterAchievements({
     },
 
 })
+
+-- New sizes have new identities and do not inherit legacy 6x6/8x8 counters.
+for _,item in ipairs({{id="SLP_4X4_MASTER",difficulty="medium",size=4,targets={1,3,5},xp={15,35,70}},
+                       {id="SLP_5X5_MASTER",difficulty="hard",size=5,targets={1,2,3},xp={25,55,100}}}) do
+    local definition=item
+    local tiers={}; local names={"BRONZE","SILBER","GOLD"}
+    for i=1,3 do tiers[i]={id=definition.id.."_"..names[i],tierName=names[i],target=definition.targets[i],xp=definition.xp[i],
+        desc_de=definition.targets[i].." Rätsel ("..definition.size.."x"..definition.size..") gelöst.",
+        desc_en="Solved "..definition.targets[i].." puzzles ("..definition.size.."x"..definition.size..")."} end
+    ArcadiaNexus.RegisterAchievements({{id=definition.id,gameId="MOSAICOFAZEROTH",category="RAETSEL",
+        title_de="Mosaic-Meister "..definition.size.."x"..definition.size,title_en="Mosaic Master "..definition.size.."x"..definition.size,
+        desc_de="Löse Rätsel in der neuen Standardgröße.",desc_en="Solve puzzles of the new standard size.",icon="Interface\\Icons\\INV_Misc_Gem_Emerald_01",
+        condition=function(data) if data.gameId~="MOSAICOFAZEROTH" then return 0 end; return ArcadiaNexus.SLP_Settings:GetModernSolved(definition.difficulty) end,tiers=tiers}})
+end

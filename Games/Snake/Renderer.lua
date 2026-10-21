@@ -34,7 +34,7 @@ local CFG = {
     bg_h         = 500,
     bg_ofs_x     = 0,
     bg_ofs_y     = 0,
-    bg_alpha     = 0,
+    bg_alpha     = 1,
     border_w     = 795,
     border_h     = 550,
     border_ofs_x = 0,
@@ -111,11 +111,11 @@ local TILES = {
 
 local function GetSegmentTexture(prevDir, nextDir, isHead, isTail)
     if isHead then
-        -- Kopf zeigt in Bewegungsrichtung (nextDir)
-        if nextDir == "UP"    then return TILES.head_up    end
-        if nextDir == "DOWN"  then return TILES.head_down  end
-        if nextDir == "LEFT"  then return TILES.head_left  end
-        if nextDir == "RIGHT" then return TILES.head_right end
+        -- Original asset filenames describe the neck side; the mouth faces away.
+        if nextDir == "UP"    then return TILES.head_down    end
+        if nextDir == "DOWN"  then return TILES.head_up  end
+        if nextDir == "LEFT"  then return TILES.head_right  end
+        if nextDir == "RIGHT" then return TILES.head_left end
         return TILES.head_up
 
     elseif isTail then
@@ -169,17 +169,16 @@ local function GetSegmentTexture(prevDir, nextDir, isHead, isTail)
 end
 
 -- Richtung von Segment A nach Segment B berechnen
-local function GetDir(from, to)
-    if to.r < from.r then return "UP"    end
-    if to.r > from.r then return "DOWN"  end
-    if to.c < from.c then return "LEFT"  end
-    if to.c > from.c then return "RIGHT" end
-    return "UP"
+local function GetDir(from,to,g)
+    local dr,dc=(to.r-from.r)%g,(to.c-from.c)%g
+    if dr==1 then return "DOWN" elseif dr==g-1 then return "UP"
+    elseif dc==1 then return "RIGHT" elseif dc==g-1 then return "LEFT" end
 end
 
 -- Alle Segment-Tiles für eine Schlange berechnen
 -- Gibt table[i] = texturpfad zurück (index entspricht board.snake[i])
-local function CalcAllSegmentTiles(snake)
+local function CalcAllSegmentTiles(board)
+    local snake,g=board.snake,board.gridSize
     local n    = #snake
     local tiles = {}
     for i = 1, n do
@@ -191,14 +190,18 @@ local function CalcAllSegmentTiles(snake)
 
         if not isHead then
             -- prevDir: Richtung vom Vorgänger zu diesem Segment
-            prevDir = GetDir(snake[i - 1], seg)
+            prevDir = GetDir(snake[i - 1], seg,g)
         end
         if not isTail then
             -- nextDir: Richtung von diesem Segment zum Nachfolger
-            nextDir = GetDir(seg, snake[i + 1])
+            nextDir = GetDir(seg, snake[i + 1],g)
         end
 
-        -- Für Kopf: nextDir = Richtung vom Kopf zu Segment 2
+        if isHead then
+            local d=board.dir
+            nextDir=d.dr==-1 and "UP" or d.dr==1 and "DOWN" or d.dc==-1 and "LEFT" or "RIGHT"
+        end
+        -- Kopf aus Bewegungsrichtung; Verbindungen toroidal.
         -- Für Schwanz: prevDir = Richtung vom vorletzten zum letzten
         tiles[i] = GetSegmentTexture(prevDir, nextDir, isHead, isTail)
     end
@@ -296,12 +299,10 @@ function R:Init()
     self:_CreateLogo()
     self:_CreateHUD()
     self:_CreateControls()
+    self:_CreateSlotMenu()
     self:_CreateKeyFrame()
     self:EnterIdleState()
 
-    local Eng = ArcadiaNexus.Engine
-    Eng:On("SNK_GAME_STARTED", function(b) R:OnGameStarted(b) end)
-    Eng:On("SNK_GAME_STOPPED", function()  R:EnterIdleState() end)
 end
 
 -- ============================================================
@@ -326,10 +327,11 @@ function R:_CreateMainFrame()
 
     f:SetScript("OnHide", function()
         ArcadiaNexus.GameSession:HandleRendererHide("SNAKE", ArcadiaNexus.SNK_Engine, function(E)
-            if E._board then
-                E:StopGame()
+            if E.activeGame then
+                E:SaveAndPause()
             end
         end)
+        if ArcadiaNexus.SNK_Engine.state=="IDLE" then R:EnterIdleState() end
     end)
 end
 
@@ -394,11 +396,13 @@ function R:_CreateKeyFrame()
         local mapped = {
             w="W", a="A", s="S", d="D",
             W="W", A="A", S="S", D="D",
-            UP="UP", DOWN="DOWN", LEFT="LEFT", RIGHT="RIGHT",
+            UP="UP", DOWN="DOWN", LEFT="LEFT", RIGHT="RIGHT", P="P", p="P", ESCAPE="ESCAPE",
         }
         local k = mapped[key]
-        if k then ArcadiaNexus.SNK_Engine:HandleKey(k) end
+        kf:SetPropagateKeyboardInput(not k or GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()~=nil)
+        if k then ArcadiaNexus.SNK_Engine:HandleKeyDown(k) end
     end)
+    kf:SetScript("OnKeyUp",function(_,key) ArcadiaNexus.SNK_Engine:HandleKeyUp(string.upper(key)) end)
     self.keyFrame = kf
 end
 
@@ -427,6 +431,7 @@ function R:_CreateHUD()
         text = (L["lbl_highscore"] or "Highscore") .. ": 0",
         shown = false,
     })
+    self._lengthBox,self._lengthFS=UI.CreateHudStatBox(canvas,{w=100,h=28,point="CENTER",relativePoint="CENTER",x=0,y=CFG.hud_y,shown=false})
     self._scoreLbl, self._hsLbl = nil, nil
 
     local hintFS = canvas:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -439,6 +444,7 @@ end
 
 function R:UpdateScore(board)
     local L = ArcadiaNexus.GetLocaleTable("SNAKE")
+    if self._lengthFS then self._lengthFS:SetText(string.format("%s: %d/%d",L.lbl_length,#board.snake,board.gridSize^2)) end
     if self._scoreFS then
         self._scoreFS:SetText((L["lbl_score"] or "Score") .. ": " .. tostring(board.score or 0))
     end
@@ -466,7 +472,7 @@ function R:_CreateControls()
     ddAnchor:SetSize(CFG.dd_w, CFG.btn_h)
     ddAnchor:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
 
-    UI.CreateSimpleDropdown(
+    self._diffDropdown=UI.CreateSimpleDropdown(
         ddAnchor, 0, 0, CFG.dd_w, "",
         {
             { key = "easy",   label = L["diff_easy"]   },
@@ -475,31 +481,66 @@ function R:_CreateControls()
         },
         function() return (S and S:Get("difficulty")) or "easy" end,
         function(key)
-            R._lastDiff = key
-            if S then S:Set("difficulty", key) end
+            if S and S:Set("difficulty",key) then R._lastDiff=key end
         end
     )
 
     local startBtn = UI.CreateArcadiaButton(cf, L["btn_start"], CFG.btn_w, CFG.btn_h)
     startBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
-    startBtn:SetScript("OnClick", function()
-        local E = ArcadiaNexus.SNK_Engine
-        if not E then return end
-        if R.state == "PLAYING" then
-            E:StopGame()
-        else
-            R:_StartNewGame()
-        end
+    startBtn:SetScript("OnClick",function()
+        local E=ArcadiaNexus.SNK_Engine
+        if E.state=="PLAYING" or E.state=="PAUSED" then E:StopGame()
+        elseif R.state=="MENU" then R:EnterIdleState() else R:EnterSlotMenu() end
     end)
-    self._startBtn = startBtn
+    self._startBtn=startBtn
+    self._pauseBtn=UI.CreateArcadiaButton(cf,L.btn_pause,CFG.btn_w,CFG.btn_h)
+    self._pauseBtn:SetPoint("BOTTOM",cf,"BOTTOM",bar.segX[3],bar.y.button)
+    self._pauseBtn:SetScript("OnClick",function() ArcadiaNexus.SNK_Engine:TogglePause() end)
+    self._pauseBtn:Hide()
+    local overlay=CreateFrame("Frame",nil,self._fieldFrame)
+    overlay:SetAllPoints(self._fieldFrame); overlay:SetFrameLevel(self._fieldFrame:GetFrameLevel()+20)
+    local bg=overlay:CreateTexture(nil,"BACKGROUND"); bg:SetAllPoints(overlay); bg:SetColorTexture(0,0,0,.75)
+    self._pauseFS=overlay:CreateFontString(nil,"OVERLAY","GameFontNormalLarge")
+    self._pauseFS:SetWidth(380); self._pauseFS:SetPoint("CENTER"); overlay:Hide(); self._pauseOverlay=overlay
 end
-
-function R:_StartNewGame()
-    local S = ArcadiaNexus.SNK_Settings
-    ArcadiaNexus.SNK_Engine:StartGame({
-        difficulty = R._lastDiff or (S and S:Get("difficulty")) or "easy",
-        theme      = "tiles",
-    })
+function R:_SyncControls(locked)
+    if self._diffDropdown then self._diffDropdown:SetEnabled(not locked); self._diffDropdown:RefreshDisplay() end
+    if self._pauseBtn then if locked then self._pauseBtn:Show() else self._pauseBtn:Hide() end end
+end
+function R:ShowPause(reason)
+    local L=ArcadiaNexus.GetLocaleTable("SNAKE"); self.state="PAUSED"
+    self._pauseFS:SetText(reason=="STALL" and L.pause_stall or reason=="FOCUS" and L.pause_focus or L.pause_hint)
+    self._pauseOverlay:Show(); self._pauseBtn:SetLabel(L.btn_resume); self:_SyncControls(true)
+end
+function R:HidePause()
+    if self._pauseOverlay then self._pauseOverlay:Hide() end
+    if self._pauseBtn then self._pauseBtn:SetLabel(ArcadiaNexus.GetLocaleTable("SNAKE").btn_pause) end
+    self.state=ArcadiaNexus.SNK_Engine.state
+end
+function R:ShowInvalidSave()
+    local L=ArcadiaNexus.GetLocaleTable("SNAKE")
+    ArcadiaNexus.UI.ShowChoicePopup({parent=self._fieldFrame,title=L.invalid_save_title,body=L.invalid_save_body,
+        buttons={{label=L.btn_exit,onClick=function() ArcadiaNexus.UI.HideChoicePopup(self._fieldFrame) end}}})
+end
+function R:_CreateSlotMenu()
+    local S,UI,L=ArcadiaNexus.SNK_Settings,ArcadiaNexus.UI,ArcadiaNexus.GetLocaleTable("SNAKE")
+    self._slotMenu=UI.CreateSaveSlotMenu({parent=self._fieldFrame,confirmParent=self._fieldFrame,maxSlots=3,L=L,title=L.menu_title,
+        loadSlot=function(slot) return S:LoadSlot(slot) end,deleteSlot=function(slot) S:DeleteSlot(slot) end,
+        isPaused=function() return true end,
+        formatInfo=function(save,loc) return string.format(loc.slot_info,loc["diff_"..(save.difficulty or "easy")] or "?",save.score or 0) end,
+        onNewGame=function(slot) ArcadiaNexus.SNK_Engine:StartGame({mode="new",slot=slot,difficulty=S:Get("difficulty")}) end,
+        onContinue=function(slot) ArcadiaNexus.SNK_Engine:StartGame({mode="continue",slot=slot}) end})
+end
+function R:EnterSlotMenu()
+    self.state="MENU"; ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
+    if self._logoTex then self._logoTex:Hide() end
+    if self._hintFS then self._hintFS:Hide() end
+    self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("SNAKE").btn_exit)
+    self._slotMenu:Show()
+end
+function R:_StartNewGame(board)
+    local E,S=ArcadiaNexus.SNK_Engine,ArcadiaNexus.SNK_Settings
+    E:StartGame({mode="new",slot=E.activeSlot or S:GetActiveSlot(),difficulty=board and board.difficulty or S:Get("difficulty")})
 end
 
 function R:ShowOverlay(won, board, isNewHighscore)
@@ -512,15 +553,18 @@ function R:ShowOverlay(won, board, isNewHighscore)
         result       = won and "WIN" or "LOSS",
         score        = board.score,
         newHighscore = isNewHighscore,
+        xp=board.resultData and board.resultData.awardedXP or 0,
+        gold=board.resultData and board.resultData.awardedGold or 0,
+        isCurrent=function() local E=ArcadiaNexus.SNK_Engine; return E.state=="GAMEOVER" and E.activeGame and E.activeGame.board==board end,
         titleKeys    = {
             WIN  = { "result_win_title" },
             LOSS = { "result_loss_title" },
         },
         lines = { string.format("|cffaaaaaa %s:|r |cffffff00%d|r",
-            L["lbl_length"] or "Länge", #board.snake) },
+            L["lbl_length"] or "Länge", #board.snake),won and L.win_explanation or L.loss_explanation },
         L = L,
         onRetry = function()
-            R:_StartNewGame()
+            R:_StartNewGame(board)
         end,
         onExit = function()
             local E = ArcadiaNexus.SNK_Engine
@@ -598,7 +642,7 @@ function R:RenderFull(board)
     end
 
     -- Schlange mit Tile-System zeichnen
-    local tilePaths = CalcAllSegmentTiles(board.snake)
+    local tilePaths = CalcAllSegmentTiles(board)
     for i, seg in ipairs(board.snake) do
         local cell = self.cells[seg.r] and self.cells[seg.r][seg.c]
         if cell then
@@ -622,13 +666,14 @@ function R:RenderFull(board)
     end
 end
 
-function R:OnTick(board, result)
+function R:OnTick(board, result,oldTail)
+    self._lastTail=oldTail
     -- Vollständiges Neuzeichnen der Schlange bei jedem Tick
     -- nötig weil Segment-Tiles sich durch Richtungsänderungen überall ändern können
     local g = board.gridSize
 
     -- Nur Schlangenzellen neu zeichnen (Futter bleibt)
-    local tilePaths = CalcAllSegmentTiles(board.snake)
+    local tilePaths = CalcAllSegmentTiles(board)
     for i, seg in ipairs(board.snake) do
         local cell = self.cells[seg.r] and self.cells[seg.r][seg.c]
         if cell then
@@ -682,6 +727,9 @@ end
 -- EVENT-HANDLER
 -- ============================================================
 function R:OnGameStarted(board)
+    self:HidePause(); self:_SyncControls(true)
+    if self._slotMenu then self._slotMenu:Hide() end
+    if self._lengthBox then self._lengthBox:Show() end
     self.state     = "PLAYING"
     self._lastDiff = board.difficulty
 
@@ -708,7 +756,7 @@ function R:OnGameStarted(board)
 end
 
 function R:OnGameLost(board, isNewHighscore)
-    self.state = "LOST"
+    self.state = "LOST"; self:_SyncControls(false)
     if self.keyFrame then self.keyFrame:EnableKeyboard(false) end
     if self._startBtn then
         self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("SNAKE")["btn_start"])
@@ -717,7 +765,7 @@ function R:OnGameLost(board, isNewHighscore)
 end
 
 function R:OnGameWon(board, isNewHighscore)
-    self.state = "WON"
+    self.state = "WON"; self:_SyncControls(false)
     if self.keyFrame then self.keyFrame:EnableKeyboard(false) end
     if self._startBtn then
         self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("SNAKE")["btn_start"])
@@ -729,6 +777,9 @@ end
 -- IDLE STATE
 -- ============================================================
 function R:EnterIdleState()
+    self:HidePause(); self:_SyncControls(false)
+    if self._slotMenu then self._slotMenu:Hide() end
+    if self._lengthBox then self._lengthBox:Hide() end
     self.state = "IDLE"
     self:ClearGrid()
 

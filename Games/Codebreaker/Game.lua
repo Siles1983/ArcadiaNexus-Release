@@ -20,8 +20,6 @@ function G:Init(config)
     local theme  = T:GetTheme(config.theme)
     local cfg = {
         difficulty   = config.difficulty,
-        codeLength   = config.codeLength,
-        duplicates   = config.duplicates,
         theme        = config.theme,
         themeName    = theme.name,
         symbolCount  = T:GetSymbolCount(config.theme),
@@ -46,5 +44,20 @@ function G:SubmitGuess()
 end
 
 function G:GetBoardState()
-    return ArcadiaNexus.CB_Logic:GetBoardState(self.board)
+    local state = ArcadiaNexus.CB_Logic:GetBoardState(self.board)
+    state.runId, state.resultPending = self.runId, self.resultPending
+    return state
+end
+
+function G:Snapshot()
+    local state = self:GetBoardState()
+    state.saveVersion, state.timestamp = 1, GetServerTime()
+    return state
+end
+
+function G:Load(save)
+    if not ArcadiaNexus.CB_Logic:ValidateSave(save) then return false end
+    self.board = ArcadiaNexus.CB_Logic:GetBoardState(save)
+    self.runId, self.resultPending = save.runId, save.resultPending
+    return true
 end

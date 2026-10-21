@@ -30,7 +30,9 @@ S.Defaults = {
 
     -- Brett-Größe (gespeichert für Buttons-Wiederherstellung, nicht Dropdown)
     boardSize    = 4,
+    reducedMotion = false,
 }
+S.MAX_SLOTS = 3
 
 local DB_KEY = "2048"
 local P = ArcadiaNexus.Persistence
@@ -46,13 +48,43 @@ function S:Get(key)
 end
 
 function S:Set(key, value)
+    local E = ArcadiaNexus.TDG_Engine
+    if key == "boardSize" then
+        if E and E.activeGame then return false end
+        if value ~= 3 and value ~= 4 and value ~= 5 then return false end
+    end
     GetDB()[key] = value
     self:_EnforceRules(key)
+    if key == "colorTheme" or key == "reducedMotion" then ArcadiaNexus.Engine:Emit("TDG_APPEARANCE_CHANGED") end
+    return true
 end
 
 function S:Reset()
     local db = GetDB()
     for k in pairs(self.Defaults) do db[k] = nil end
+    ArcadiaNexus.Engine:Emit("TDG_APPEARANCE_CHANGED")
+end
+
+function S:LoadSlot(slot)
+    local slots = GetDB().slots
+    return slots and slots[slot]
+end
+
+function S:SaveSlot(slot, save)
+    if type(slot) ~= "number" or slot < 1 or slot > self.MAX_SLOTS or slot ~= math.floor(slot) then return false end
+    local db = GetDB()
+    db.slots = db.slots or {}
+    db.slots[slot] = save
+    return true
+end
+
+function S:DeleteSlot(slot)
+    local E = ArcadiaNexus.TDG_Engine
+    if E and E.activeGame and E.activeSlot == slot then return false end
+    local slots = GetDB().slots
+    if slots then slots[slot] = nil end
+    if ArcadiaNexus.LocalResults then ArcadiaNexus.LocalResults:Prune() end
+    return true
 end
 
 function S:GetAll()

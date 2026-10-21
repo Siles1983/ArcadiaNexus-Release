@@ -45,10 +45,10 @@ ArcadiaNexus.RegisterLocale("AZEROTHJEWELS", "deDE", {
     -- Buttons
     btn_start           = "Spiel starten",
     btn_exit            = "Beenden",
-    btn_next_level      = "Weiter",
+    btn_next_level      = "Nächstes Level",
     btn_continue_campaign = "Kampagne fortsetzen",
     btn_endless         = "Endlos",
-    btn_level_select    = "Level neu starten",
+    btn_level_select    = "Levelauswahl",
     popup_play_again    = "Nochmal",
 
     -- Zustände / Hinweise
@@ -178,10 +178,10 @@ ArcadiaNexus.RegisterLocale("AZEROTHJEWELS", "enUS", {
     -- Buttons
     btn_start           = "Start Game",
     btn_exit            = "Exit",
-    btn_next_level      = "Continue",
+    btn_next_level      = "Next Level",
     btn_continue_campaign = "Continue campaign",
     btn_endless         = "Endless",
-    btn_level_select    = "Restart Level",
+    btn_level_select    = "Level Select",
     popup_play_again    = "Play Again",
 
     -- States / hints

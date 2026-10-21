@@ -23,8 +23,8 @@ local CFG = {
     undo={w=85,h=28,x=-220,y=-400},
     action={w=165,h=28,x=194,y=-400},
     dice={
-        {w=30,h=30,x=247,y=395}, {w=30,h=30,x=283,y=395},
-        {w=30,h=30,x=319,y=395}, {w=30,h=30,x=335,y=395},
+        {w=30,h=30,x=229,y=395}, {w=30,h=30,x=265,y=395},
+        {w=30,h=30,x=301,y=395}, {w=30,h=30,x=337,y=395},
     },
     controls={
         -- Fine offsets relative to UI.CreateGameControlsBar's standard segments.
@@ -89,6 +89,12 @@ function R:_CreateBoard()
         point=ho.point,relativePoint=ho.relativePoint,shown=false})
     self.hudTurn, self.hudTurnText = UI.CreateHudStatBox(c, {w=ht.w,h=ht.h,x=ht.x,y=ht.y,
         point=ht.point,relativePoint=ht.relativePoint,shown=false})
+    for _,hud in ipairs({self.hud1,self.hud2}) do
+        hud:SetScript("OnEnter",function(f)
+            if GameTooltip then GameTooltip:SetOwner(f,"ANCHOR_TOP"); GameTooltip:SetText(Loc().pips_hint); GameTooltip:Show() end
+        end)
+        hud:SetScript("OnLeave",function() if GameTooltip then GameTooltip:Hide() end end)
+    end
     local board = CreateFrame("Frame", nil, c)
     board:SetSize(CFG.board_w,CFG.board_h); board:SetPoint("TOP", c, "TOP", CFG.board_ofs_x, CFG.board_ofs_y)
     self.board = board
@@ -159,6 +165,7 @@ function R:_CreateBoard()
             local s = A.BG_Logic.Deserialize(save.board)
             return s and string.format(Loc().saved_info,s.turnNo,Loc()["difficulty_"..(save.difficulty or "normal")]) or Loc().bad_save
         end,
+        canContinue=function(save) return Engine():CanContinue(save) end,
         onNewGame=function(slot) Engine():StartGame({slot=slot}) end,
         onContinue=function(slot) Engine():StartGame({slot=slot,resume=true}) end,
     })
@@ -183,7 +190,7 @@ function R:_CreateControls()
             end
         end
         UI.HideResultDialog(self.canvas)
-        if e.state ~= "IDLE" then e:SaveAndPause(); if e.mode ~= "solo" then e:StopGame() end
+        if e.state ~= "IDLE" then self:RequestExit()
         elseif self.slots:IsShown() then self.slots:Hide(); self:Render()
         else self.slots:Show(); self:Render() end
     end)
@@ -261,6 +268,14 @@ function R:Render()
     self.hudText2:SetText(string.format(loc.pip,loc.player_2,A.BG_Logic.Pips(board,2)))
     self.hudTurnText:SetText(string.format(loc.turn,s.turnNo,loc["player_"..s.turn]))
     local flip=v.mp and v.seat==2
+    local remaining={}
+    for _,d in ipairs(v.remaining) do remaining[d]=(remaining[d] or 0)+1 end
+    if self._die and not remaining[self._die] then self._die=nil end
+    if self._selected then
+        local possible=false
+        for _,m in ipairs(v.moves) do if m.from==self._selected then possible=true end end
+        if not possible then self._selected=nil end
+    end
     local sources,targets={},{}
     for _,m in ipairs(v.moves) do
         sources[m.from]=true
@@ -300,29 +315,33 @@ function R:Render()
     for side=1,2 do
         local seat=flip and 3-side or side
         self.offButtons[side]._seat=seat
-        self.offTexts[side]:SetText(loc.off.."\n"..board.off[seat].."/15")
+        self.offTexts[side]:SetText(loc.off.."\n"..board.off[seat].."/15\n"..loc["home_"..seat])
         self.offButtons[side]:SetBackdropBorderColor(0.35,1,0.64,v.canAct and targets[0] and seat==s.turn and 1 or 0)
     end
-    local remaining={}
-    for _,d in ipairs(v.remaining) do remaining[d]=(remaining[d] or 0)+1 end
-    if self._die and not remaining[self._die] then self._die=nil end
     for i,die in ipairs(s.dice) do
         local b=self.dice[i]
         local available=(remaining[die] or 0)>0
         remaining[die]=math.max(0,(remaining[die] or 0)-1)
         b._die=die; b.tex:SetTexture(DIE_ASSET.."die_"..die); b:Show()
         Enabled(b,available and v.canAct and s.phase=="move")
-        b:SetBackdropBorderColor(1,0.82,0.25,self._die==die and 1 or 0)
+        b:SetBackdropBorderColor(1,0.82,0.25,available and self._die==die and 1 or 0)
     end
     local status
     if s.phase=="over" then status=string.format(loc.victory,loc["player_"..s.winner])
+    elseif v.computing then status=loc.computing
     elseif v.pending then status=loc.sending
     elseif v.notice then status=loc[v.notice] or v.notice
     elseif not v.canAct then status=string.format(loc.waiting,loc["player_"..(s.phase=="opening" and 1 or s.turn)])
     elseif s.phase=="opening" then status=#s.dice==2 and loc.tie or loc.opening
     elseif s.phase=="roll" then status=string.format(loc.roll,loc["player_"..s.turn])
     elseif v.complete then status=v.draftCount==0 and loc.blocked or loc.confirm
-    else status=loc.select end
+    else
+        status=board.bar[s.turn]>0 and loc.bar_first or A.BG_Logic.AllHome(board,s.turn) and loc.home_ready or loc.select
+        status=status.."\n"..(v.draftCount>0 and loc.preview_hint or #s.dice==4 and loc.doubles_hint or loc.usage_hint)
+    end
+    if s.phase=="opening" and #s.dice==2 then
+        status=status.." · "..loc.player_1..": "..s.dice[1].." / "..loc.player_2..": "..s.dice[2]
+    end
     self.status:SetText(status)
     self.action:SetLabel(s.phase=="move" and (v.complete and v.draftCount==0 and loc.btn_pass or loc.btn_confirm) or loc.btn_roll)
     Enabled(self.action,v.canAct and (s.phase=="roll" or s.phase=="opening" or v.complete))
@@ -336,6 +355,10 @@ function R:ShowGameOver(v)
     local won=v.pub.winner==v.seat
     local lines={loc["win_"..v.pub.pointsWon]}
     UI.ShowArcadeResult(self.canvas,{gameId="BACKGAMMON",L=loc,
+        difficulty=v.difficulty,
+        xp=not v.mp and (e.resultData and e.resultData.awardedXP or 0) or nil,
+        gold=not v.mp and (e.resultData and e.resultData.awardedGold or 0) or nil,
+        isCurrent=function() return e.state=="FINISHED" and e:Board()==v.pub end,
         title=string.format(loc.victory,loc["player_"..v.pub.winner]),
         result=won and "WIN" or "LOSS",lines=lines,hideHighscore=true,
         onRetry=function()
@@ -343,12 +366,28 @@ function R:ShowGameOver(v)
                 local Shell = ArcadiaNexus.MatchShell
                 if Shell and Shell.Rematch then Shell.Rematch("BACKGAMMON") end
             else
-                e:StartGame({slot=e.slot})
+                e:StartGame({slot=e.slot,difficulty=v.difficulty})
             end
         end,
         onExit=function() e:StopGame() end,
     })
 end
+function R:RequestExit()
+    local e=Engine()
+    if e.mode~="solo" then
+        local Shell=A.MatchShell
+        if Shell and Shell.ShowEndRoundConfirm then
+            Shell.ShowEndRoundConfirm(function() e:SaveAndPause(); e:StopGame() end,self.canvas)
+        end
+        return
+    end
+    local draft=e.draft and #e.draft>0
+    e:SaveAndPause()
+    if draft and UI.ShowChoicePopup and self.frame:IsShown() then
+        UI.ShowChoicePopup({parent=self.canvas,title=Loc().saved_title,body=Loc().saved_preview,
+            buttons={{label=Loc().btn_back,onClick=function() UI.HideChoicePopup(self.canvas) end}}})
+    end
+end
 function R:EnterIdleState() self:Render() end
 A.RegisterGame({id="BACKGAMMON",label="Backgammon",renderer="BG_Renderer",engine="BG_Engine",
-    container="_bgContainer",category="STRATEGIE",matchSeats=2,logo=ASSET .. "logo",xp=10})
+    container="_bgContainer",category="STRATEGIE",matchSeats=2,logo=LOGO_ASSET,xp=10})

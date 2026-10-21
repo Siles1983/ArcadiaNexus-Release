@@ -14,6 +14,9 @@ ArcadiaNexus.RegisterLocale("WHACKAMOLE", "deDE", {
 
     -- Schwierigkeits-Buttons (Renderer)
     diff_easy       = "Einfach",
+    tip_format      = "%dx%d Felder · %.2g s sichtbar · %d Punkte/Treffer",
+    lbl_hits        = "Treffer",
+    empty_text      = "|cffaaaaaaLeer|r",
     diff_normal     = "Normal",
     diff_hard       = "Schwer",
 
@@ -40,7 +43,7 @@ ArcadiaNexus.RegisterLocale("WHACKAMOLE", "deDE", {
 
     -- GameOver-Panel (Renderer)
     go_title_bomb   = "|cffFF4444BOOM! Erwischt!|r",
-    go_title_time   = "|cffffff00Zeit abgelaufen!|r",
+    go_title_time   = "|cffffff00Runde abgeschlossen!|r",
     go_reason_bomb  = "|cffff9900Die Bombe hat dich erwischt!|r",
     go_score        = "Punkte: ",
     go_missed       = "Verpasst: ",
@@ -58,17 +61,18 @@ ArcadiaNexus.RegisterLocale("WHACKAMOLE", "deDE", {
     sound_enabled   = "Soundeffekte aktiv",
     sound_hit       = "Einfacher Treffer",
     sound_bomb      = "Bombe",
+    sound_round     = "Rundenstart und -ende",
     btn_reset       = "Reset",
 
     -- Settings-Panel: Spielanleitung
     guide_goal      = "|cffaaaaaa Ziel:|r Haue so viele Moles wie möglich in 30 Sekunden!",
-    guide_click     = "|cffaaaaaa Klick:|r Auf ein Mole klicken = Punkte",
+    guide_click     = "|cffaaaaaa Klick:|r Maulwurf = Punkte; leeres Feld = neutrale Rückmeldung ohne Strafe.",
     guide_points    = "|cffaaaaaa Punkte:|r 10 x Schwierigkeitsfaktor (Einfach x1, Normal x1.5, Schwer x2.5)",
     guide_bomb      = "|cffFF4444 Bombe:|r Ab 30 Punkten erscheinen Bomben (25% Chance). NICHT anklicken!",
-    guide_diff      = "|cffaaaaaa Schwierigkeit:|r Einfach=2x2, Normal=3x3, Schwer=4x4 Felder",
-    guide_missed    = "|cffaaaaaa Verpasst:|r Jedes Mole das verschwindet ohne Hit = +1 Verpasst",
-    guide_highscore = "|cffaaaaaa Highscore:|r Top 5 pro Schwierigkeit, pro Charakter",
-    guide_timer     = "|cffaaaaaa Timer:|r Wird bei wenig Zeit rot — Tempo steigt!",
+    guide_diff      = "|cffaaaaaa Schwierigkeit:|r Einfach 2x2 / 2 s / 10 Punkte; Normal 3x3 / 1,5 s / 15; Schwer 4x4 / 1 s / 25.",
+    guide_missed    = "|cffaaaaaa Verpasst:|r Nur abgelaufene Maulwürfe zählen. Ignorierte Bomben und leere Klicks kosten keine Punkte.",
+    guide_highscore = "|cffaaaaaa Highscore:|r Top 3 pro Schwierigkeit. Zeitende = WIN, Bombe = LOSS; beide Endwerte zählen.",
+    guide_timer     = "|cffaaaaaa Zeit:|r 30 Sekunden; letzte 10 s rot. Ab 15 s: 35% Chance auf Zusatzspawn nach 0,25 s; Sichtbarkeit bleibt gleich. Beenden verwirft unfertige Läufe.",
 })
 
 -- ============================================================
@@ -78,6 +82,9 @@ ArcadiaNexus.RegisterLocale("WHACKAMOLE", "enUS", {
 
     -- Difficulty buttons
     diff_easy       = "Easy",
+    tip_format      = "%dx%d grid · %.2g s visible · %d points/hit",
+    lbl_hits        = "Hits",
+    empty_text      = "|cffaaaaaaEmpty|r",
     diff_normal     = "Normal",
     diff_hard       = "Hard",
 
@@ -104,7 +111,7 @@ ArcadiaNexus.RegisterLocale("WHACKAMOLE", "enUS", {
 
     -- GameOver panel
     go_title_bomb   = "|cffFF4444BOOM! Busted!|r",
-    go_title_time   = "|cffffff00Time's up!|r",
+    go_title_time   = "|cffffff00Round completed!|r",
     go_reason_bomb  = "|cffff9900The bomb got you!|r",
     go_score        = "Score: ",
     go_missed       = "Missed: ",
@@ -122,15 +129,16 @@ ArcadiaNexus.RegisterLocale("WHACKAMOLE", "enUS", {
     sound_enabled   = "Sound effects active",
     sound_hit       = "Normal hit",
     sound_bomb      = "Bomb",
+    sound_round     = "Round start and end",
     btn_reset       = "Reset",
 
     -- Guide
     guide_goal      = "|cffaaaaaa Goal:|r Whack as many moles as possible in 30 seconds!",
-    guide_click     = "|cffaaaaaa Click:|r Clicking a mole = points",
+    guide_click     = "|cffaaaaaa Click:|r Mole = points; empty hole = neutral feedback without penalty.",
     guide_points    = "|cffaaaaaa Points:|r 10 x difficulty factor (Easy x1, Normal x1.5, Hard x2.5)",
     guide_bomb      = "|cffFF4444 Bomb:|r From score 30, bombs appear (25% chance). DON'T click!",
-    guide_diff      = "|cffaaaaaa Difficulty:|r Easy=2x2, Normal=3x3, Hard=4x4 grid",
-    guide_missed    = "|cffaaaaaa Missed:|r Each mole that disappears without a hit = +1 missed",
-    guide_highscore = "|cffaaaaaa Highscore:|r Top 5 per difficulty, per character",
-    guide_timer     = "|cffaaaaaa Timer:|r Turns red when time is short — pace increases!",
+    guide_diff      = "|cffaaaaaa Difficulty:|r Easy 2x2 / 2 s / 10 points; Normal 3x3 / 1.5 s / 15; Hard 4x4 / 1 s / 25.",
+    guide_missed    = "|cffaaaaaa Missed:|r Only expired moles count. Ignored bombs and empty clicks cost no points.",
+    guide_highscore = "|cffaaaaaa Highscore:|r Top 3 per difficulty. Timeout = WIN, bomb = LOSS; both final scores count.",
+    guide_timer     = "|cffaaaaaa Time:|r 30 seconds; last 10 s red. From 15 s: 35% chance of an extra spawn after 0.25 s; visibility stays unchanged. Exit discards unfinished runs.",
 })

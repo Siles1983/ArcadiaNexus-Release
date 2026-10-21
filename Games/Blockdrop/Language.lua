@@ -75,15 +75,22 @@ ArcadiaNexus.RegisterLocale("BLOCKDROP", "deDE", {
     -- Settings-Panel: Spielanleitung
     guide_controls  = "|cffffff00Steuerung:|r",
     guide_keys      = "  W / Pfeil hoch / Rechtsklick: Block rotieren     |    A / Linkspfeil: Links     |    D / Rechtspfeil: Rechts",
-    guide_drop      = "  S / Pfeil runter: Softdrop (langsam fallen)      |    Leertaste: Harddrop (sofort landen)",
+    guide_drop      = "  S / Pfeil runter: Softdrop halten (schneller fallen)      |    Leertaste: Harddrop (sofort sperren)",
     guide_empty     = "",
     guide_scoring   = "|cffffff00Punktesystem:|r",
     guide_score1    = "  1 Reihe = 40 x (Level+1)    |    2 Reihen = 100 x (Level+1)",
     guide_score2    = "  3 Reihen = 300 x (Level+1)  |    4 Reihen = 1200 x (Level+1): BlockDrop!",
+    guide_mult      = "  Multiplikator: (Level+1). Level beginnt bei 0 und zählt als x1; jedes weitere Level erhöht den Faktor um 1.",
     guide_empty2    = "",
     guide_levelup   = "|cffffff00Level-Up:|r  Alle 10 gelöschten Reihen. Blöcke fallen schneller!",
-    guide_highscore = "|cffffff00Highscore:|r  Top 5, wird pro Charakter gespeichert.",
-    guide_sizes     = "  10 x 20 Blöcke – Klassisches Format",
+    guide_highscore = "|cffffff00Highscore:|r  Top 3, wird pro Charakter gespeichert.",
+    guide_sizes     = "  10 x 20 Blöcke – Klassisches Format. Siebener-Beutel: jede Form einmal, dann neu mischen.",
+    guide_pause="  P / Gamepad-Pause: Pause und Fortsetzen. Escape: speichern und verlassen. Links/Rechts halten für Wiederholung.",
+    guide_lock="  Kurze Einrastzeit am Boden; Bewegungen/Rotationen können sie nur begrenzt verlängern. Harddrop sperrt sofort, ohne Zusatzpunkte.",
+    invalid_save="Spielstand kann nicht fortgesetzt werden",
+    invalid_save_body="Ungültige oder unvollständige Brett-/Stein-/Restzeitdaten. Der gespeicherte Stand wurde nicht verändert.",
+    legacy_save="Altfortsetzung: Brett erhalten, neue Uhren/Beutel ab gespeicherter Vorschau",
+
 })
 
 -- ============================================================
@@ -154,13 +161,20 @@ ArcadiaNexus.RegisterLocale("BLOCKDROP", "enUS", {
     -- Guide
     guide_controls  = "|cffffff00Controls:|r",
     guide_keys      = "  W / Up Arrow / Right-click: Rotate block     |    A / Left Arrow: Left     |    D / Right Arrow: Right",
-    guide_drop      = "  S / Down Arrow: Soft drop (slow fall)        |    Space: Hard drop (instant land)",
+    guide_drop      = "  S / Down Arrow: Hold soft drop (faster fall)        |    Space: Hard drop (lock immediately)",
     guide_empty     = "",
     guide_scoring   = "|cffffff00Scoring:|r",
     guide_score1    = "  1 line = 40 x (Level+1)    |    2 lines = 100 x (Level+1)",
     guide_score2    = "  3 lines = 300 x (Level+1)  |    4 lines = 1200 x (Level+1): BlockDrop!",
+    guide_mult      = "  Multiplier: (Level+1). Level starts at 0 and counts as x1; each further level raises the factor by 1.",
     guide_empty2    = "",
     guide_levelup   = "|cffffff00Level-Up:|r  Every 10 cleared lines. Blocks fall faster!",
-    guide_highscore = "|cffffff00Highscore:|r  Top 5, saved per character.",
-    guide_sizes     = "  10 x 20 blocks – Classic format",
+    guide_highscore = "|cffffff00Highscore:|r  Top 3, saved per character.",
+    guide_sizes     = "  10 x 20 blocks – classic format. Seven-piece bag: every shape once, then reshuffle.",
+    guide_pause="  P / gamepad Pause: pause and resume. Escape: save and exit. Hold Left/Right for repeat movement.",
+    guide_lock="  Brief lock delay on ground; moves/rotations can extend it a limited number of times. Hard drop locks immediately, no bonus points.",
+    invalid_save="Unable to continue this save",
+    invalid_save_body="Invalid or incomplete board/piece/clock data. The stored save has not been changed.",
+    legacy_save="Legacy continuation: board retained, new clocks/bag after saved preview",
+
 })

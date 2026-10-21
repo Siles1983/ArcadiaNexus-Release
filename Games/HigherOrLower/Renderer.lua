@@ -40,28 +40,7 @@ local CFG = {
     logo_h       = 300,
     logo_ofs_x   = 0,
     logo_ofs_y   = 15,
-    -- HUD FontStrings (relativ zu frame TOPLEFT / TOP / TOPRIGHT)
-    hud_state_x      = 0,
-    hud_state_y      = -8,
-    hud_state_w      = 200,
-    hud_streak_x     = 16,
-    hud_streak_y     = -26,
-    hud_streak_w     = 160,
-    hud_mult_x       = 0,   -- relativ zu streakLbl BOTTOMLEFT
-    hud_mult_y       = -2,
-    hud_pending_x    = 0,   -- relativ zu multLbl BOTTOMLEFT
-    hud_pending_y    = -2,
-    hud_ace_x        = 0,
-    hud_ace_y        = -28,
-    hud_ace_w        = 160,
-    hud_capital_y    = 515,
-    hud_capital_x    = 437,
-    hud_capital_w    = 200,
-    hud_capital_h    = 28,
-    hud_capital_alpha = 0.75,
-    hud_bet_x        = 16,
-    hud_bet_y        = -245,
-    hud_bet_w        = 160,
+
 }
 
 -- ── Registrierung (Datei-Ebene) ───────────────────────────────
@@ -142,7 +121,7 @@ local CHIP_SLOTS = {
 local CHIP_STACK_Y = 272
 local CHIP_SIZE    = 64
 local CHIP_WASTE_X = 264   -- mittig zwischen Karte links (x=48+128=176) und rechts (x=416)
-local CHIP_WASTE_Y = 160
+local CHIP_WASTE_Y = 272
 
 local CARD_W       = 128
 local CARD_H       = 192
@@ -175,7 +154,6 @@ R._multLbl       = nil
 R._pendingLbl    = nil
 R._aceLbl        = nil
 R._diffDD        = nil
-R._streakPrompt  = nil
 R.actionBtns     = {}
 
 -- ── Locale-Helper ─────────────────────────────────────────────
@@ -253,7 +231,6 @@ function R:Init()
     self:_CreateChipSystem()
     self:_CreateActionButtons()
     self:_CreateBottomBar()
-    self:_CreateStreakPrompt()
     self:_EnterIdleState()
 end
 
@@ -363,76 +340,36 @@ function R:_CreateCardFrames()
     currF:Hide()
     self._currCardF   = currF
     self._currCardTex = currTex
+    local joker=currF:CreateFontString(nil,"OVERLAY","GameFontNormalLarge")
+    joker:SetPoint("CENTER",currF,"CENTER",0,0); joker:SetText("JOKER"); joker:Hide(); currF._jokerLabel=joker
 
     local prevCap = canvas:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     prevCap:SetPoint("TOP", prevF, "BOTTOM", 0, -3)
-    prevCap:SetText("Vorherige")
+    prevCap:SetText(L("previous_card"))
     prevCap:SetTextColor(0.65, 0.60, 0.45)
 
     local currCap = canvas:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     currCap:SetPoint("TOP", currF, "BOTTOM", 0, -3)
-    currCap:SetText("Aktuelle")
+    currCap:SetText(L("current_card"))
     currCap:SetTextColor(0.85, 0.80, 0.55)
 end
 
 -- ── HUD ───────────────────────────────────────────────────────
 function R:_CreateHUD()
-    local canvas = self._canvas
-    if not canvas then return end
-
-    -- Kapital: Box mit dunklem Hintergrund und goldenem Rahmen (wie Blackjack)
-    local capBox = CreateFrame("Frame", nil, canvas, "BackdropTemplate")
-    capBox:SetSize(CFG.hud_capital_w, CFG.hud_capital_h)
-    capBox:SetPoint("TOPLEFT", canvas, "TOPLEFT", CFG.hud_capital_x, -CFG.hud_capital_y)
-    capBox:SetBackdrop({
-        bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileEdge = true, tileSize = 16, edgeSize = 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    local canvas=self._canvas; if not canvas then return end
+    self._capitalBox,self._capitalLbl=ArcadiaNexus.UI.CreateHudStatBox(canvas,{
+        w=190,h=28,point="TOP",x=0,y=-4,shown=false,
     })
-    capBox:SetBackdropColor(0.05, 0.05, 0.05, CFG.hud_capital_alpha)
-    capBox:SetBackdropBorderColor(0.9, 0.75, 0.3, 1)
-    local capLbl = capBox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    capLbl:SetPoint("CENTER", capBox, "CENTER", 0, 0)
-    capLbl:SetTextColor(0.95, 0.85, 0.4)
-    self._capitalLbl = capLbl
-    self._capitalBox = capBox
-    capBox:Hide()
-
-    local stateLbl = canvas:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    stateLbl:SetPoint("TOP", canvas, "TOP", CFG.hud_state_x, CFG.hud_state_y)
-    stateLbl:SetWidth(CFG.hud_state_w)
-    stateLbl:SetTextColor(0.9, 0.85, 0.6)
-    self._stateLbl = stateLbl
-
-    local betLbl = canvas:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    betLbl:SetPoint("TOPLEFT", canvas, "TOPLEFT", CFG.hud_bet_x, CFG.hud_bet_y)
-    betLbl:SetWidth(CFG.hud_bet_w)
-    betLbl:SetTextColor(0.85, 0.75, 0.35)
-    self._betLbl = betLbl
-
-    local streakLbl = canvas:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    streakLbl:SetPoint("TOPLEFT", canvas, "TOPLEFT", CFG.hud_streak_x, CFG.hud_streak_y)
-    streakLbl:SetWidth(CFG.hud_streak_w)
-    streakLbl:SetTextColor(0.4, 0.9, 0.4)
-    self._streakLbl = streakLbl
-
-    local multLbl = canvas:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    multLbl:SetPoint("TOPLEFT", streakLbl, "BOTTOMLEFT", CFG.hud_mult_x, CFG.hud_mult_y)
-    multLbl:SetTextColor(0.5, 0.85, 0.5)
-    self._multLbl = multLbl
-
-    local pendingLbl = canvas:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    pendingLbl:SetPoint("TOPLEFT", multLbl, "BOTTOMLEFT", CFG.hud_pending_x, CFG.hud_pending_y)
-    pendingLbl:SetTextColor(0.9, 0.75, 0.2)
-    self._pendingLbl = pendingLbl
-
-    local aceLbl = canvas:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    aceLbl:SetPoint("TOP", canvas, "TOP", CFG.hud_ace_x, CFG.hud_ace_y)
-    aceLbl:SetWidth(CFG.hud_ace_w)
-    aceLbl:SetTextColor(0.7, 0.85, 0.9)
-    aceLbl:SetJustifyH("CENTER")
-    self._aceLbl = aceLbl
+    local fields={
+        {"_stateLbl",-35,"GameFontNormalLarge"},{"_aceLbl",-55,"GameFontNormalSmall"},
+        {"_betLbl",-82,"GameFontNormal"},{"_streakLbl",-108,"GameFontNormal"},
+        {"_multLbl",-132,"GameFontNormalSmall"},{"_pendingLbl",-157,"GameFontNormal"},
+        {"_netLbl",-185,"GameFontNormalSmall"},
+    }
+    for _,field in ipairs(fields) do
+        local fs=canvas:CreateFontString(nil,"OVERLAY",field[3]); fs:SetPoint("TOP",canvas,"TOP",0,field[2])
+        fs:SetWidth(212); fs:SetJustifyH("CENTER"); fs:SetTextColor(0.95,0.85,0.4); self[field[1]]=fs
+    end
 end
 
 -- ── Chip-System ───────────────────────────────────────────────
@@ -471,21 +408,8 @@ function R:_CreateChipSystem()
             local gs = E.gameState
             if not gs then return end
 
-            if button == "RightButton" then
-                -- Letzten Chip dieser Farbe zurückziehen
-                if R:_RemoveLastWasteChipOfColor(slotRef.color) then
-                    E:AdjustBet(-slotRef.value)
-                end
-                return
-            end
-
-            -- Linksklick: Chip hinzufügen
-            if (gs.bet or 0) + slotRef.value > gs.chips then return end
-            local atlas   = CHIP_ATLAS[slotRef.color]
-            local variant = atlas.coords[math.random(1, #atlas.coords)]
-            R:_AddWasteChip(slotRef.color, variant, slotRef.value)
-            SetRandomChipVariant(texRef, slotRef.color)
-            E:AdjustBet(slotRef.value)
+            if button=="RightButton" then E:AdjustBet(-slotRef.value)
+            else E:AdjustBet(slotRef.value) end
         end)
         btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         self._chipStackBtns[i] = btn
@@ -543,503 +467,196 @@ function R:_ClearWasteChips()
         self._wasteChipPool:ReleaseAll()
     end
     self._chipWastePile = {}
+    self._wasteBet2,self._wasteTableId=nil,nil
 end
 
--- ── Aktions-Buttons: Lower / Ziehen / Higher ──────────────────
--- "Ziehen"-Button: erscheint in BETTING wenn bet > 0, verschwindet nach erster Karte
+-- Preserve every unaffected chip; only added chips receive new scatter offsets.
+function R:_SyncWasteChips(gs)
+    if self._wasteTableId~=gs.tableId then self:_ClearWasteChips() end
+    local delta=(gs.bet2-(self._wasteBet2 or 0))/2
+    local function AddAmount(amount,restoreLimit)
+        for i=#CHIP_SLOTS,1,-1 do
+            local slot=CHIP_SLOTS[i]
+            while amount>=slot.value and (not restoreLimit or #self._chipWastePile<restoreLimit) do
+                self:_AddWasteChip(slot.color,CHIP_ATLAS[slot.color].coords[1],slot.value)
+                amount=amount-slot.value
+            end
+        end
+    end
+    if delta>0 then AddAmount(delta,self._wasteBet2==nil and 24 or nil)
+    elseif delta<0 then
+        local remaining=-delta
+        -- Right-clicking a denomination takes back its most recently placed chip first.
+        for i=#self._chipWastePile,1,-1 do
+            local chip=self._chipWastePile[i]
+            if chip._value==remaining then
+                self._wasteChipPool:Release(chip); table.remove(self._chipWastePile,i)
+                remaining=0; break
+            end
+        end
+        -- Remove exact/smaller chips first, without rebuilding or repositioning the survivors.
+        for i=#self._chipWastePile,1,-1 do
+            local chip=self._chipWastePile[i]
+            if chip._value<=remaining then
+                remaining=remaining-chip._value
+                self._wasteChipPool:Release(chip); table.remove(self._chipWastePile,i)
+            end
+            if remaining==0 then break end
+        end
+        if remaining>0 and #self._chipWastePile>0 then
+            -- A partial denomination withdrawal replaces only that chip with its change.
+            local chip=table.remove(self._chipWastePile)
+            local change=chip._value-remaining
+            self._wasteChipPool:Release(chip)
+            if change>0 then AddAmount(change) end
+        end
+    end
+    self._wasteBet2,self._wasteTableId=gs.bet2,gs.tableId
+end
+
+-- Persistent actions: the cashout choice never covers the cards.
 function R:_CreateActionButtons()
-    local canvas = self._canvas
-    local UI = ArcadiaNexus.UI
-    if not canvas or not UI then return end
-
-    -- Lower (Blueprint: x=96, y=-352, 144×32)
-    local lowerBtn = UI.CreateArcadiaButton(canvas, L("btn_lower"), 144, 32)
-    lowerBtn:SetPoint("TOPLEFT", canvas, "TOPLEFT", 96, -352)
-    lowerBtn:SetScript("OnClick", function()
-        local E = ArcadiaNexus.HOL_Engine
-        if E then E:Guess("LOWER") end
-    end)
-    lowerBtn:Hide()
-    self.actionBtns.lower = lowerBtn
-
-    -- "Ziehen"-Button: zentriert zwischen Lower und Higher (x=246, w=80)
-    -- Lower endet bei x=96+144=240, Higher beginnt bei x=352 → Mitte = 296 - 40 = 256
-    local drawBtn = UI.CreateArcadiaButton(canvas, "Ziehen", 80, 32)
-    drawBtn:SetPoint("TOPLEFT", canvas, "TOPLEFT", 256, -352)
-    drawBtn:SetScript("OnClick", function()
-        local E = ArcadiaNexus.HOL_Engine
-        if E then E:DealFirstCard() end
-    end)
-    drawBtn:Hide()
-    self.actionBtns.draw = drawBtn
-
-    -- Higher (Blueprint: x=352, y=-352, 144×32)
-    local higherBtn = UI.CreateArcadiaButton(canvas, L("btn_higher"), 144, 32)
-    higherBtn:SetPoint("TOPLEFT", canvas, "TOPLEFT", 352, -352)
-    higherBtn:SetScript("OnClick", function()
-        local E = ArcadiaNexus.HOL_Engine
-        if E then E:Guess("HIGHER") end
-    end)
-    higherBtn:Hide()
-    self.actionBtns.higher = higherBtn
-end
-
--- ── Bottom-Bar ────────────────────────────────────────────────
-function R:_CreateBottomBar()
-    local canvas = self._canvas
-    local UI = ArcadiaNexus.UI
-    if not canvas or not UI then return end
-
-    local DD_W  = 120
-    local BTN_W = 144
-    local BTN_H = 32
-
-    local bar = UI.CreateGameControlsBar(self.frame, "narrow")
-    local cf = bar.frame
-    self._controlsFrame = cf
-
-    -- Difficulty-Dropdown (Segment 1)
-    local diffOpts = {
-        { key="easy",   label=L("diff_easy")   },
-        { key="normal", label=L("diff_normal")  },
-        { key="hard",   label=L("diff_hard")    },
+    local UI=ArcadiaNexus.UI
+    local specs={
+        {"lower","btn_lower",96,352,144,function() ArcadiaNexus.HOL_Engine:Guess("LOWER") end},
+        {"draw","btn_draw",256,352,80,function() ArcadiaNexus.HOL_Engine:DealFirstCard() end},
+        {"higher","btn_higher",352,352,144,function() ArcadiaNexus.HOL_Engine:Guess("HIGHER") end},
+        {"cashout","btn_cashout",226,394,144,function() ArcadiaNexus.HOL_Engine:CashOut() end},
     }
-    local S = ArcadiaNexus.HOL_Settings
-    local ddAnchor = CreateFrame("Frame", nil, cf)
-    ddAnchor:SetSize(DD_W, BTN_H)
-    ddAnchor:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
-    local diffDD = UI.CreateSimpleDropdown(
-        ddAnchor, 0, 0, DD_W, nil,
-        diffOpts,
-        function() return S and S:Get("difficulty") or "easy" end,
-        function(key)
-            S:Set("difficulty", key)
-            local E = ArcadiaNexus.HOL_Engine
-            if E then E:SetDifficulty(key) end
-        end
-    )
-    self._diffDD = diffDD
-
-    -- Toggle-Button Start/Beenden (Segment 2)
-    local toggleBtn = UI.CreateArcadiaButton(cf, L("btn_start"), BTN_W, BTN_H)
-    toggleBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
-    toggleBtn:SetScript("OnClick", function()
-        local E = ArcadiaNexus.HOL_Engine
-        if not E then return end
-        if R.state == "PLAYING" then
-            E:StopGame()
-        else
-            E:StartGame()
-        end
-    end)
-    self._toggleBtn = toggleBtn
-    self.actionBtns.start = toggleBtn   -- Kompatibilität
-
-    -- Reset-Kapital (Segment 3, nur bei Bankrott-Nähe)
-    local resetBtn = UI.CreateArcadiaButton(cf, "Reset 100g", BTN_W, BTN_H - 8)
-    resetBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[3], bar.y.button)
-    resetBtn:SetScript("OnClick", function()
-        local E  = ArcadiaNexus.HOL_Engine
-        local Sv = ArcadiaNexus.HOL_Settings
-        if not E or not Sv then return end
-        if E.state ~= "BETTING" then return end
-        Sv:ResetChips()
-        if E.gameState then
-            E.gameState.chips = 100
-            E.gameState.bet   = 0
-            R:_ClearWasteChips()
-            R:UpdateHUD(E.gameState)
-        end
-    end)
-    resetBtn:Hide()
-    self.actionBtns.resetChips = resetBtn
+    for _,spec in ipairs(specs) do
+        local btn=UI.CreateArcadiaButton(self._canvas,L(spec[2]),spec[5],32)
+        btn:SetPoint("TOPLEFT",self._canvas,"TOPLEFT",spec[3],-spec[4]); btn:SetScript("OnClick",spec[6])
+        btn:Hide(); self.actionBtns[spec[1]]=btn
+    end
 end
-
--- ── Streak-Prompt ─────────────────────────────────────────────
-function R:_CreateStreakPrompt()
-    local canvas = self._canvas
-    local UI = ArcadiaNexus.UI
-    if not canvas or not UI then return end
-
-    local ov = CreateFrame("Frame", nil, canvas, "BackdropTemplate")
-    ov:SetSize(300, 160)
-    ov:SetPoint("CENTER", self._playfield or canvas, "CENTER", 0, 20)
-    ov:SetFrameLevel((canvas:GetFrameLevel() or 1) + 10)
-    ov:SetBackdrop({ bgFile="Interface\\Buttons\\WHITE8X8",
-        edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
-        tile=false, edgeSize=12, insets={left=3,right=3,top=3,bottom=3} })
-    ov:SetBackdropColor(0.05, 0.08, 0.05, 0.95)
-    ov:SetBackdropBorderColor(0.3, 0.7, 0.3, 1)
-
-    local titleFS = ov:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    titleFS:SetPoint("TOP", ov, "TOP", 0, -14)
-    titleFS:SetTextColor(0.4, 0.9, 0.4)
-
-    local pendingFS = ov:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    pendingFS:SetPoint("TOP", ov, "TOP", 0, -44)
-    pendingFS:SetTextColor(0.9, 0.80, 0.2)
-
-    local multFS = ov:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    multFS:SetPoint("TOP", ov, "TOP", 0, -68)
-    multFS:SetTextColor(0.5, 0.85, 0.5)
-
-    local cashoutBtn = UI.CreateArcadiaButton(ov, L("btn_cashout"), 120, 30)
-    cashoutBtn:SetPoint("BOTTOMLEFT", ov, "BOTTOMLEFT", 12, 12)
-    cashoutBtn:SetScript("OnClick", function()
-        local E = ArcadiaNexus.HOL_Engine
-        if E then E:CashOut() end
+function R:_CreateBottomBar()
+    local UI=ArcadiaNexus.UI; local bar=UI.CreateGameControlsBar(self.frame,"narrow")
+    local cf=bar.frame; self._controlsFrame=cf
+    local anchor=CreateFrame("Frame",nil,cf); anchor:SetSize(140,32)
+    anchor:SetPoint("CENTER",cf,"CENTER",bar.segX[1],bar.y.dropdownOfs)
+    self._diffDD=UI.CreateSimpleDropdown(anchor,0,0,140,nil,{
+        {key="standard",label=L("variant_standard")},{key="joker",label=L("variant_joker")},
+    },function() return ArcadiaNexus.HOL_Settings:Get("variant") end,
+    function(key) ArcadiaNexus.HOL_Engine:SetVariant(key) end)
+    local btn=UI.CreateArcadiaButton(cf,L("btn_start"),144,32)
+    btn:SetPoint("BOTTOM",cf,"BOTTOM",bar.segX[2],bar.y.button)
+    btn:SetScript("OnClick",function()
+        local E=ArcadiaNexus.HOL_Engine
+        if E.gameState then E:SaveAndPause()
+        elseif R.state=="SLOT_MENU" then R:OnGameStopped()
+        else R:ShowSlots() end
     end)
-
-    local continueBtn = UI.CreateArcadiaButton(ov, L("btn_continue"), 120, 30)
-    continueBtn:SetPoint("BOTTOMRIGHT", ov, "BOTTOMRIGHT", -12, 12)
-    continueBtn:SetScript("OnClick", function()
-        local E = ArcadiaNexus.HOL_Engine
-        if E then E:ContinueStreak() end
+    self._toggleBtn=btn; self.actionBtns.start=btn
+    -- Keyboard capture is local to this visible game and respects UI overlays.
+    self.frame:EnableKeyboard(true); self.frame:SetPropagateKeyboardInput(true)
+    self.frame:SetScript("OnKeyDown",function(frame,key)
+        frame:SetPropagateKeyboardInput(true)
+        local A=ArcadiaNexus; local E=A.HOL_Engine; local GI=A.GameInput
+        if not A.GameSession:IsSession(E,E._sessionId) or not E.gameState then return end
+        if GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() then return end
+        if GI and (GI._overlayMode or (GI._keyboardOverlays and #GI._keyboardOverlays>0)) then return end
+        if E:HandleKey(key) then frame:SetPropagateKeyboardInput(false) end
     end)
-
-    ov._titleFS   = titleFS
-    ov._pendingFS = pendingFS
-    ov._multFS    = multFS
-    ov:Hide()
-    self._streakPrompt = ov
 end
-
--- ── Karte in Frame setzen ─────────────────────────────────────
-local function ApplyCardToFrame(cardF, cardTex, card, alpha)
+local function ApplyCardToFrame(cardF,cardTex,card,alpha)
     if not card then cardF:Hide(); return end
     if card.isJoker then
-        cardF:SetBackdropColor(0.5, 0.05, 0.05, 1)
-        cardTex:SetTexture(nil)
-    else
-        cardF:SetBackdropColor(0.95, 0.93, 0.88, 1)
-        cardTex:SetTexture(CardTexPath(card))
-    end
-    cardF:SetAlpha(alpha or 1.0)
-    cardF:Show()
+        cardF:SetBackdropColor(0.5,0.05,0.05,1); cardTex:SetTexture(nil)
+    else cardF:SetBackdropColor(0.95,0.93,0.88,1); cardTex:SetTexture(CardTexPath(card)) end
+    if cardF._jokerLabel then cardF._jokerLabel:SetShown(card.isJoker or false) end
+    cardF:SetAlpha(alpha or 1); cardF:Show()
 end
-
--- ── OnRoundStarted (nach DealFirstCard) ───────────────────────
-function R:OnRoundStarted(gs)
-    if self._prevCardF then self._prevCardF:Hide() end
-    ApplyCardToFrame(self._currCardF, self._currCardTex, gs.currentCard, 1.0)
-    -- "Ziehen"-Button verstecken — erste Karte ist gezogen
-    if self.actionBtns.draw then self.actionBtns.draw:Hide() end
-    self:_UpdateAceHint(gs)
+function R:RestoreBoard(gs)
+    if self._slotMenu then self._slotMenu:Hide() end
+    self.state=gs.phase; if self._logo then self._logo:Hide() end
+    ArcadiaNexus.UI.HideResultDialog(self._playfield)
+    self._capitalBox:Show()
+    if self._diffDD then self._diffDD:SetText(L("variant_"..gs.variant)); self._diffDD:SetEnabled(false) end
+    self._toggleBtn:SetLabel(L("btn_exit"))
+    ApplyCardToFrame(self._prevCardF,self._prevCardTex,gs.previousCard,0.65)
+    ApplyCardToFrame(self._currCardF,self._currCardTex,gs.currentCard,1)
+    self:_SyncWasteChips(gs)
     self:UpdateHUD(gs)
-    self:_SetActionButtonsEnabled(true)
 end
-
--- ── ShowNextCard ──────────────────────────────────────────────
-function R:ShowNextCard(card)
-    if not card then return end
-    local gs = ArcadiaNexus.HOL_Engine and ArcadiaNexus.HOL_Engine.gameState
-    if self._currCardF and self._currCardF:IsShown() and gs then
-        -- Linke Karte = umgedrehte Rückseite des gewählten Themes
-        local backPath = CARD_BACK_THEMES[GetTheme()] or CARD_BACK_THEMES.neutral
-        self._prevCardTex:SetTexture(backPath)
-        self._prevCardTex:SetAlpha(1.0)
-        self._prevCardF:SetAlpha(1.0)
-        self._prevCardF:Show()
-    end
-    ApplyCardToFrame(self._currCardF, self._currCardTex, card, 1.0)
-    self:_UpdateAceHint(gs)
-end
-
-function R:_UpdateAceHint(gs)
-    if not self._aceLbl or not gs then return end
-    local card = gs.currentCard
-    if card and card.rank == "A" then
-        -- Easy: Ass ist immer niedrig (value=1) → immer "ace_low" zeigen
-        -- Normal/Hard: Ass ist zufällig 1 oder 14 → tatsächlichen Wert zeigen
-        self._aceLbl:SetText(L(card.value == 14 and "ace_high" or "ace_low"))
-    else
-        self._aceLbl:SetText("")
-    end
-end
-
--- ── ShowStreakPrompt ──────────────────────────────────────────
-function R:ShowStreakPrompt(gs)
-    if not self._streakPrompt then return end
-    local Logic = ArcadiaNexus.HOL_Logic
-    local mult  = Logic and Logic:GetMultiplier(gs.streak) or 1.0
-    self._streakPrompt._titleFS:SetText(FormatStr(L("prompt_title"), gs.streak))
-    self._streakPrompt._pendingFS:SetText(FormatStr(L("prompt_pending"), gs.pendingWin))
-    self._streakPrompt._multFS:SetText(FormatStr(L("prompt_multiplier"), mult))
-    self._streakPrompt:Show()
-    self:_SetActionButtonsEnabled(false)
-end
-
-function R:HideStreakPrompt()
-    if self._streakPrompt then self._streakPrompt:Hide() end
-    self:_SetActionButtonsEnabled(true)
-end
-
--- ── ShowPushFeedback ──────────────────────────────────────────
-function R:ShowPushFeedback()
-    if not self._stateLbl then return end
-    self._stateLbl:SetText(L("result_push"))
-    local E = ArcadiaNexus.HOL_Engine
-    if not E or not E._timerGuard then return end
-    E._timerGuard:After(1.2, function()
-        if self._stateLbl then self._stateLbl:SetText(L("state_playing")) end
-    end)
-end
-
--- ── ShowResult / ShowGameOver ─────────────────────────────────
-function R:ShowResult(gs, reason, amount)
-    if not self._playfield then return end
-    if self._streakPrompt then self._streakPrompt:Hide() end
-    self:_SetActionButtonsEnabled(false)
-    if self.actionBtns.draw then self.actionBtns.draw:Hide() end
-
-    local UI     = ArcadiaNexus.UI
-    local loc    = ArcadiaNexus.GetLocaleTable("HIGHERORLOWER")
-    local parent = self._playfield
-
-    local title, titleColor, goldVal, result
-    if reason == "LOSS" then
-        title      = FormatStr(L("result_wrong"), amount)
-        titleColor = {0.9, 0.3, 0.3}
-        goldVal    = -amount
-        result     = "LOSS"
-    elseif reason == "CASHOUT" or reason == "CASHOUT_AUTO" then
-        local lbl  = reason == "CASHOUT_AUTO" and L("result_deck_empty") or L("result_cashout")
-        title      = FormatStr(lbl, amount)
-        titleColor = {0.3, 0.9, 0.3}
-        goldVal    = amount
-        result     = "WIN"
-    else
-        title      = reason
-        titleColor = {0.8, 0.8, 0.8}
-        goldVal    = nil
-        result     = nil
-    end
-
-    UI.ShowResultDialog({
-        parent     = parent,
-        title      = title,
-        titleColor = titleColor,
-        subtitle   = L("lbl_capital") .. ": " .. gs.chips .. "g",
-        gold       = goldVal,
-        score      = (reason == "CASHOUT" or reason == "CASHOUT_AUTO") and amount or nil,
-        gameId     = "HIGHERORLOWER",
-        difficulty = gs.difficulty,
-        hideHighscore = reason == "LOSS",
-        result     = result,
-        buttons    = UI.ResultDialogButtons.Round(loc,
-            function()
-                UI.HideResultDialog(parent)
-                local E = ArcadiaNexus.HOL_Engine
-                if E then E:NewRound() end
-            end,
-            function()
-                UI.HideResultDialog(parent)
-                local E = ArcadiaNexus.HOL_Engine
-                if E then E:StopGame() end
-            end),
-    })
-end
-
-function R:ShowGameOver(gs)
-    if not self._playfield then return end
-    if self._streakPrompt then self._streakPrompt:Hide() end
-    self:_SetActionButtonsEnabled(false)
-    local UI     = ArcadiaNexus.UI
-    local loc    = ArcadiaNexus.GetLocaleTable("HIGHERORLOWER")
-    local parent = self._playfield
-
-    UI.ShowResultDialog({
-        parent     = parent,
-        title      = L("state_gameover"),
-        titleColor = {0.9, 0.2, 0.2},
-        subtitle   = L("lbl_capital") .. ": 0g",
-        gameId     = "HIGHERORLOWER",
-        difficulty = gs and gs.difficulty,
-        hideHighscore = true,
-        result     = "LOSS",
-        buttons    = UI.ResultDialogButtons.Bankrupt(loc,
-            function()
-                UI.HideResultDialog(parent)
-                local E = ArcadiaNexus.HOL_Engine
-                local S = ArcadiaNexus.HOL_Settings
-                if E and S then
-                    E:StartGame({ difficulty = (gs and gs.difficulty) or S:Get("difficulty") })
-                end
-            end,
-            function()
-                UI.HideResultDialog(parent)
-                local E = ArcadiaNexus.HOL_Engine
-                if E then E:StopGame() end
-            end),
-    })
-end
-
--- ── UpdateHUD ─────────────────────────────────────────────────
 function R:UpdateHUD(gs)
-    if not gs then return end
-    local E = ArcadiaNexus.HOL_Engine
-
-    if self._capitalLbl then
-        self._capitalLbl:SetText(L("lbl_capital") .. ": " .. gs.chips .. "g")
+    local F=ArcadiaNexus.Format; local E=ArcadiaNexus.HOL_Engine
+    self._capitalLbl:SetText(L("lbl_capital")..": "..F.HalfUnits(gs.chips2).." "..L("lbl_gold"))
+    self._betLbl:SetText(L("lbl_bet")..": "..F.HalfUnits(gs.bet2))
+    self._streakLbl:SetText(L("lbl_streak")..": "..gs.streak)
+    local mult=ArcadiaNexus.HOL_Logic:GetMultiplier(gs.streak,gs.variant)
+    self._multLbl:SetText(FormatStr(L("profit_factor"),mult))
+    self._pendingLbl:SetText(L("lbl_pending")..": "..F.HalfUnits(gs.payout2))
+    self._aceLbl:SetText(gs.currentCard and gs.currentCard.rank=="A" and L("ace_high") or "")
+    self._stateLbl:SetText(gs.lastOutcome=="PUSH" and L("result_push") or L("state_"..string.lower(gs.phase)))
+    local betting=gs.phase=="BETTING"; local playing=gs.phase=="PLAYING"
+    for _,btn in ipairs(self._chipStackBtns) do btn:Show(); btn:SetAlpha(betting and 1 or 0.3); btn:EnableMouse(betting) end
+    for _,key in ipairs({"lower","higher"}) do
+        local btn=self.actionBtns[key]; btn:Show(); if playing then btn:Enable() else btn:Disable() end
     end
-    if self._betLbl then
-        local bet = gs.bet or 0
-        self._betLbl:SetText(bet > 0 and (L("lbl_bet") .. ": " .. bet .. "g") or "")
-    end
-    if self._streakLbl then
-        self._streakLbl:SetText(gs.streak > 0 and (L("lbl_streak") .. ": " .. gs.streak) or "")
-    end
-    if self._multLbl then
-        local Logic = ArcadiaNexus.HOL_Logic
-        self._multLbl:SetText(gs.streak > 0 and Logic
-            and (L("lbl_multiplier") .. ": x" .. Logic:GetMultiplier(gs.streak)) or "")
-    end
-    if self._pendingLbl then
-        self._pendingLbl:SetText(gs.pendingWin > 0
-            and (L("lbl_pending") .. ": +" .. gs.pendingWin .. "g") or "")
-    end
-
-    -- Chips: klickbar nur im BETTING-State
-    local isBetting = E and E.state == "BETTING"
-    for _, btn in ipairs(self._chipStackBtns) do
-        btn:SetAlpha(isBetting and 1.0 or 0.3)
-        btn:EnableMouse(isBetting)
-    end
-
-    -- "Ziehen"-Button: sichtbar im BETTING wenn bet > 0
-    if self.actionBtns.draw then
-        local showDraw = isBetting and (gs.bet or 0) > 0
-        self.actionBtns.draw:SetShown(showDraw)
-        if showDraw then self.actionBtns.draw:Enable() end
-    end
-
-    -- Reset-Button: nur bei Bankrott-Nähe im BETTING
-    if self.actionBtns.resetChips then
-        self.actionBtns.resetChips:SetShown(isBetting and gs.chips < 25 or false)
-    end
+    self.actionBtns.draw:SetShown(betting and gs.bet2>=50)
+    self.actionBtns.cashout:SetShown(playing and gs.streak>0)
+    if playing and gs.streak>0 then self.actionBtns.cashout:Enable() end
+    if gs.streak>0 and self._netLbl then self._netLbl:SetText(L("lbl_net")..": +"..F.HalfUnits(gs.payout2-gs.bet2))
+    elseif self._netLbl then self._netLbl:SetText("") end
 end
-
--- ── OnStateChanged ────────────────────────────────────────────
-function R:OnStateChanged(newState)
-    local labels = {
-        IDLE          = L("state_idle"),
-        BETTING       = L("state_betting"),
-        PLAYING       = L("state_playing"),
-        STREAK_PROMPT = L("state_streak_prompt"),
-        RESULT        = "",
-        GAMEOVER      = L("state_gameover"),
-    }
-    if self._stateLbl then
-        self._stateLbl:SetText(labels[newState] or "")
-    end
-
-    -- Higher/Lower: nur in PLAYING aktiv
-    self:_SetActionButtonsEnabled(newState == "PLAYING")
-
-    if newState == "BETTING" then
-        if self._streakPrompt  then self._streakPrompt:Hide() end
-        if self._playfield and ArcadiaNexus.UI then
-            ArcadiaNexus.UI.HideResultDialog(self._playfield)
-        end
-        if self._aceLbl        then self._aceLbl:SetText("") end
-        -- Chips ausgegraut (UpdateHUD übernimmt das)
-        -- Ziehen-Button versteckt bis bet > 0 (UpdateHUD)
-    end
-
-    if newState == "PLAYING" then
-        -- Ziehen-Button weg (erste Karte wurde gezogen)
-        if self.actionBtns.draw then self.actionBtns.draw:Hide() end
-    end
-end
-
--- ── Game-Lifecycle ────────────────────────────────────────────
-function R:OnGameStarted(gs)
-    R.state = "PLAYING"
-    if self._logo          then self._logo:Hide()          end
-    if self._prevCardF     then self._prevCardF:Hide()     end
-    if self._currCardF     then self._currCardF:Hide()     end
-    if self._streakPrompt  then self._streakPrompt:Hide()  end
-    if self._playfield and ArcadiaNexus.UI then
-        ArcadiaNexus.UI.HideResultDialog(self._playfield)
-    end
-    if self.actionBtns.draw then self.actionBtns.draw:Hide() end
-    self:_ClearWasteChips()
-    -- Spielfeld-Hintergrund
-    if self._bgTex then
-        self._bgTex:SetTexture(HOL_PATH .. "background\\background")
-    end
-    -- Spielelemente einblenden
-    if self._capitalBox then self._capitalBox:Show() end
-    for _, btn in ipairs(self._chipStackBtns) do btn:Show() end
-    if self.actionBtns.lower  then self.actionBtns.lower:Show()  end
-    if self.actionBtns.higher then self.actionBtns.higher:Show() end
-
-    self:UpdateHUD(gs)
-    if self._diffDD then
-        self._diffDD:SetText(L("diff_" .. (gs.difficulty or "easy")))
-    end
-    if self._toggleBtn then self._toggleBtn:SetLabel(L("btn_exit")) end
-end
-
+function R:OnStateChanged(state) self.state=state end
+function R:OnGameStarted(gs) self:RestoreBoard(gs) end
 function R:OnGameStopped()
-    R.state = "IDLE"
-    if self._logo          then self._logo:Show()          end
-    if self._prevCardF     then self._prevCardF:Hide()     end
-    if self._currCardF     then self._currCardF:Hide()     end
-    if self._streakPrompt  then self._streakPrompt:Hide()  end
-    if self._playfield and ArcadiaNexus.UI then
-        ArcadiaNexus.UI.HideResultDialog(self._playfield)
-    end
-    if self.actionBtns.draw then self.actionBtns.draw:Hide() end
-    self:_ClearWasteChips()
-    -- Spielelemente verstecken
+    self.state="IDLE"
+    if self._slotMenu then self._slotMenu:Hide() end
+    if self._prevCardF then self._prevCardF:Hide() end
+    if self._currCardF then self._currCardF:Hide() end
     if self._capitalBox then self._capitalBox:Hide() end
-    for _, btn in ipairs(self._chipStackBtns) do btn:Hide() end
-    if self.actionBtns.lower  then self.actionBtns.lower:Hide()  end
-    if self.actionBtns.higher then self.actionBtns.higher:Hide() end
-    for _, key in ipairs({"_stateLbl","_capitalLbl","_betLbl","_streakLbl","_multLbl","_pendingLbl","_aceLbl"}) do
+    for _,btn in ipairs(self._chipStackBtns) do btn:Hide() end
+    for _,key in ipairs({"draw","lower","higher","cashout"}) do if self.actionBtns[key] then self.actionBtns[key]:Hide() end end
+    for _,key in ipairs({"_stateLbl","_betLbl","_streakLbl","_multLbl","_pendingLbl","_aceLbl","_netLbl"}) do
         if self[key] then self[key]:SetText("") end
     end
+    if self._playfield then ArcadiaNexus.UI.HideResultDialog(self._playfield) end
+    self:_ClearWasteChips()
+    if self._logo then self._logo:Show() end
+    if self._diffDD then self._diffDD:SetEnabled(true); self._diffDD:SetText(L("variant_"..ArcadiaNexus.HOL_Settings:Get("variant"))) end
     if self._toggleBtn then self._toggleBtn:SetLabel(L("btn_start")) end
 end
-
-function R:OnNewRound(gs)
-    if self._prevCardF  then self._prevCardF:Hide() end
-    if self._currCardF  then self._currCardF:Hide() end
-    if self._streakPrompt  then self._streakPrompt:Hide() end
-    if self._playfield and ArcadiaNexus.UI then
-        ArcadiaNexus.UI.HideResultDialog(self._playfield)
-    end
-    if self._aceLbl        then self._aceLbl:SetText("") end
-    self:_ClearWasteChips()
-    -- Ziehen-Button wird durch UpdateHUD gesteuert (bet=0 → versteckt)
-    if self.actionBtns.draw then self.actionBtns.draw:Hide() end
-    self:UpdateHUD(gs)
+function R:_EnterIdleState() self:OnGameStopped() end
+function R:ShowSlots()
+    self:OnGameStopped(); self._logo:Hide(); self.state="SLOT_MENU"; self._toggleBtn:SetLabel(L("btn_exit"))
+    local A=ArcadiaNexus; local S=A.HOL_Settings; local loc=A.GetLocaleTable("HIGHERORLOWER")
+    self._slotMenu=A.UI.CreateSaveSlotMenu({parent=self._canvas,maxSlots=3,L=loc,
+        loadSlot=function(slot) return S:LoadSlot(slot) end,
+        deleteSlot=function(slot) return S:DeleteSlot(slot) end,
+        canContinue=function(save) return A.HOL_Engine:CanContinueSave(save) end,
+        formatInfo=function(save)
+            if not A.HOL_Logic:ValidateSave(save) then return L("slot_invalid") end
+            return L("variant_"..save.variant).." · "..A.Format.HalfUnits(save.chips2).." "..L("lbl_gold").." · "..L("state_"..string.lower(save.phase))
+        end,
+        isPaused=function(save) return save.phase~="GAMEOVER" end,
+        onNewGame=function(slot) return A.HOL_Engine:StartGame({slot=slot,overwrite=true}) end,
+        onContinue=function(slot) return A.HOL_Engine:StartGame({slot=slot,mode="continue"}) end,
+        onCancel=function() R:OnGameStopped() end,
+    }); self._slotMenu:Show()
 end
-
--- ── Hilfsfunktionen ───────────────────────────────────────────
-function R:_SetActionButtonsEnabled(enabled)
-    for _, key in ipairs({"higher", "lower"}) do
-        local btn = self.actionBtns[key]
-        if btn then
-            if enabled then btn:Enable() else btn:Disable() end
-        end
-    end
+function R:ShowResultPending(gs)
+    local A=ArcadiaNexus
+    A.UI.ShowResultDialog({parent=self._playfield,title=L("state_result_pending"),subtitle=L("result_retry"),
+        gameId="HIGHERORLOWER",hideHighscore=true,buttons={
+            {label=L("btn_retry"),onClick=function() A.HOL_Engine:RetryResult() end},
+            {label=L("btn_exit"),onClick=function() A.HOL_Engine:SaveAndPause() end},
+        }})
 end
-
-function R:_EnterIdleState()
-    if self._prevCardF     then self._prevCardF:Hide()     end
-    if self._currCardF     then self._currCardF:Hide()     end
-    if self._streakPrompt  then self._streakPrompt:Hide()  end
-    if self._playfield and ArcadiaNexus.UI then
-        ArcadiaNexus.UI.HideResultDialog(self._playfield)
-    end
-    if self.actionBtns.draw then self.actionBtns.draw:Hide() end
-    self:_SetActionButtonsEnabled(false)
-    if self.actionBtns.resetChips then self.actionBtns.resetChips:Hide() end
-    if self._capitalBox then self._capitalBox:Hide() end
-    for _, btn in ipairs(self._chipStackBtns) do btn:Hide() end
-    if self.actionBtns.lower  then self.actionBtns.lower:Hide()  end
-    if self.actionBtns.higher then self.actionBtns.higher:Hide() end
-    if self._logo then self._logo:Show() end
+function R:ShowResult(gs)
+    local A=ArcadiaNexus; local UI=A.UI; local F=A.Format; local loc=A.GetLocaleTable("HIGHERORLOWER")
+    local E=A.HOL_Engine; local awarded=E._lastResult or {}; local bankrupt=gs.phase=="GAMEOVER"
+    local function Exit() E:SaveAndPause() end
+    local buttons=bankrupt and UI.ResultDialogButtons.Bankrupt(loc,function() Exit(); R:ShowSlots() end,Exit)
+        or UI.ResultDialogButtons.Round(loc,function() E:NewRound() end,Exit)
+    UI.ShowResultDialog({parent=self._playfield,title=L(bankrupt and "state_gameover" or "result_"..string.lower(gs.reason)),
+        subtitle=L("lbl_bet")..": "..F.HalfUnits(gs.bet2).." · "..L("lbl_pending")..": "..F.HalfUnits(gs.return2)
+            .."\n"..L("lbl_net")..": "..(gs.net2>0 and "+" or "")..F.HalfUnits(gs.net2)
+            .." · "..L("lbl_capital")..": "..F.HalfUnits(gs.chips2).." "..L("lbl_gold")
+            .."\n"..L("lbl_streak")..": "..gs.roundBest,
+        gameId="HIGHERORLOWER",difficulty=gs.variant,hideHighscore=true,
+        xp=awarded.awardedXP or 0,gold=awarded.awardedGold or 0,
+        result=gs.net2>0 and "WIN" or gs.net2<0 and "LOSS" or "DRAW",buttons=buttons,
+    })
 end

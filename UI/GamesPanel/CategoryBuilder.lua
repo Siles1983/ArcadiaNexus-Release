@@ -101,6 +101,7 @@ local function GetCategoryGroups(includeAllgemein, filterFn)
             games = {
                 { id = "ALLGEMEIN", label = L("cat_ALLGEMEIN") or "Allgemein" },
                 { id = "LEVEL_TITEL", label = L("ach_level_titles") or "Level & Titel" },
+                { id = "HELDENTATEN", label = L("ach_feats") or "Heldentaten" },
             },
         })
     end

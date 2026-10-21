@@ -21,6 +21,8 @@
       deleteSlot    function(slot)
       formatInfo    function(save, L) → string
       isPaused      function(save) → bool
+      canContinue   function(save) → bool (optional; e.g. completed/invalid runs)
+      onCancel      function() (optional; gamepad cancel returns to game idle)
       formatPaused  function(save, L) → string  (optional)
       onNewGame     function(slot)
       onContinue    function(slot)
@@ -177,7 +179,7 @@ function UI.CreateSaveSlotMenu(config)
 
         local save = loadSlot and loadSlot(api._selected)
         if api._contBtn then
-            if save then
+            if save and (not config.canContinue or config.canContinue(save)) then
                 api._contBtn:SetAlpha(1)
                 api._contBtn:Enable()
             else
@@ -321,11 +323,12 @@ function UI.CreateSaveSlotMenu(config)
     end)
     api._newBtn = newBtn
 
-    local contBtn = UI.CreateArcadiaButton(menu, ActionLabel("btn_continue", "Fortfahren"), lay.btnW, lay.btnH)
+    local contBtn = UI.CreateArcadiaButton(menu, ActionLabel("btn_continue", Label(nil, "slot_continue", "Continue")), lay.btnW, lay.btnH)
     contBtn:SetPoint("BOTTOM", menu, "BOTTOM", 80, lay.btnY)
     contBtn:SetScript("OnClick", function()
         local loadSlot = config.loadSlot
-        if loadSlot and loadSlot(api._selected) and config.onContinue then
+        local save = loadSlot and loadSlot(api._selected)
+        if save and (not config.canContinue or config.canContinue(save)) and config.onContinue then
             config.onContinue(api._selected)
         end
     end)
@@ -343,6 +346,7 @@ function UI.CreateSaveSlotMenu(config)
         pcall(GI.OnUiOverlay, list, {
             onCancel = function()
                 api:Hide()
+                if config.onCancel then config.onCancel() end
             end,
         })
     end

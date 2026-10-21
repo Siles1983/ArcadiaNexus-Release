@@ -74,7 +74,7 @@ local function Build2048SettingsPanel(parent)
                 onChange = RefreshPreview,
             },
             build = function(c, _w, settings, yOff, measureOnly)
-                if measureOnly then return 90 end
+                if measureOnly then return 120 end
 
                 local previewLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
                 previewLabel:SetPoint("TOPLEFT", c, "TOPLEFT", 0, -(yOff + 14))
@@ -97,13 +97,17 @@ local function Build2048SettingsPanel(parent)
                 end
 
                 RefreshPreview(settings:Get("colorTheme"))
-                return 90
+                local reduced = ArcadiaNexus.UI.CreateCheckbox(c, L.reduced_motion, 0, yOff + 80)
+                reduced:SetChecked(settings:Get("reducedMotion"))
+                reduced:SetScript("OnClick", function(cb) settings:Set("reducedMotion", cb:GetChecked()) end)
+                GS.TrackCheckbox(c, reduced, settings, "reducedMotion", "notfalse")
+                return 120
             end,
         },
         guide = {
             sections = {
                 GS.GuideSection(nil, L, {
-                    "guide_1", "guide_2", "guide_3", "guide_4", "guide_5",
+                    "guide_1", "guide_2", "guide_3", "guide_4", "guide_5", "guide_6",
                 }),
             },
         },

@@ -155,14 +155,19 @@ function Renderer:Init()
     self:_CreateGrid()
     self:_CreatePopup()
     self:_CreateControls()
+    self:_CreateSlotMenu()
     self:EnterIdleState()
 
     local Engine = ArcadiaNexus.Engine
     Engine:On("SDK_GAME_STARTED",  function(s) Renderer:OnGameStarted(s)  end)
     Engine:On("SDK_CELL_SELECTED", function(s) Renderer:OnCellSelected(s) end)
-    Engine:On("SDK_BOARD_UPDATED", function(s) Renderer:OnBoardUpdated(s) end)
+    Engine:On("SDK_BOARD_UPDATED", function(s,keep) Renderer:OnBoardUpdated(s,keep) end)
     Engine:On("SDK_CELL_CLEARED",  function(s) Renderer:OnBoardUpdated(s) end)
-    Engine:On("SDK_GAME_COMPLETE", function(s) Renderer:OnGameComplete(s) end)
+    Engine:On("SDK_GAME_COMPLETE", function(s,data) Renderer:OnGameComplete(s,data) end)
+    Engine:On("SDK_RESULT_FAILED", function(state)
+        Renderer:ClosePopup(); Renderer:RenderBoard(state)
+        ArcadiaNexus.UI.ShowArcadeResult(Renderer._fieldFrame,{title=ArcadiaNexus.GetLocaleTable("SUDOKU").result_pending,gameId="SUDOKU",difficulty=state.difficulty,result="WIN",hideHighscore=true,score=0,onRetry=function() ArcadiaNexus.SDK_Engine:RetryResult() end,onExit=function() ArcadiaNexus.SDK_Engine:SaveAndPause() end})
+    end)
     Engine:On("SDK_GAME_STOPPED",  function()  Renderer:EnterIdleState()  end)
 end
 
@@ -190,7 +195,7 @@ function Renderer:_CreateMainFrame()
     container:SetScript("OnHide", function()
         ArcadiaNexus.GameSession:HandleRendererHide("SUDOKU", ArcadiaNexus.SDK_Engine, function(E)
             if E.activeGame then
-                E:StopGame()
+                return E:StopGame()
             end
         end)
     end)
@@ -357,7 +362,7 @@ function Renderer:_CreatePopup()
     local PBTN = 36
     local PGAP = 2
     local PW   = 3 * PBTN + 2 * PGAP + 8
-    local PH   = 3 * PBTN + 2 * PGAP + 8
+    local PH   = 3 * PBTN + 2 * PGAP + 68
 
     local pop = CreateFrame("Frame", "ArcadiaNexus_SDK_Popup", self._canvas, "BackdropTemplate")
     pop:SetSize(PW, PH)
@@ -370,10 +375,13 @@ function Renderer:_CreatePopup()
     pop:SetBackdropColor(0.05, 0.05, 0.10, 0.97)
     pop:SetBackdropBorderColor(0.90, 0.75, 0.30, 1)
     pop:SetFrameStrata("DIALOG")
-    pop:SetFrameLevel(100)
+    -- The hub itself starts at level 100; keep the picker above its content.
+    pop:SetFrameLevel(self._canvas:GetFrameLevel() + 100)
     pop:Hide()
     pop:EnableMouse(true)
 
+    pop.title=pop:CreateFontString(nil,"OVERLAY","GameFontNormal")
+    pop.title:SetPoint("TOP",pop,"TOP",0,-6)
     pop.numBtns = {}
     for i = 1, 9 do
         local row = math.floor((i - 1) / 3)
@@ -382,21 +390,29 @@ function Renderer:_CreatePopup()
         btn:SetSize(PBTN, PBTN)
         btn:SetPoint("TOPLEFT", pop, "TOPLEFT",
             4 + col * (PBTN + PGAP),
-            -(4 + row * (PBTN + PGAP)))
+            -(24 + row * (PBTN + PGAP)))
         btn:SetText(tostring(i))
         btn:SetNormalFontObject("GameFontNormalLarge")
         local n = i
         btn:SetScript("OnClick", function()
-            Renderer:ClosePopup()
             ArcadiaNexus.SDK_Engine:HandleNumberInput(n)
         end)
         pop.numBtns[i] = btn
     end
 
+    local L=ArcadiaNexus.GetLocaleTable("SUDOKU")
+    pop.clearBtn=ArcadiaNexus.UI.CreateArcadiaButton(pop,L.btn_clear,54,26)
+    pop.clearBtn:SetPoint("BOTTOMLEFT",pop,"BOTTOMLEFT",4,6)
+    pop.clearBtn:SetScript("OnClick",function() ArcadiaNexus.SDK_Engine:HandleCellRightClick(Renderer.popupTargetR,Renderer.popupTargetC) end)
+    pop.undoBtn=ArcadiaNexus.UI.CreateArcadiaButton(pop,L.btn_undo,54,26)
+    pop.undoBtn:SetPoint("BOTTOMRIGHT",pop,"BOTTOMRIGHT",-4,6)
+    pop.undoBtn:SetScript("OnClick",function() ArcadiaNexus.SDK_Engine:HandleUndo() end)
+    pop.menuButtons={}
+    for i=1,9 do pop.menuButtons[i]=pop.numBtns[i] end
+    pop.menuButtons[10],pop.menuButtons[11]=pop.clearBtn,pop.undoBtn
     self.popup = pop
 end
 
-local SDK_SCORE = { easy = 50, normal = 100, hard = 200 }
 
 function Renderer:_CreateHud()
     local canvas = self._canvas
@@ -428,14 +444,15 @@ function Renderer:_UpdateHud(state)
         or (ArcadiaNexus.SDK_Engine and ArcadiaNexus.SDK_Engine.activeConfig and ArcadiaNexus.SDK_Engine.activeConfig.difficulty)
         or self.selectedDiff
         or "normal"
-    local score = SDK_SCORE[diff] or 100
+    local score = ArcadiaNexus.SDK_Logic:GetScore(diff)
     if self.scoreFS then
         self.scoreFS:SetText((L["hud_score"] or "Punkte") .. ": " .. tostring(score))
     end
     local best = 0
     local SM = ArcadiaNexus.ScoreManager
-    if SM and SM.GetBestScore then
-        best = SM:GetBestScore("SUDOKU", diff) or 0
+    if SM and SM.GetScores then
+        local entry=SM:GetScores("SUDOKU", diff)
+        best = entry and entry.wins or 0
     end
     if self.bestFS then
         self.bestFS:SetText((L["hud_highscore"] or "Highscore") .. ": " .. tostring(best))
@@ -450,13 +467,22 @@ function Renderer:OpenPopup(r, c)
     self.popupTargetR = r
     self.popupTargetC = c
     self.popup:ClearAllPoints()
-    self.popup:SetPoint("TOPLEFT", cd.frame, "TOPRIGHT", 4, 0)
+    local state=ArcadiaNexus.SDK_Engine.activeGame:GetBoardState()
+    local x=(600-CFG.grid_px)/2+CFG.field_ofs_x+cellOffset(c)+CFG.cell_size+4
+    local y=(498-CFG.grid_px)/2-CFG.field_ofs_y+cellOffset(r)
+    x=math.max(8,math.min(x,600-self.popup:GetWidth()-8))
+    y=math.max(8,math.min(y,498-self.popup:GetHeight()-8))
+    self.popup:SetPoint("TOPLEFT",self._canvas,"TOPLEFT",x,-y)
+    local L=ArcadiaNexus.GetLocaleTable("SUDOKU")
+    self.popup.title:SetText(state.notesMode and L.picker_notes or L.picker_number)
+    if state.canUndo then self.popup.undoBtn:Enable() else self.popup.undoBtn:Disable() end
+    self.popup:SetFrameLevel(self._canvas:GetFrameLevel() + 100)
     self.popup:Show()
     self.popup:Raise()
     if not already then
         local GI = ArcadiaNexus.GameInput
         if GI and GI.OnUiOverlay then
-            pcall(GI.OnUiOverlay, self.popup.numBtns, {
+            pcall(GI.OnUiOverlay, self.popup.menuButtons, {
                 onCancel = function()
                     Renderer:ClosePopup()
                 end,
@@ -503,7 +529,7 @@ function Renderer:_CreateControls()
     ddAnchor:SetSize(CFG.dd_w, CFG.btn_h)
     ddAnchor:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
 
-    UI.CreateSimpleDropdown(
+    self._diffDropdown=UI.CreateSimpleDropdown(
         ddAnchor,
         0, 0,
         CFG.dd_w,
@@ -513,8 +539,7 @@ function Renderer:_CreateControls()
             return (S and S:Get("difficulty")) or "normal"
         end,
         function(key)
-            Renderer.selectedDiff = key
-            if S then S:Set("difficulty", key) end
+            if S and S:Set("difficulty", key) then Renderer.selectedDiff=key end
         end
     )
 
@@ -522,23 +547,43 @@ function Renderer:_CreateControls()
     local startBtn = UI.CreateArcadiaButton(cf, L["btn_start"] or "Start", CFG.btn_w, CFG.btn_h)
     startBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
     startBtn:SetScript("OnClick", function()
-        if Renderer.state == "PLAYING" then
-            ArcadiaNexus.SDK_Engine:StopGame()
-        else
-            ArcadiaNexus.SDK_Engine:StartGame({ difficulty = Renderer.selectedDiff })
-        end
+        if Renderer.state=="SLOT_MENU" then Renderer:EnterIdleState()
+        elseif ArcadiaNexus.SDK_Engine.activeGame then ArcadiaNexus.SDK_Engine:SaveAndPause()
+        else Renderer:ShowSlots() end
     end)
     self._startBtn = startBtn
 
-    -- Neues Puzzle Button (rechtes Segment, nur im PLAYING-Zustand)
-    local newBtn = UI.CreateArcadiaButton(cf, L["btn_new_puzzle"], CFG.btn_w, CFG.btn_h)
-    newBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[3], bar.y.button)
-    newBtn:SetScript("OnClick", function()
-        Renderer:ClosePopup()
-        ArcadiaNexus.SDK_Engine:StartGame({ difficulty = Renderer.selectedDiff })
+    self._notesCheckbox,self._notesCheck=UI.CreateBarCheckbox(cf,L.btn_notes,{chkY=0})
+    self._notesCheck:SetScript("OnClick",function(chk)
+        ArcadiaNexus.SDK_Engine:ToggleNotesMode(chk:GetChecked())
     end)
-    newBtn:Hide()
-    self._newPuzzleBtn = newBtn
+    self._notesCheckbox:SetPoint("CENTER",cf,"CENTER",bar.segX[3],0)
+    self._notesCheckbox:Hide()
+end
+
+function Renderer:_CreateSlotMenu()
+    local A=ArcadiaNexus; local S,E,L=A.SDK_Settings,A.SDK_Engine,A.GetLocaleTable("SUDOKU")
+    self._slotMenu=A.UI.CreateSaveSlotMenu({
+        parent=self._fieldFrame,maxSlots=S.MAX_SLOTS,L=L,
+        loadSlot=function(slot) return S:LoadSlot(slot) end,
+        deleteSlot=function(slot) return S:DeleteSlot(slot) end,
+        canContinue=function(save) return E:CanContinueSave(save) end,
+        formatInfo=function(save)
+            if not A.SDK_Logic:ValidateSave(save) then return L.slot_invalid end
+            return string.format(L.slot_info,L["diff_"..save.difficulty],save.moves)
+                .. (save.resultPending and (" · "..L.result_pending) or (save.phase=="COMPLETE" and (" · "..L.slot_finished) or ""))
+        end,
+        isPaused=function(save) return save.phase=="PLAYING" or save.resultPending end,
+        onNewGame=function(slot) E:StartGame({slot=slot,overwrite=true}) end,
+        onContinue=function(slot) E:StartGame({slot=slot,mode="continue"}) end,
+        onCancel=function() Renderer:EnterIdleState() end,
+    })
+end
+function Renderer:ShowSlots()
+    ArcadiaNexus.SDK_Engine:SaveAndPause()
+    self:EnterIdleState(); self.state="SLOT_MENU"
+    self._logoTex:Hide(); self._slotMenu:Show()
+    self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("SUDOKU").btn_back)
 end
 
 -- ============================================================
@@ -547,6 +592,9 @@ end
 
 function Renderer:EnterIdleState()
     self.state = "IDLE"
+    if self._slotMenu then self._slotMenu:Hide() end
+    if self._notesCheckbox then self._notesCheckbox:Hide() end
+    if self._diffDropdown then self._diffDropdown:SetEnabled(true); self._diffDropdown:RefreshDisplay() end
     Renderer:ClosePopup()
 
     if self._fieldFrame and ArcadiaNexus.UI then
@@ -615,10 +663,12 @@ function Renderer:RenderBoard(state)
 
             -- Hintergrundfarbe
             local bgCol
-            if isSelected then
-                bgCol = CLR_SELECTED
-            elseif isError then
+            if isError then
                 bgCol = CLR_ERROR
+            elseif isSelected then
+                bgCol = CLR_SELECTED
+            elseif selR and (r==selR or c==selC or ArcadiaNexus.SDK_Logic:GetBoxIndex(r,c)==ArcadiaNexus.SDK_Logic:GetBoxIndex(selR,selC)) then
+                bgCol={0.17,0.20,0.25,1}
             elseif isFixed then
                 bgCol = CLR_FIXED
             elseif num ~= 0 then
@@ -629,7 +679,7 @@ function Renderer:RenderBoard(state)
             cd.bg:SetVertexColor(bgCol[1], bgCol[2], bgCol[3], 1)
 
             -- Highlight-Overlay
-            if isHL and not isSelected then
+            if isHL and not isSelected and not isError then
                 cd.hlFrame:Show()
             else
                 cd.hlFrame:Hide()
@@ -638,7 +688,7 @@ function Renderer:RenderBoard(state)
             -- Zahl
             if num ~= 0 then
                 cd.label:SetText(tostring(num))
-                if isFixed then
+                if isFixed and not isError then
                     cd.label:SetTextColor(TXT_FIXED[1], TXT_FIXED[2], TXT_FIXED[3], 1)
                     cd.label:SetFont(cd.label:GetFont(), 20, "OUTLINE")
                 elseif isError then
@@ -652,8 +702,18 @@ function Renderer:RenderBoard(state)
                 cd.label:SetText("")
             end
 
-            -- Fixed Cells: Klick deaktivieren
-            if isFixed then
+            if not cd.notes then
+                cd.notes={}
+                for n=1,9 do
+                    local fs=cd.frame:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+                    fs:SetFont(fs:GetFont(),10,"")
+                    fs:SetPoint("CENTER",cd.frame,"TOPLEFT",( ((n-1)%3)+0.5)*CFG.cell_size/3,-(math.floor((n-1)/3)+0.5)*CFG.cell_size/3)
+                    cd.notes[n]=fs
+                end
+            end
+            for n=1,9 do cd.notes[n]:SetText(num==0 and state.notes and state.notes[r][c][n] and tostring(n) or "") end
+            -- Givens remain selectable for orientation; the game protects edits.
+            if state.phase~="PLAYING" then
                 cd.frame:Disable()
             else
                 cd.frame:Enable()
@@ -672,7 +732,9 @@ function Renderer:OnGameStarted(state)
     if self._fieldFrame and ArcadiaNexus.UI then
         ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     end
-    if self._newPuzzleBtn then self._newPuzzleBtn:Show() end
+    if self._slotMenu then self._slotMenu:Hide() end
+    if self._diffDropdown then self._diffDropdown:SetEnabled(false); self._diffDropdown:RefreshDisplay() end
+    if self._notesCheckbox then self._notesCheckbox:Show(); self._notesCheck:SetChecked(state.notesMode) end
     if self._startBtn     then
         local L = ArcadiaNexus.GetLocaleTable("SUDOKU")
         self._startBtn:SetLabel(L["btn_exit"])
@@ -691,12 +753,14 @@ function Renderer:OnCellSelected(state)
     end
 end
 
-function Renderer:OnBoardUpdated(state)
-    Renderer:ClosePopup()
+function Renderer:OnBoardUpdated(state,keep)
+    if not keep then Renderer:ClosePopup() end
+    if self._notesCheck then self._notesCheck:SetChecked(state.notesMode) end
     self:RenderBoard(state)
+    if keep and self.popupOpen and state.selected then self:OpenPopup(state.selected.r,state.selected.c) end
 end
 
-function Renderer:OnGameComplete(state)
+function Renderer:OnGameComplete(state,data)
     self.state = "COMPLETE"
     Renderer:ClosePopup()
     self:RenderBoard(state)
@@ -718,9 +782,11 @@ function Renderer:OnGameComplete(state)
         gameId     = "SUDOKU",
         difficulty = state.difficulty,
         result     = "WIN",
+        score=state.score, hideHighscore=true,
+        xp=data and data.awardedXP or 0,gold=data and data.awardedGold or 0,
         L          = L,
         onRetry    = function()
-            ArcadiaNexus.SDK_Engine:StartGame({ difficulty = Renderer.selectedDiff })
+            Renderer:ShowSlots()
         end,
         onExit = function()
             ArcadiaNexus.SDK_Engine:StopGame()

@@ -57,11 +57,11 @@ ArcadiaNexus.RegisterAchievements({
         end,
         tiers = {
             { id = "DMP_COMBO_BRONZE", tierName = "Bronze", target = 10, xp = 15,
-              desc_de = "Combo x10.", desc_en = "Combo x10." },
+              desc_de = "10 Treffer in einer Combo.", desc_en = "10 hits in one combo." },
             { id = "DMP_COMBO_SILBER", tierName = "Silber", target = 20, xp = 35,
-              desc_de = "Combo x20.", desc_en = "Combo x20." },
+              desc_de = "20 Treffer in einer Combo.", desc_en = "20 hits in one combo." },
             { id = "DMP_COMBO_GOLD",   tierName = "Gold",   target = 35, xp = 60,
-              desc_de = "Combo x35.", desc_en = "Combo x35." },
+              desc_de = "35 Treffer in einer Combo.", desc_en = "35 hits in one combo." },
         },
     },
     {
@@ -70,20 +70,20 @@ ArcadiaNexus.RegisterAchievements({
         category = "ARCADE",
         title_de = "Jahrmarkt-Aufträge",
         title_en = "Faire Contracts",
-        desc_de  = "Schließe Missionen in einer Runde ab.",
-        desc_en  = "Complete missions in a single round.",
+        desc_de  = "Schließe unterschiedliche Missionsarten in einer Partie ab.",
+        desc_en  = "Complete different mission types in a single game.",
         icon     = "Interface\\Icons\\INV_Misc_Note_01",
         condition = function(data)
             if data.gameId ~= GAME_ID then return 0 end
-            return Stat(data, "missionsDone")
+            return Stat(data, "distinctMissions")
         end,
         tiers = {
             { id = "DMP_MISSION_BRONZE", tierName = "Bronze", target = 1, xp = 15,
-              desc_de = "1 Mission in einer Runde.", desc_en = "1 mission in one round." },
+              desc_de = "1 Missionsart in einer Partie.", desc_en = "1 mission type in one game." },
             { id = "DMP_MISSION_SILBER", tierName = "Silber", target = 2, xp = 35,
-              desc_de = "2 Missionen in einer Runde.", desc_en = "2 missions in one round." },
+              desc_de = "2 unterschiedliche Missionsarten in einer Partie.", desc_en = "2 different mission types in one game." },
             { id = "DMP_MISSION_GOLD",   tierName = "Gold",   target = 4, xp = 65,
-              desc_de = "Alle 4 Missionen in einer Runde.", desc_en = "All 4 missions in one round." },
+              desc_de = "Alle 4 Missionsarten in einer Partie.", desc_en = "All 4 mission types in one game." },
         },
     },
     {

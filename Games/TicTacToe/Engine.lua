@@ -2,7 +2,7 @@
     Games/TicTacToe/Engine.lua
     Spiele-Tab: ausschließlich vs. KI. Internes mode "hotseat" = lokales KI-Spiel
     (Match-Konvention), niemals zwei Menschen an einem Client.
-    Produktvertrag: docs/TicTacToe.md
+    Produktvertrag: docs/Spiele/TicTacToe.md
     MP nur über HasMultiplayer() + Match-Runtime.
     KI-Zug läuft verzögert über TimerGuard, nie im selben Tick wie der Spielerzug.
 ]]
@@ -72,7 +72,6 @@ local function EmitHotseatResult(board)
     if result == "WIN" then
         score = SCORE[diff] or 100
         E.series.you = (E.series.you or 0) + 1
-        E.winStreak = (E.winStreak or 0) + 1
     else
         E.winStreak = 0
         if result == "LOSS" then
@@ -85,21 +84,30 @@ local function EmitHotseatResult(board)
     local seriesWin = 0
     if E:IsSeriesOver() and (E.series.you or 0) > (E.series.opp or 0) then
         seriesWin = 1
+        E.winStreak=(E.winStreak or 0)+1
     end
-    ArcadiaNexus.Engine:Emit("GAME_RESULT", {
+    local store=ArcadiaNexus.GameSettingsStore.Get("TICTACTOE")
+    store.seriesStreak={variant=E._seriesVariant,count=E.winStreak,active=not E:IsSeriesOver()}
+    E.resultData={
         gameId = "TICTACTOE",
-        difficulty = diff,
+        difficulty = Logic().Variant(E.activeConfig),
+        aiDifficulty=diff,
+        ruleVersion=2,skipHighscores=true,runId=E._runId,
         score = score,
         result = result,
         stats = {
             moveCount = board and board.moveCount or 0,
             boardSize = board and board.size or 3,
-            winStreak = E.winStreak or 0,
+            winLength=board.winLength,
+            seriesStreak = E.winStreak or 0,
             seriesWin = seriesWin,
             startedAs = board and board.startedAs or 1,
             vsHuman = 0,
         },
-    })
+    }
+    store.pendingResults=store.pendingResults or {}
+    store.pendingResults[E._runId]=E.resultData
+    E:RetryResult()
     GH_LogDebug("TTT_Engine", "Spiel beendet – result=" .. tostring(result))
 end
 
@@ -122,28 +130,36 @@ function E:OnMatchReject(f)
 end
 
 function E:OnMatchResult(node, resultId)
+    if self._resultEmitted then return true end
     if self.match ~= node or not self._sessionId or node:GetState() ~= "FINISHED" then return end
-    if self._resultEmitted then return end
-    self._resultEmitted = true
     local board = self:GetBoardState()
     local result = (board and board.result) or "DRAW"
     local score = 0
     if result == "WIN" then score = 150
     elseif result == "DRAW" then score = 50 end
-    ArcadiaNexus.Engine:Emit("GAME_RESULT", {
+    local streak = result == "WIN" and (self._matchWinStreak or 0) + 1 or 0
+    local payload = {
         gameId = "TICTACTOE",
         resultId = resultId,
         matchHost = node.hostKey,
-        difficulty = "normal",
+        difficulty = "match",
+        skipHighscores = true,
         score = score,
         result = result,
         stats = {
             moveCount = board and board.moveCount or 0,
             boardSize = board and board.size or 3,
+            winLength = 3,
             vsHuman = 1,
+            matchWinStreak = streak,
         },
-    })
+    }
+    ArcadiaNexus.Engine:Emit("GAME_RESULT", payload)
+    if payload.matchBooked ~= true then return false end
+    self._resultEmitted = true
+    self._matchWinStreak = streak
     self:MaybeShowResult(result)
+    return true
 end
 
 function E:MaybeShowResult(result)
@@ -152,8 +168,7 @@ function E:MaybeShowResult(result)
 end
 
 function E:StartGame(config)
-    _timerGuard:Cancel()
-    self._busy = false
+    if config~=nil and type(config)~="table" then return false end
     config = config or {}
     local mode = config.mode or "hotseat"
     if mode == "host" or mode == "join" or mode == "rejoin" then
@@ -165,6 +180,7 @@ function E:StartGame(config)
         end
         M.BeginNetworkedGame(self, "TICTACTOE", config, Notify, MatchOpts, {
             onBefore = function()
+                if self.activeGame and not self:IsSeriesOver() then self:_AbortSeries() end
                 if self.activeGame then
                     self.activeGame = nil
                     self.activeConfig = nil
@@ -173,21 +189,13 @@ function E:StartGame(config)
         })
         return
     end
-    self.mode = mode
-    self._resultEmitted = false
-    self._notice = nil
-
-    self:StopMatchQuiet()
-    if self.activeGame then
-        GH_LogWarn("TTT_Engine", "StartGame aufgerufen obwohl Spiel bereits läuft – stoppe zuerst.")
-        self:StopGame()
-        _timerGuard:Cancel()
-        self._busy = false
-    end
-
-    if not config.seriesContinue then
-        ResetSeries()
-    end
+    if mode~="hotseat" then return false end
+    local continuing=config.seriesContinue==true
+    if continuing and (self.mode~="hotseat" or self.state~="RESULT" or self:IsSeriesOver() or not self.activeConfig) then return false end
+    local normalized=Logic().NormalizeConfig(continuing and self.activeConfig or config)
+    if not normalized then return false end
+    self:FlushPendingResults()
+    if self.match and not self.match._closed then return false end
 
     local gameClass = ArcadiaNexus.TicTacToeGame
     if not gameClass then
@@ -195,11 +203,30 @@ function E:StartGame(config)
         return
     end
 
-    E._sessionId = ArcadiaNexus.Lifecycle:RestartGame("TICTACTOE", E._sessionId)
+    local sid = ArcadiaNexus.Lifecycle:ClaimRestart("TICTACTOE", E._sessionId)
+    if not sid then return false end
+    _timerGuard:Cancel(); self._busy=false
+    self.mode = mode
+    self._resultEmitted = false
+    self._notice = nil
+    self:StopMatchQuiet()
+    if not continuing then
+        if self.activeGame and not self:IsSeriesOver() then self:_AbortSeries() end
+        ResetSeries()
+        local store=ArcadiaNexus.GameSettingsStore.Get("TICTACTOE")
+        local variant=Logic().Variant(normalized).."_"..normalized.firstPlayer
+        local old=store.seriesStreak or {}
+        self.winStreak=old.variant==variant and not old.active and old.count or 0
+        self._seriesVariant=variant
+        store.seriesStreak={variant=variant,count=self.winStreak,active=true}
+    end
+    E._sessionId = sid
     local instance = gameClass:New()
-    instance:Init(config)
+    instance:Init(normalized)
     self.activeGame = instance
-    self.activeConfig = config
+    self.activeConfig = normalized
+    self._runId=ArcadiaNexus.LocalResults:NewRun("TICTACTOE")
+    self.resultData=nil
     self.state = "PLAYING"
     self.mode = "hotseat"
 
@@ -213,6 +240,8 @@ function E:StartGame(config)
     if instance.currentPlayer == 2 then
         self:_KickHotseatAI()
     end
+    ArcadiaNexus.LocalResults:Prune()
+    return true
 end
 
 function E:SetReady(ready)
@@ -246,15 +275,33 @@ function E:_PublishHotseat(board)
 end
 
 function E:_FinishHotseat(board)
+    if self.mode~="hotseat" or self.state~="PLAYING" or self._resultEmitted or not board.gameOver then return false end
+    self._resultEmitted=true; self.state="RESULT_PENDING"; self._busy=true
+    EmitHotseatResult(board)
+    return true
+end
+
+function E:RetryResult()
+    if self.state~="RESULT_PENDING" or not self.resultData then return false end
+    local data,game,sid=self.resultData,self.activeGame,self._sessionId
+    ArcadiaNexus.Engine:Emit("GAME_RESULT",data)
+    if self.activeGame~=game or not ArcadiaNexus.GameSession:IsSession(self,sid) then return false end
+    if not data.processed then
+        local R=ArcadiaNexus.TTT_Renderer
+        if R and R.ShowResultPending then R:ShowResultPending() end
+        return false
+    end
+    local store=ArcadiaNexus.GameSettingsStore.Get("TICTACTOE")
+    if store.pendingResults then store.pendingResults[data.runId]=nil end
+    self.state="RESULT"; self._busy=false
+    local board=game:GetBoardState()
     local sid = E._sessionId
     _timerGuard:After(RESULT_DELAY, function()
         if not ArcadiaNexus.GameSession:IsSession(E, sid) then return end
-        if self.state ~= "PLAYING" then return end
-        if not self.activeGame then return end
-        EmitHotseatResult(board)
+        if self.state ~= "RESULT" or self.activeGame~=game then return end
         ArcadiaNexus.Engine:Emit("GAME_OVER", board.result)
-        self._busy = false
     end)
+    return true
 end
 
 function E:PlayAIMove()
@@ -274,8 +321,9 @@ function E:PlayAIMove()
     self.activeGame:PlayAIMove()
     local board = self.activeGame:GetBoardState()
     if board.gameOver then
-        self:_PublishHotseat(board)
+        local game=self.activeGame
         self:_FinishHotseat(board)
+        if self.activeGame==game then self:_PublishHotseat(board) end
         return
     end
     -- Busy muss vor dem Render fallen, sonst bleiben die Zellen disabled.
@@ -293,9 +341,11 @@ function E:_KickHotseatAI()
     local diff = (self.activeConfig and self.activeConfig.aiDifficulty) or "normal"
     local delay = THINK[diff] or THINK.normal
     local sid = E._sessionId
+    local game=self.activeGame
     _timerGuard:After(delay, function()
         if not ArcadiaNexus.GameSession:IsSession(E, sid) then return end
         if self.state ~= "PLAYING" then return end
+        if self.activeGame~=game then return end
         self:PlayAIMove()
     end)
 end
@@ -305,17 +355,22 @@ function E:_AfterHotseatAction()
     if not board then return end
 
     self._busy = true
-    self:_PublishHotseat(board)
 
     if board.gameOver then
+        local game=self.activeGame
         self:_FinishHotseat(board)
+        if self.activeGame==game then self:_PublishHotseat(board) end
         return
     end
 
+    self:_PublishHotseat(board)
     self:_KickHotseatAI()
 end
 
 function E:HandlePlayerMove(x, y)
+    local board=self:GetBoardState()
+    if not board or not Logic().IsInteger(x) or not Logic().IsInteger(y)
+        or x<1 or y<1 or x>board.size or y>board.size then return false end
     if self.mode ~= "hotseat" and self.match then
         if self.state ~= "PLAYING" then return end
         local size = Logic().MP_SIZE
@@ -324,12 +379,13 @@ function E:HandlePlayerMove(x, y)
         Notify()
         return
     end
-    if self._busy then return end
+    if self.state~="PLAYING" or self._busy then return false end
     if not self.activeGame then return end
     if self.activeGame.currentPlayer ~= 1 then return end
 
     if not self.activeGame:HandleMove(x, y) then return end
     self:_AfterHotseatAction()
+    return true
 end
 
 function E:GetView()
@@ -381,6 +437,8 @@ function E:StopMatchQuiet()
 end
 
 function E:StopGame()
+    if self.mode~="hotseat" and self.state~="FINISHED" then self._matchWinStreak=0 end
+    if self.mode=="hotseat" and self.activeGame and not self:IsSeriesOver() then self:_AbortSeries() end
     _timerGuard:Cancel()
     self._busy = false
     if E._sessionId then
@@ -395,6 +453,20 @@ function E:StopGame()
     GH_LogDebug("TTT_Engine", "Spiel gestoppt.")
     ArcadiaNexus.Engine:Emit("GAME_STOPPED")
     Notify()
+end
+
+function E:FlushPendingResults()
+    local store=ArcadiaNexus.GameSettingsStore.Get("TICTACTOE")
+    for id,data in pairs(store.pendingResults or {}) do
+        ArcadiaNexus.Engine:Emit("GAME_RESULT",data)
+        if data.processed then store.pendingResults[id]=nil end
+    end
+end
+
+function E:_AbortSeries()
+    self.winStreak=0
+    local store=ArcadiaNexus.GameSettingsStore.Get("TICTACTOE")
+    store.seriesStreak={variant=self._seriesVariant,count=0,active=false}
 end
 
 function E:Pause()

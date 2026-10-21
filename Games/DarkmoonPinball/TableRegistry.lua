@@ -134,6 +134,7 @@ end
 
 TR._order = {}
 TR._byId = {}
+TR._published = {}
 
 function TR.Register(raw)
     local ok, err = TR.Validate(raw)
@@ -145,8 +146,22 @@ function TR.Register(raw)
         TR._order[#TR._order + 1] = def.id
     end
     TR._byId[def.id] = def
+    if not TR._published[def.id] then TR._published[def.id]=DeepCopy(def) end
     ArcadiaNexus.DMP_Tables[def.id] = def
     return def
+end
+
+-- A draft with an unchanged version is still a manipulated table.
+function TR.IsPublished(def)
+    if not def or def.id~="darkmoon_midway" and def.id~="darkmoon_carousel" then return false end
+    local function equal(a,b)
+        if type(a)~="table" then return a==b end
+        if type(b)~="table" then return false end
+        for k,v in pairs(a) do if not equal(v,b[k]) then return false end end
+        for k in pairs(b) do if a[k]==nil then return false end end
+        return true
+    end
+    return equal(def,TR._published[def.id])
 end
 
 function TR.Get(tableId)

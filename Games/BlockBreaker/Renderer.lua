@@ -352,11 +352,15 @@ function R:_CreateMainFrame()
     self._contentFrame = inner
     ArcadiaNexus._bbContainer = f
     f:SetScript("OnHide", function()
+        R:HideRunMap()
+        local E=ArcadiaNexus.BB_Engine
+        if E.state=="MAP" and not E._sessionId then E:SaveAndPause() end
         ArcadiaNexus.GameSession:HandleRendererHide("BLOCKBREAKER", ArcadiaNexus.BB_Engine, function(E)
-            if E.state == "PLAYING" then
+            if E.state ~= "IDLE" and E.state ~= "GAMEOVER" then
                 E:SaveAndPause()
             end
         end)
+        if ArcadiaNexus.BB_Engine.state=="IDLE" then R:EnterIdleState() end
     end)
 end
 
@@ -637,14 +641,31 @@ function R:_CreateFlash()
     ft:SetAllPoints(flash)
     ft:SetTexture(CFG.white8x8)
     ft:SetVertexColor(1, 1, 1, 0)
-    flash:SetScript("OnUpdate", function(self, dt)
+    self._fxOnUpdate = function(_, dt)
         local a = select(4, ft:GetVertexColor())
         if a and a > 0.001 then
             ft:SetVertexColor(R._flashR, R._flashG, R._flashB, math.max(0, a - dt * 4))
         end
-    end)
+    end
+    flash:SetScript("OnUpdate", self._fxOnUpdate)
     self._flashFrame = flash
     self._flashTex   = ft
+end
+
+function R:_SetFxDriver(active)
+    local flash = self._flashFrame
+    if not flash or not self._fxOnUpdate then return end
+    if active then
+        flash:SetScript("OnUpdate", self._fxOnUpdate)
+        flash:Show()
+        return
+    end
+    self:_ClearFx()
+    if self._flashTex then
+        self._flashTex:SetVertexColor(self._flashR or 1, self._flashG or 1, self._flashB or 1, 0)
+    end
+    flash:SetScript("OnUpdate", nil)
+    flash:Hide()
 end
 
 function R:_CreateFx()
@@ -1059,35 +1080,18 @@ function R:_CreateKeyFrame()
     local kf = CreateFrame("Frame", nil, field)
     kf:SetAllPoints(field)
     kf:EnableKeyboard(false)
-    kf:SetPropagateKeyboardInput(false)
-    kf:SetScript("OnKeyDown", function(_, key)
-        local E = ArcadiaNexus.BB_Engine
-        if not E then return end
-        if key == "F8" then
-            E:HandleKey("DEBUG")
-        elseif key == "A" or key == "LEFT" then
-            E:HandleKey("LEFT_DOWN")
-        elseif key == "D" or key == "RIGHT" then
-            E:HandleKey("RIGHT_DOWN")
-        elseif key == "SPACE" then
-            local gs = E.gameState
-            if E.state == "PLAYING" and gs and gs.ballDocked then
-                E:HandleKey("LAUNCH")
-            else
-                E:HandleKey("PAUSE")
-            end
-        elseif key == "P" then
-            E:HandleKey("PAUSE")
-        end
+    kf:SetPropagateKeyboardInput(true)
+    kf:SetScript("OnKeyDown",function(self,key)
+        local E=ArcadiaNexus.BB_Engine
+        local mapped=key=="A" or key=="LEFT" or key=="D" or key=="RIGHT" or key=="SPACE" or key=="P" or key=="ESCAPE"
+            or key=="F8" and R:_IsDevMode()
+        local focus=GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+        local active=E and E.state~="IDLE" and E.state~="GAMEOVER"
+        self:SetPropagateKeyboardInput(not (mapped and active and not focus))
+        if E and mapped and active then E:HandleKeyDown(key) end
     end)
-    kf:SetScript("OnKeyUp", function(_, key)
-        local E = ArcadiaNexus.BB_Engine
-        if not E then return end
-        if key == "A" or key == "LEFT" then
-            E:HandleKey("LEFT_UP")
-        elseif key == "D" or key == "RIGHT" then
-            E:HandleKey("RIGHT_UP")
-        end
+    kf:SetScript("OnKeyUp",function(_,key)
+        local E=ArcadiaNexus.BB_Engine; if E then E:HandleKeyUp(key) end
     end)
     self._keyFrame = kf
 end
@@ -1172,7 +1176,7 @@ function R:_CreateControls()
     pauseBtn:SetScript("OnClick", function()
         local E = ArcadiaNexus.BB_Engine
         if not E then return end
-        if E.state == "PLAYING" then
+        if E.state == "PLAYING" or E.state == "RESPAWNING" or E.state == "LEVEL_CLEAR" then
             E:Pause()
         elseif E.state == "PAUSED" then
             E:Resume()
@@ -1199,7 +1203,9 @@ function R:_CreateSlotMenu()
         formatInfo    = function(save, loc)
             local score = (ArcadiaNexus.Format and ArcadiaNexus.Format.Score(save.score or 0))
                 or tostring(save.score or 0)
-            return string.format(loc.slot_info or "Level %d · %s", save.level or 1, score)
+            local diff=loc["diff_"..(save.difficulty or save.diff or "easy")] or save.diff or "?"
+            return string.format(loc.slot_info or "Level %d · %s", save.level or 1, score).." · "..diff.." · "..(loc.lbl_lives or "Lives")..": "..tostring(save.lives or 0)
+                ..(not save.version and " · "..(loc.legacy_save or "Legacy continuation") or "")
         end,
         isPaused      = function() return true end,
         onNewGame     = function(slot)
@@ -1208,12 +1214,56 @@ function R:_CreateSlotMenu()
         end,
         onContinue    = function(slot)
             local E = ArcadiaNexus.BB_Engine
-            if E then E:StartGame({ slot = slot, mode = "continue" }) end
+            if E then E:OpenRunMap(slot) end
         end,
     })
 end
 
+function R:HideRunMap()
+    if self._runMap then self._runMap:Hide() end
+end
+function R:ShowRunMap(overview)
+    self:EnterIdleState()
+    self.state="MAP"
+    if self._logoTex then self._logoTex:Hide() end
+    if self._startBtn then self._startBtn:Hide() end
+    if self._exitBtn then self._exitBtn:Show() end
+    if not self._runMap then
+        local A=ArcadiaNexus
+        self._runMap=A.UI.CreateCampaignMap({parent=self._canvas,getPage=A.BB_CampaignMap.GetPage,
+            getView=function()
+                local m=A.BB_Engine._runMap
+                if not m then return {levelCount=100} end
+                local loc=A.GetLocaleTable("BLOCKBREAKER")
+                local score=A.Format.Score(m.score)
+                local summary=string.format(loc.map_summary,loc["diff_"..m.difficulty],m.level,score,m.lives)
+                if m.endless then summary=summary.." · "..loc.lbl_endless end
+
+                return {levelCount=100,currentLevel=m.currentLevel,titleFormat=loc.map_title,
+                    subtitle=summary,actionLabel=m.timeOnly and nil or loc.map_resume,
+                    getLevel=function(level)
+                        local slot=A.BB_Engine._mapSlot
+                        local ms=A.BB_Settings:GetLevelTime(slot,level)
+                        local best=ms and A.Format.SecondsMMSS(ms/1000,false) or nil
+                        local current=not m.endless and not m.timeOnly and level==m.level
+                        local completed=not m.timeOnly and level>=m.completedFrom and level<=m.clearedLevel and level<=100
+                        local replay=(completed or (m.timeOnly and best~=nil)) and not m.endless
+                        local label=best or (current and not completed and loc.map_current) or "—"
+                        return {unlocked=(current and not completed) or replay,
+                            completed=completed or (m.timeOnly and best~=nil),text=label,lockedText=best or "—",
+                            tooltipTitle=loc.lbl_level.." "..level,
+                            tooltipText=loc.map_help..(best and "\n"..loc.lbl_time..": "..best or "")..(m.legacy and "\n"..string.format(loc.map_legacy,A.Format.Score(m.legacyScore)) or "")}
+                    end}
+            end,
+            onSelect=function(level) A.BB_Engine:SelectRunMap(level) end,
+            onAction=function() A.BB_Engine:ResumeRunMap() end,
+            onCancel=function() A.BB_Engine:StopGame() end})
+    end
+    self._runMap:Show(overview.currentLevel)
+end
+
 function R:EnterSlotMenu()
+    self:HideRunMap()
     self.state = "MENU"
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     if self._logoTex  then self._logoTex:Hide()  end
@@ -1256,7 +1306,7 @@ function R:_CreateDevOverlay()
     }
 
     local panel = CreateFrame("Frame", nil, field, "BackdropTemplate")
-    panel:SetSize(96, 22 + (#types * 18) + 8)
+    panel:SetSize(148, 22 + (#types * 18) + 100)
     panel:SetPoint("TOPRIGHT", field, "TOPRIGHT", -6, -8)
     panel:SetFrameStrata("DIALOG")
     local pauseLvl = self._pauseOverlay and self._pauseOverlay:GetFrameLevel() or field:GetFrameLevel()
@@ -1279,7 +1329,7 @@ function R:_CreateDevOverlay()
 
     local function makeBtn(puType, index)
         local btn = CreateFrame("Button", nil, panel)
-        btn:SetSize(88, 16)
+        btn:SetSize(136, 16)
         btn:SetPoint("TOP", panel, "TOP", 0, -20 - (index - 1) * 18)
         local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         fs:SetAllPoints(btn)
@@ -1299,6 +1349,50 @@ function R:_CreateDevOverlay()
     for i = 1, #types do
         makeBtn(types[i], i)
     end
+    local y = -22 - #types * 18
+    local label = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("TOP", panel, "TOP", 0, y)
+    label:SetText(L["dev_level_label"] or "Level 1-100")
+
+    local input = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    input:SetSize(46, 22)
+    input:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, y - 18)
+    input:SetAutoFocus(false)
+    input:SetNumeric(true)
+    input:SetMaxLetters(3)
+    input:SetText("1")
+    input:SetScript("OnEditFocusGained", function()
+        if R._keyFrame then R._keyFrame:EnableKeyboard(false) end
+    end)
+    input:SetScript("OnEditFocusLost", function() R:RefreshDevOverlay() end)
+    input:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    local function go(level)
+        input:ClearFocus()
+        local E = ArcadiaNexus.BB_Engine
+        if E and E:DevGoToLevel(level) then input:SetText(tostring(level)) end
+    end
+    input:SetScript("OnEnterPressed", function(self) go(tonumber(self:GetText())) end)
+    panel:SetScript("OnHide", function() input:ClearFocus() end)
+    local goBtn = ArcadiaNexus.UI.CreateArcadiaButton(panel, L["dev_level_go"] or "Load", 72, 22)
+    goBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, y - 18)
+    goBtn:SetScript("OnClick", function() go(tonumber(input:GetText())) end)
+
+    local function step(delta)
+        local E = ArcadiaNexus.BB_Engine
+        local level = E and E.gameState and E.gameState.level or tonumber(input:GetText()) or 1
+        go(math.max(1, math.min(100, level + delta)))
+    end
+    local prev = ArcadiaNexus.UI.CreateArcadiaButton(panel, "<", 60, 22)
+    prev:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, y - 44)
+    prev:SetScript("OnClick", function() step(-1) end)
+    local nextBtn = ArcadiaNexus.UI.CreateArcadiaButton(panel, ">", 60, 22)
+    nextBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, y - 44)
+    nextBtn:SetScript("OnClick", function() step(1) end)
+    local hint = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    hint:SetPoint("TOP", panel, "TOP", 0, y - 72)
+    hint:SetTextColor(1, 0.75, 0.3)
+    hint:SetText(L["dev_test_hint"] or "Level test: unranked")
+    self._devLevelInput = input
     self._devOverlay = panel
 end
 
@@ -1307,6 +1401,9 @@ end
 -- ══════════════════════════════════════════════════════════════
 
 function R:EnterIdleState()
+    local E = ArcadiaNexus.BB_Engine
+    if E and E._sessionId and E.state ~= "IDLE" then return end
+    self:HideRunMap()
     self.state = "IDLE"
 
     self:_ClearBlocks()
@@ -1334,7 +1431,7 @@ function R:EnterIdleState()
     if self._resumeBtn then self._resumeBtn:Hide() end
 
     if self._keyFrame then self._keyFrame:EnableKeyboard(false) end
-    if self._diffDropdown then self._diffDropdown:SetEnabled(true) end
+    self:RefreshConfig()
 
     -- HUD leeren
     self:_SetHudShown(false)
@@ -1344,10 +1441,13 @@ function R:EnterIdleState()
     if self._timeFS    then self._timeFS:SetText("")    end
     if self._endlessFS then self._endlessFS:SetText("") end
     self:RefreshDevOverlay()
+    self:_SetFxDriver(false)
 end
 
 function R:OnGameStarted(gs)
+    self:HideRunMap()
     self.state = "PLAYING"
+    self:_SetFxDriver(true)
     self._lastDiff = gs.difficulty
 
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
@@ -1361,7 +1461,7 @@ function R:OnGameStarted(gs)
     if self._exitBtn  then self._exitBtn:Show()  end
     if self._pauseBtn  then self._pauseBtn:Show()  end
     if self._keyFrame  then self._keyFrame:EnableKeyboard(true) end
-    if self._diffDropdown then self._diffDropdown:SetEnabled(false) end
+    self:RefreshConfig()
 
     if self._ballFrame   then self._ballFrame:Show()   end
     if self._paddleFrame then self._paddleFrame:Show() end
@@ -1372,6 +1472,17 @@ function R:OnGameStarted(gs)
     self:ApplyTheme()
 
     self:_BuildBlocks(gs)
+    if gs.legacyContinuation and self._endlessFS then self._endlessFS:SetText(ArcadiaNexus.GetLocaleTable("BLOCKBREAKER").legacy_save) end
+    if self._scoreBox then
+        self._scoreBox:EnableMouse(true)
+        self._scoreBox:SetScript("OnEnter",function(f)
+            if not GameTooltip then return end
+            local loc=ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
+            GameTooltip:SetOwner(f,"ANCHOR_TOP"); GameTooltip:SetText(loc.combo_help)
+            GameTooltip:AddLine(loc.powerup_help,1,1,1,true); GameTooltip:Show()
+        end)
+        self._scoreBox:SetScript("OnLeave",function() if GameTooltip then GameTooltip:Hide() end end)
+    end
     self._serveHintArmed = true
     self:UpdateHUD(gs)
     self:UpdatePhysics(gs)
@@ -1384,6 +1495,7 @@ function R:OnLevelAdvanced(gs)
     self:_ClearExtraBalls()
     -- KeyFrame reaktivieren — wurde in ShowLevelWin deaktiviert
     if self._keyFrame then self._keyFrame:EnableKeyboard(true) end
+    if self._pauseBtn then self._pauseBtn:Show() end
     self:_BuildBlocks(gs)
     self:UpdateHUD(gs)
     self:UpdatePhysics(gs)
@@ -1618,17 +1730,19 @@ function R:UpdateHUD(gs)
     if self._scoreFS then
         local comboTxt = ""
         if (gs.comboCount or 0) >= 2 then
-            comboTxt = "  |cffffd200x" .. tostring(gs.comboCount) .. "|r"
+            comboTxt = "  |cffffd200" .. (L.lbl_combo or "Combo") .. ": " .. tostring(gs.comboCount) .. "|r"
         end
         self._scoreFS:SetText(
             (L["lbl_level"] or "Level") .. ": " .. tostring(gs.level) ..
             "   " ..
             (L["lbl_score"] or "Punkte") .. ": " .. tostring(gs.score) ..
-            comboTxt)
+            comboTxt .. "  " .. (L.lbl_balls or "Balls") .. ": " .. tostring((gs.ballActive and 1 or 0)+#gs.balls) .. (gs.devPlaytest and "  |cffffaa00DEV|r" or ""))
     end
 
     if self._endlessFS then
-        if gs.endlessMode then
+        if gs.legacyContinuation then
+            self._endlessFS:SetText(L.legacy_save .. " · " .. (L.legacy_points or "Old points") .. ": " .. tostring(gs.legacyScore or 0))
+        elseif gs.endlessMode then
             self._endlessFS:SetText("|cff999999(" .. (L["lbl_endless"] or "Endlos") .. ")|r")
         else
             self._endlessFS:SetText("")
@@ -1672,12 +1786,12 @@ function R:OnBlockBroken(row, col, blockType, gs, points)
     end
     local combo = gs and gs.comboCount or 0
     if combo >= 3 then
-        self:_SpawnPop(cx, cy - 14, "x" .. tostring(combo), 1, 0.75, 0.2)
+        self:_SpawnPop(cx, cy - 14, (ArcadiaNexus.GetLocaleTable("BLOCKBREAKER").lbl_combo or "Combo") .. ": " .. tostring(combo), 1, 0.75, 0.2)
     end
     if combo == 5 or combo == 10 or combo == 15 or combo == 20 then
         local L = ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
         if self._comboFlashFS then
-            self._comboFlashFS:SetText((L["lbl_combo"] or "Combo") .. " x" .. tostring(combo))
+            self._comboFlashFS:SetText((L["lbl_combo"] or "Combo") .. ": " .. tostring(combo))
             self._comboFlashFS:Show()
             self._comboFlashT = (Fx and Fx.COMBO_FLASH_TTL) or 0.85
         end
@@ -1771,76 +1885,74 @@ function R:HidePause()
     if self._pauseBtn then self._pauseBtn:SetLabel(L["btn_pause"] or "Pause") end
 end
 
+function R:RefreshConfig()
+    local E=ArcadiaNexus.BB_Engine
+    local locked=E and E.gameState and E.state~="IDLE" and E.state~="GAMEOVER"
+    if self._diffDropdown then
+        self._diffDropdown:SetEnabled(not locked)
+        if self._diffDropdown.RefreshDisplay then self._diffDropdown:RefreshDisplay() end
+    end
+end
+local function CampaignResult(L, gs, onNext, nextLabel)
+    local E=ArcadiaNexus.BB_Engine
+    return ArcadiaNexus.UI.ResultDialogButtons.Campaign(L, onNext,
+        function() E:ResultToMap(gs) end,
+        function() if gs.devPlaytest then E:DevGoToLevel(gs.level) else E:ReplayFromResult(gs) end end,
+        function() if gs.practice then E:PracticeStop() else E:StopGame() end end,
+        nextLabel)
+end
 function R:ShowGameOver(gs)
-    local field = self._fieldFrame
-    if not field then return end
-    local L  = ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
-    local UI = ArcadiaNexus.UI
+    local field=self._fieldFrame; if not field then return end
+    local E=ArcadiaNexus.BB_Engine; local L=ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
     if self._keyFrame then self._keyFrame:EnableKeyboard(false) end
-    if self._diffDropdown then self._diffDropdown:SetEnabled(true) end
-    if self._pauseBtn  then self._pauseBtn:Hide()  end
-    if self._resumeBtn then self._resumeBtn:Hide() end
-    if self._startBtn  then self._startBtn:Hide()  end
-    if self._exitBtn   then self._exitBtn:Show()   end
-    UI.ShowArcadeResult(field, {
-        title      = L["state_gameover"] or "Spiel vorbei!",
-        titleColor = { 1, 0.27, 0.27 },
-        score      = gs.score,
-        gameId     = "BLOCKBREAKER",
-        difficulty = gs.difficulty or self._lastDiff,
-        result     = "LOSS",
-        lines      = { (L["lbl_level"] or "Level") .. ": " .. tostring(gs.level) },
-        L          = L,
-        onRetry    = function()
-            local E = ArcadiaNexus.BB_Engine
-            if E then E:StartGame({ mode = "new", difficulty = R._lastDiff }) end
-        end,
-        onExit = function()
-            local E = ArcadiaNexus.BB_Engine
-            if E then E:StopGame() end
-        end,
+    self:RefreshConfig()
+    if self._pauseBtn then self._pauseBtn:Hide() end
+    local data=gs.resultData or {}
+    ArcadiaNexus.UI.ShowArcadeResult(field,{
+        title=gs.runResult=="WIN" and L.state_run_ended or L.state_gameover,
+        score=gs.score,result=gs.runResult or "LOSS",difficulty=gs.difficulty,L=L,
+        gameId=not gs.devPlaytest and "BLOCKBREAKER" or nil,hideHighscore=gs.devPlaytest==true,
+        xp=data.awardedXP or 0,gold=data.awardedGold or 0,
+        subtitle=gs.devPlaytest and L.dev_test_hint or gs.legacyContinuation and L.legacy_save or nil,
+        lines={(L.lbl_level or "Level")..": "..gs.level},
+        isCurrent=function() return E.gameState==gs and E.state=="GAMEOVER" end,
+        buttons=not gs.devPlaytest and CampaignResult(L, gs, nil) or nil,
+        onRetry=gs.devPlaytest and function() E:DevGoToLevel(gs.level) end or nil,
+        onExit=gs.devPlaytest and function() E:StopGame() end or nil,
     })
 end
-
-function R:ShowLevelWin(gs)
-    local field = self._fieldFrame
-    if not field then return end
-    local L  = ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
-    local UI = ArcadiaNexus.UI
+function R:ShowPracticeResult(gs)
+    local field=self._fieldFrame; if not field then return end
+    local E=ArcadiaNexus.BB_Engine; local L=ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
     if self._keyFrame then self._keyFrame:EnableKeyboard(false) end
     if self._pauseBtn then self._pauseBtn:Hide() end
-    UI.ShowArcadeResult(field, {
-        title      = L["state_win"] or "Level geschafft!",
-        titleColor = { 0, 1, 0 },
-        score      = gs.score,
-        gameId     = "BLOCKBREAKER",
-        difficulty = gs.difficulty or self._lastDiff,
-        result     = "WIN",
-        lines      = { (L["lbl_level"] or "Level") .. ": " .. tostring(gs.level) },
-        L          = L,
-        buttons    = {
-            {
-                label = L["btn_next_level"] or "Nächstes Level",
-                onClick = function()
-                    local E = ArcadiaNexus.BB_Engine
-                    if E then E:ContinueToNextLevel() end
-                end,
-            },
-            {
-                label = L["btn_replay_level"] or "Wiederholen",
-                onClick = function()
-                    local E = ArcadiaNexus.BB_Engine
-                    if E then E:RetryLevel() end
-                end,
-            },
-            {
-                label = L["btn_exit"] or "Beenden",
-                onClick = function()
-                    local E = ArcadiaNexus.BB_Engine
-                    if E then E:StopGame() end
-                end,
-            },
-        },
+    local won=gs.phase=="LEVEL_CLEAR"
+    ArcadiaNexus.UI.ShowArcadeResult(field,{
+        title=won and (L.state_win or "Sieg") or (L.state_gameover or "Game Over"),
+        score=0,result=won and "WIN" or "LOSS",difficulty=gs.difficulty,L=L,hideHighscore=true,
+        subtitle=L.result_practice,lines={(L.lbl_level or "Level")..": "..gs.level},
+        isCurrent=function() return E.gameState==gs and gs.practice and (E.state=="LEVEL_CLEAR" or E.state=="GAMEOVER") end,
+        buttons=CampaignResult(L, gs, nil),
+    })
+end
+function R:ShowLevelWin(gs)
+    local field=self._fieldFrame; if not field then return end
+    local E=ArcadiaNexus.BB_Engine; local L=ArcadiaNexus.GetLocaleTable("BLOCKBREAKER")
+    if self._keyFrame then self._keyFrame:EnableKeyboard(false) end
+    if self._pauseBtn then self._pauseBtn:Hide() end
+    local regularWin=gs.level==100 and gs.runResult=="WIN"
+    local data=gs.resultData or {}
+    local perf=gs.levelPerformance or {}
+    ArcadiaNexus.UI.ShowArcadeResult(field,{
+        title=regularWin and L.state_campaign_win or L.state_win,
+        score=gs.score,result="WIN",difficulty=gs.difficulty,L=L,
+        gameId=regularWin and not gs.devPlaytest and "BLOCKBREAKER" or nil,
+        hideHighscore=not regularWin or gs.devPlaytest==true,
+        xp=regularWin and (data.awardedXP or 0) or 0,gold=regularWin and (data.awardedGold or 0) or 0,
+        subtitle=gs.devPlaytest and L.dev_test_hint or gs.legacyContinuation and L.legacy_save or L.level_no_reward,
+        lines={(L.lbl_level or "Level")..": "..gs.level,(L.lbl_level_score or "Level score")..": "..(perf.score or 0)},
+        isCurrent=function() return E.gameState==gs and E.state=="LEVEL_CLEAR" and gs.clearReady end,
+        buttons=CampaignResult(L, gs, function() E:ContinueToNextLevel(gs) end, gs.level==100 and L.btn_endless or nil),
     })
 end
 

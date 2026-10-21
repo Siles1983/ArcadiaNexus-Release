@@ -137,13 +137,21 @@ local function BuildMainFrame()
     -- Close-Button
     local cb = CreateFrame("Button", "NexusCloseBtn", f, "UIPanelCloseButton")
     cb:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 2)
-    cb:SetScript("OnClick", function() f:Hide() end)
+    local function RequestHide()
+        local Nav = ArcadiaNexus.UI and ArcadiaNexus.UI.Navigation
+        if Nav and Nav.RequestHide and Nav.RequestHide() then return end
+        f:Hide()
+    end
+    cb:SetScript("OnClick", RequestHide)
 
     -- Escape
     f:SetPropagateKeyboardInput(true)
     f:SetScript("OnKeyDown", function(self, key)
         if key == "ESCAPE" then
-            self:SetPropagateKeyboardInput(false); self:Hide()
+            self:SetPropagateKeyboardInput(false)
+            local Nav = ArcadiaNexus.UI and ArcadiaNexus.UI.Navigation
+            if Nav and Nav.Cancel and Nav.Cancel() then return end
+            RequestHide()
         else
             self:SetPropagateKeyboardInput(true)
         end
@@ -151,16 +159,26 @@ local function BuildMainFrame()
 
     -- Beim Öffnen über andere Addon-Frames in derselben Strata-Ebene
     f:SetScript("OnShow", function(self)
+        local GS = ArcadiaNexus.GameSession
+        if GS and GS.ReleaseResumeFailure then GS:ReleaseResumeFailure() end
         self:Raise()
         local Bridge = ArcadiaNexus.ConsolePortBridge
         if Bridge and Bridge.OnHubShown then
             pcall(Bridge.OnHubShown, Bridge, self)
         end
+        C_Timer.After(0, function()
+            if self:IsShown() and ArcadiaNexus.GuideTour then
+                ArcadiaNexus.GuideTour:StartIfNeeded()
+            end
+        end)
     end)
 
-    -- Beim Schließen des UI: alle laufenden Spiele stoppen
+    -- Beim Schließen des UI: fortsetzbare Spiele speichern, dann die Session beenden.
     f:SetScript("OnHide", function()
-        NexusTabs.StopAllGames()
+        local Nav = ArcadiaNexus.UI and ArcadiaNexus.UI.Navigation
+        if Nav and Nav.Abandon then Nav.Abandon() end
+        if ArcadiaNexus.GuideTour then ArcadiaNexus.GuideTour:OnHubHidden() end
+        NexusTabs.LeaveActiveGame()
     end)
 
     f:Hide()
@@ -184,7 +202,10 @@ end
 local function Toggle()
     if not F().main then return end
     if F().main:IsShown() then
-        F().main:Hide()
+        local Nav = ArcadiaNexus.UI and ArcadiaNexus.UI.Navigation
+        if not (Nav and Nav.RequestHide and Nav.RequestHide()) then
+            F().main:Hide()
+        end
     else
         ArcadiaNexus.UI.UpdateBadge()
         F().main:Show()
@@ -336,6 +357,6 @@ _G.ArcadiaNexusUI = {
     GetContentLabelFS    = function() return F().contentLabelFS end,
 }
 
-print("[Nexus UI] MainFrame geladen")
+print(ArcadiaNexus.ActiveLocale == "deDE" and "[Nexus UI] MainFrame geladen" or "[Nexus UI] MainFrame loaded")
 
 -- MinimapButton → UI/MinimapButton.lua (ArcadiaNexus.UI.CreateMinimapButton)

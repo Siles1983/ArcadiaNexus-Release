@@ -51,8 +51,24 @@ function S:Get(key)
     return self.Defaults[key]
 end
 
+function S:_EnforceRules(changedKey)
+    local db = GetDB()
+    if changedKey == "soundEnabled" and db.soundEnabled == false then
+        db.soundOnMatch    = false
+        db.soundOnPowerup  = false
+        db.soundOnGameover = false
+        db.soundOnLowMoves = false
+    end
+    if (changedKey == "soundOnMatch" or changedKey == "soundOnPowerup"
+        or changedKey == "soundOnGameover" or changedKey == "soundOnLowMoves")
+        and db[changedKey] == true then
+        db.soundEnabled = true
+    end
+end
+
 function S:Set(key, value)
     P:SetGameSetting(DB_KEY, key, value)
+    self:_EnforceRules(key)
 end
 
 function S:Reset()

@@ -270,6 +270,12 @@ function MT.CreateWow()
         return true
     end
 
+    local function IsTerminalPayload(item)
+        local kind = item.kind
+        return kind == "SNAPSHOT" or kind == "RESULT"
+            or kind == "PRIVATE" or kind == "PRIVATEPART"
+    end
+
     function T:DiscardMatch(matchId)
         for i = #queue, 1, -1 do
             local item = queue[i]
@@ -278,6 +284,19 @@ function MT.CreateWow()
                 table.remove(queue, i)
             end
         end
+    end
+
+    -- Terminaler Rematch: bereits erzeugte Abschlusspakete dieser Match-ID
+    -- bleiben in der bestehenden Queue. Flush übergibt sie an die WoW-API.
+    function T:RetainTerminal(matchId)
+        if not matchId then return end
+        for i = #queue, 1, -1 do
+            local item = queue[i]
+            if item.matchId == matchId and not IsTerminalPayload(item) then
+                table.remove(queue, i)
+            end
+        end
+        Flush()
     end
 
     function T:GetQueueSize() return #queue end

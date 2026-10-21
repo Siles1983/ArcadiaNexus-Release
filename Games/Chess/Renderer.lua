@@ -797,7 +797,7 @@ end
 -- [GAMEHUB_REGISTERED]
 ArcadiaNexus.RegisterGame({
     id        = "CHESS",
-    label     = "Mini-Schach",
+    label     = (ArcadiaNexus.ActiveLocale == "deDE" and "Mini-Schach" or "Mini Chess"),
     renderer  = "Chess_Renderer",
     engine    = "Chess_Engine",
     container = "_cheContainer",

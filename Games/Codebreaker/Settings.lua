@@ -13,8 +13,6 @@ local P = ArcadiaNexus.Persistence
 local DEFAULTS = {
     difficulty   = "normal",
     theme        = "gems",
-    codeLength   = 4,
-    duplicates   = true,
     soundEnabled = true,
     soundOnPlace = true,
     soundOnSubmit= true,
@@ -33,7 +31,16 @@ function S:Get(key)
     return v
 end
 
-function S:Set(key, value) P:SetGameSetting(DB_KEY, key, value) end
+S.MAX_SLOTS = 1
+function S:Set(key, value)
+    if key == "difficulty" then
+        if ArcadiaNexus.CB_Engine.activeGame or not ArcadiaNexus.CB_Logic.CONFIGS[value] then return false end
+    elseif key == "theme" then
+        if not ArcadiaNexus.CB_Themes.THEMES[value] then return false end
+    elseif DEFAULTS[key] == nil then return false end
+    P:SetGameSetting(DB_KEY, key, value)
+    return true
+end
 
 function S:GetAll()
     local t = {}
@@ -43,5 +50,41 @@ end
 
 function S:Reset()
     local db = GetDB()
-    for k in pairs(db) do db[k] = nil end
+    for k in pairs(DEFAULTS) do db[k] = nil end
+    db.codeLength, db.duplicates = nil, nil
+end
+
+function S:LoadSlot(slot)
+    if slot~=nil and slot~=1 then return nil end
+    local slots=GetDB().slots
+    if not slots then return nil end
+    if slots[1] then return slots[1] end
+    for i=2,3 do
+        if slots[i] then
+            slots[1]=slots[i]
+            slots[2],slots[3]=nil,nil
+            return slots[1]
+        end
+    end
+end
+function S:LoadSave()
+    return self:LoadSlot(1)
+end
+function S:SaveSlot(slot, save)
+    if slot~=nil and slot~=1 then return false end
+    local db=GetDB()
+    db.slots={ [1]=save }
+    return true
+end
+function S:SaveGame(save)
+    return self:SaveSlot(1, save)
+end
+function S:DeleteSlot(slot)
+    if slot~=nil and slot~=1 then return false end
+    local E=ArcadiaNexus.CB_Engine
+    if E.activeGame then return false end
+    local db=GetDB()
+    if db.slots then db.slots[1]=nil end
+    ArcadiaNexus.LocalResults:Prune()
+    return true
 end

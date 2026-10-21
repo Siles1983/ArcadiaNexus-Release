@@ -31,6 +31,7 @@ local function BuildSudokuSettingsPanel(parent)
             sections = {
                 {
                     lines = {
+                        L.guide_rules,L.guide_input,L.guide_notes,L.guide_undo,L.guide_conflicts,L.guide_saves," ",
                         L.info_easy_title, L.info_easy_text1, L.info_easy_text2, " ",
                         L.info_normal_title, L.info_normal_text1, L.info_normal_text2, " ",
                         L.info_hard_title, L.info_hard_text1, L.info_hard_text2, L.info_hard_text3,

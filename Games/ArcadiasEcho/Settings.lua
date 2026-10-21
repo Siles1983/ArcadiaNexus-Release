@@ -30,11 +30,24 @@ function S:Get(key)
     return self.Defaults[key]
 end
 
-function S:Set(key, value) P:SetGameSetting(DB_KEY, key, value) end
+function S:Set(key, value)
+    local E = ArcadiaNexus.AE_Engine
+    if key == "difficulty" then
+        if E and E.activeGame then return false end
+        if not ArcadiaNexus.AE_Themes.DIFFICULTY[value] then return false end
+    end
+    if key == "theme" and not ArcadiaNexus.AE_Themes.THEMES[value] then return false end
+    P:SetGameSetting(DB_KEY, key, value)
+    if ArcadiaNexus.AE_Renderer then ArcadiaNexus.AE_Renderer:RefreshConfiguration() end
+    return true
+end
 
 function S:Reset()
     local db = GetDB()
     for k in pairs(self.Defaults) do db[k] = nil end
+    local E = ArcadiaNexus.AE_Engine
+    if E and E.activeGame then db.difficulty = E.activeGame.board.difficulty end
+    if ArcadiaNexus.AE_Renderer then ArcadiaNexus.AE_Renderer:RefreshConfiguration() end
 end
 
 function S:GetAll()

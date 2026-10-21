@@ -10,8 +10,15 @@
 local ArcadiaNexus = _G.ArcadiaNexus
 
 local function DB()
-    if not _G.ArcadiaNexusDB then
+    -- Solange die Initialisierung nicht abgeschlossen ist, bleiben SavedVariables unangetastet.
+    local persistence = ArcadiaNexus.Persistence
+    if not (persistence and persistence.dbReady) then
+        return {}
+    end
+    if _G.ArcadiaNexusDB == nil then
         _G.ArcadiaNexusDB = {}
+    elseif type(_G.ArcadiaNexusDB) ~= "table" then
+        return {}
     end
     return _G.ArcadiaNexusDB
 end
@@ -52,15 +59,6 @@ function ProfileStore.Get()
     return db.profile
 end
 
-function ProfileStore.Replace(profile)
-    DB().profile = type(profile) == "table" and profile or CopyTable(EMPTY_PROFILE)
-    return ProfileStore.Get()
-end
-
-function ProfileStore.Reset()
-    return ProfileStore.Replace(CopyTable(EMPTY_PROFILE))
-end
-
 function ProfileStore.SetActiveTitle(title)
     local p = ProfileStore.Get()
     p.activeTitle = title
@@ -87,17 +85,39 @@ local EMPTY_CHALLENGES = {
 local StatsStore = {}
 ArcadiaNexus.StatsStore = StatsStore
 
+-- Codebreaker rule v2 starts a comparable ranking while retaining historical
+-- counters. Applied when the leaderboard is read.
+function StatsStore.NormalizeCodebreakerEntry(entry)
+    ArcadiaNexus.Persistence:NormalizeCodebreakerEntry(entry)
+end
+
 function StatsStore.GetLeaderboard()
     local db = DB()
     if type(db.leaderboard) ~= "table" then
         db.leaderboard = {}
     end
+    if ArcadiaNexus.RetiredContent then ArcadiaNexus.RetiredContent:CleanLeaderboard(db.leaderboard) end
+    local cb = db.leaderboard.CODEBREAKER
+    if type(cb) == "table" then
+        for _, entry in pairs(cb) do StatsStore.NormalizeCodebreakerEntry(entry) end
+    end
+    local sdk=db.leaderboard.SUDOKU
+    if type(sdk)=="table" then
+        for _,entry in pairs(sdk) do ArcadiaNexus.Persistence:NormalizeSudokuEntry(entry) end
+    end
+    local ms=db.leaderboard.MINESWEEPER
+    if type(ms)=="table" then
+        for _,entry in pairs(ms) do ArcadiaNexus.Persistence:NormalizeMinesweeperEntry(entry) end
+    end
+    local echo = db.leaderboard.ARCADIASECHO
+    if type(echo) == "table" then
+        for _, entry in pairs(echo) do ArcadiaNexus.Persistence:NormalizeEchoEntry(entry) end
+    end
+    local reaction=db.leaderboard.REACTIONSTRIKE
+    if reaction then for _,entry in pairs(reaction) do ArcadiaNexus.Persistence:NormalizeReactionEntry(entry) end end
+    local alien=db.leaderboard.ALIENDEFENSE
+    if alien then for _,entry in pairs(alien) do ArcadiaNexus.Persistence:NormalizeAlienDefenseEntry(entry) end end
     return db.leaderboard
-end
-
-function StatsStore.ReplaceLeaderboard(leaderboard)
-    DB().leaderboard = type(leaderboard) == "table" and leaderboard or {}
-    return StatsStore.GetLeaderboard()
 end
 
 function StatsStore.GetStreak()
@@ -106,15 +126,6 @@ function StatsStore.GetStreak()
         db.streak = CopyTable(EMPTY_STREAK)
     end
     return db.streak
-end
-
-function StatsStore.ReplaceStreak(streak)
-    DB().streak = type(streak) == "table" and streak or CopyTable(EMPTY_STREAK)
-    return StatsStore.GetStreak()
-end
-
-function StatsStore.ResetStreak()
-    return StatsStore.ReplaceStreak(CopyTable(EMPTY_STREAK))
 end
 
 function StatsStore.GetChallenges()
@@ -127,29 +138,6 @@ function StatsStore.GetChallenges()
         ch.history = { completedTotal = 0, goldEarned = 0 }
     end
     return ch
-end
-
-function StatsStore.SetChallengeHistory(history)
-    local ch = StatsStore.GetChallenges()
-    ch.history = type(history) == "table" and history or { completedTotal = 0, goldEarned = 0 }
-    return ch.history
-end
-
-function StatsStore.ResetProgression()
-    StatsStore.ReplaceLeaderboard({})
-    ProfileStore.Reset()
-    StatsStore.ResetStreak()
-    DB().challenges = CopyTable(EMPTY_CHALLENGES)
-end
-
-function StatsStore.ImportProgression(data)
-    if type(data) ~= "table" then return end
-    StatsStore.ReplaceLeaderboard(data.leaderboard)
-    ProfileStore.Replace(data.profile)
-    StatsStore.ReplaceStreak(data.streak)
-    if data.challenges and data.challenges.history then
-        StatsStore.SetChallengeHistory(data.challenges.history)
-    end
 end
 
 -- ============================================================
@@ -210,9 +198,8 @@ function MatchStore.NextSerial()
     return db.matchSerial
 end
 
---- true = neu markiert; false = bereits verbucht oder unvollständige Identität.
-function MatchStore.TryMarkResult(character, key)
-    if not character or not key then return false end
+local function ResultsFor(character)
+    if not character then return nil end
     local db = DB()
     if type(db.matchResults) ~= "table" then
         db.matchResults = {}
@@ -220,10 +207,66 @@ function MatchStore.TryMarkResult(character, key)
     if type(db.matchResults[character]) ~= "table" then
         db.matchResults[character] = {}
     end
-    local results = db.matchResults[character]
+    return db.matchResults[character]
+end
+
+--- true = neu markiert; false = bereits verbucht oder unvollständige Identität.
+--- Ein gespeichertes `true` bleibt der Abschlussmarker älterer Buchungen.
+function MatchStore.TryMarkResult(character, key)
+    if not character or not key then return false end
+    local results = ResultsFor(character)
     if results[key] then return false end
     results[key] = true
     return true
+end
+
+--- Legt eine offene Buchung samt Ergebnisdaten an.
+--- Rückgabe: record, nil  oder  nil, "complete" wenn schon abgeschlossen
+--- (Tabelle mit complete oder altes `true`).
+function MatchStore.BeginBooking(character, key, payload)
+    local results = ResultsFor(character)
+    if not results or not key then return nil end
+    local cur = results[key]
+    if cur == true or (type(cur) == "table" and cur.complete) then
+        return nil, "complete"
+    end
+    if type(cur) ~= "table" then
+        local stored = CopyTable(payload or {})
+        stored.matchBooked = nil
+        stored.newHighscore = nil
+        results[key] = { complete = false, steps = {}, payload = stored, derived = {} }
+    end
+    return results[key]
+end
+
+function MatchStore.CommitBookingStep(character, key, step, derived)
+    local results = ResultsFor(character)
+    local rec = results and key and results[key]
+    if type(rec) ~= "table" or rec.complete or not step then return end
+    rec.steps[step] = true
+    if type(derived) == "table" then
+        rec.derived = rec.derived or {}
+        for k, v in pairs(derived) do rec.derived[k] = v end
+    end
+end
+
+function MatchStore.FinishBooking(character, key)
+    local results = ResultsFor(character)
+    local rec = results and key and results[key]
+    if type(rec) ~= "table" then return end
+    rec.complete = true
+end
+
+function MatchStore.OpenBookings(character)
+    local results = ResultsFor(character)
+    local out = {}
+    if not results then return out end
+    for _, rec in pairs(results) do
+        if type(rec) == "table" and not rec.complete then
+            out[#out + 1] = rec
+        end
+    end
+    return out
 end
 
 -- ============================================================
@@ -273,6 +316,10 @@ function AchievementStore.Get()
     local a = db.achievements
     if type(a.unlocked) ~= "table" then a.unlocked = {} end
     if type(a.progress) ~= "table" then a.progress = {} end
+    if ArcadiaNexus.Persistence then ArcadiaNexus.Persistence:NormalizeEchoAchievements(a) end
+    if ArcadiaNexus.Persistence then ArcadiaNexus.Persistence:NormalizeShellAchievements(a) end
+    if ArcadiaNexus.Persistence then ArcadiaNexus.Persistence:NormalizeReactionAchievements(a) end
+    if ArcadiaNexus.Persistence then ArcadiaNexus.Persistence:NormalizeTicTacToeAchievements(a) end
     return a
 end
 
@@ -330,6 +377,7 @@ function FavoritesStore.IsFavorite(gameId)
 end
 
 function FavoritesStore.Add(gameId)
+    if ArcadiaNexus.RetiredContent and ArcadiaNexus.RetiredContent:IsGame(gameId) then return end
     if not gameId or FavoritesStore.IsFavorite(gameId) then return end
     table.insert(FavoritesStore.GetList(), gameId)
 end
@@ -369,7 +417,7 @@ function HiddenGamesStore.Replace(map)
     local copy = {}
     if type(map) == "table" then
         for id, v in pairs(map) do
-            if v then copy[id] = true end
+            if v and not (ArcadiaNexus.RetiredContent and ArcadiaNexus.RetiredContent:IsGame(id)) then copy[id] = true end
         end
     end
     DB().hiddenGames = copy

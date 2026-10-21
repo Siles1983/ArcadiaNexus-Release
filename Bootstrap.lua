@@ -1,7 +1,7 @@
 --[[
     Arcadia Nexus
     Bootstrap.lua
-    Version: 1.1.5
+    Version: 1.2.4
 ]]
 
 local ADDON_NAME = ...
@@ -82,18 +82,24 @@ local function SafeInvoke(addon, step, ...)
 end
 
 function ArcadiaNexus:OnPlayerLogin()
+    if not (self.Persistence and self.Persistence.dbReady) then
+        GH_LogError("Bootstrap", "DB-Initialisierung fehlgeschlagen; abhängige Module starten nicht.")
+        return
+    end
     for i = 1, #STARTUP do
         SafeInvoke(self, STARTUP[i])
     end
 end
 
 function ArcadiaNexus:OnPlayerLogout()
-    local GR = self.GameRegistry
-    if GR and GR.StopActiveGame then
-        pcall(GR.StopActiveGame)
-    end
+    -- Unload-Kontext zuerst. Sonst gilt der Spiel-Stop als bewusstes Verlassen
+    -- und der Gast löscht das Rejoin-Ticket.
     for i = 1, #SHUTDOWN do
         SafeInvoke(self, SHUTDOWN[i])
+    end
+    local GR = self.GameRegistry
+    if GR and GR.StopActiveGame then
+        pcall(GR.StopActiveGame, { force = true })
     end
 end
 
@@ -113,7 +119,7 @@ end
 --       renderer  = "TET_Renderer",    -- ArcadiaNexus[renderer]-Key
 --       engine    = "TET_Engine",      -- ArcadiaNexus[engine]-Key (optional)
 --       container = "_tetContainer",   -- ArcadiaNexus[container]-Key
---       category  = "DENKSPIELE",      -- ID, DE/EN-Name oder Alias (docs/RegisterGame_API.md)
+--       category  = "DENKSPIELE",      -- ID, DE/EN-Name oder Alias (docs/Core/RegisterGame_API.md)
 --       xp        = 10,                -- Basis-XP bei GAME_RESULT (Default 10)
 --   })
 --
@@ -165,7 +171,7 @@ end
 -- ==========================================
 -- DevTools (externe Editor-Addons)
 --   ArcadiaNexus.RegisterDevTool({ id, Toggle, label?, hint?, order?, ... })
--- Vertrag: docs/DevTools_API.md · Playtest: ArcadiaNexus.DevPlaytest
+-- Vertrag: docs/Core/DevTools_API.md · Playtest: ArcadiaNexus.DevPlaytest
 -- ==========================================
 
 function ArcadiaNexus.RegisterDevTool(info)

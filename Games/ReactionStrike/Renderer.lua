@@ -20,6 +20,7 @@
 local ArcadiaNexus = _G.ArcadiaNexus
 ArcadiaNexus.RS_Renderer = {}
 local R = ArcadiaNexus.RS_Renderer
+local pulseLoop=ArcadiaNexus.GameLoop.Create("ArcadiaNexus_RS_PulseLoop")
 
 -- ============================================================
 -- CFG – alle Layout-Konstanten zentral (Upvalue-Limit: max 60)
@@ -131,7 +132,6 @@ function R:Init()
     self:EnterIdleState()
 
     -- Spielfeld-Dimensionen an Logic übergeben
-    local Logic = ArcadiaNexus.RS_Logic
     if Logic then
         Logic.FIELD_W  = CFG.field_size
         Logic.FIELD_H  = CFG.field_size
@@ -365,7 +365,7 @@ function R:_CreateControls()
     ddAnchor:SetSize(CFG.dd_w, CFG.btn_h)
     ddAnchor:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
 
-    UI.CreateSimpleDropdown(
+    self._difficultyDD=UI.CreateSimpleDropdown(
         ddAnchor,
         0, 0,
         CFG.dd_w,
@@ -376,11 +376,11 @@ function R:_CreateControls()
             { key = "hard",   label = L["diff_hard"]    },
         },
         function()
-            return (S and S:Get("difficulty")) or "normal"
+            local E=ArcadiaNexus.RS_Engine
+            return E._gameState and E._gameState.difficulty or (S and S:Get("difficulty")) or "normal"
         end,
         function(key)
-            R._lastDiff = key
-            if S then S:Set("difficulty", key) end
+            if S and S:Set("difficulty",key) then R._lastDiff=key; R:_RefreshStatus(key) end
         end
     )
 
@@ -393,8 +393,7 @@ function R:_CreateControls()
         if R.state == "PLAYING" then
             E:StopGame()
         else
-            local diff = R._lastDiff
-                or (ArcadiaNexus.RS_Settings and ArcadiaNexus.RS_Settings:Get("difficulty"))
+            local diff = (ArcadiaNexus.RS_Settings and ArcadiaNexus.RS_Settings:Get("difficulty"))
                 or "normal"
             E:StartGame(diff)
         end
@@ -483,13 +482,18 @@ function R:_SetupKeyboard()
     local kf = CreateFrame("Frame", "ArcadiaNexus_RS_KeyFrame", self._canvas)
     kf:SetAllPoints(self._canvas)
     kf:EnableKeyboard(false)
-    kf:SetPropagateKeyboardInput(false)
-    kf:SetScript("OnKeyDown", function(_, key)
+    kf:SetPropagateKeyboardInput(true)
+    kf:SetScript("OnKeyDown", function(self, key)
+        local E=ArcadiaNexus.RS_Engine
+        local active=E and E._gameState and E.state~="RESULT" and E.state~="RESULT_PENDING"
+        self:SetPropagateKeyboardInput(key~="SPACE" or not active)
         if key == "SPACE" then
-            local E = ArcadiaNexus.RS_Engine
-            if E then E:HandleInput("STRIKE") end
+            if R._spaceHeld then return end
+            R._spaceHeld=true
+            if E and active then E:HandleInput("STRIKE") end
         end
     end)
+    kf:SetScript("OnKeyUp",function(_,key) if key=="SPACE" then R._spaceHeld=nil end end)
     self._keyFrame = kf
 end
 
@@ -505,12 +509,12 @@ function R:_StartPulse()
     if not pulse then return end
     pulse:Show()
     pulse:SetAlpha(0.4)
-    self._pulseGen = (self._pulseGen or 0) + 1
-    local gen      = self._pulseGen
     local accum    = 0
     local speed    = 1.5
-    pulse:SetScript("OnUpdate", function(_, dt)
-        if (self._pulseGen or 0) ~= gen then return end
+    local E=ArcadiaNexus.RS_Engine
+    local gs,sid=E._gameState,E._sessionId
+    pulseLoop:Start(function(dt)
+        if E._gameState~=gs or not ArcadiaNexus.GameSession:IsSession(E,sid) then pulseLoop:Stop(); return end
         accum = accum + dt * speed
         local a = 0.2 + 0.3 * math.abs(math.sin(accum * math.pi))
         pulse:SetAlpha(a)
@@ -518,9 +522,8 @@ function R:_StartPulse()
 end
 
 function R:_StopPulse()
-    self._pulseGen = (self._pulseGen or 0) + 1
+    pulseLoop:Stop()
     if self._pulseFrame then
-        self._pulseFrame:SetScript("OnUpdate", nil)
         self._pulseFrame:Hide()
     end
 end
@@ -558,8 +561,7 @@ function R:_ShowOrb(gs, orbType)
         if glow then glow:SetVertexColor(1.00, 0.20, 0.10, 1) end
     end
     self:_PlaceOrb(gs)
-    orb:SetAlpha(0); orb:Show()
-    UIFrameFadeIn(orb, 0.1, 0, 1)
+    orb:SetAlpha(1); orb:Show()
     if glow then glow:Show() end
 end
 
@@ -599,6 +601,16 @@ function R:OnGameStarted(gs)
 
     self:_EnableKeyboard(true)
     self:_RefreshStatus(gs.difficulty)
+    self:RefreshConfiguration()
+end
+
+function R:RefreshConfiguration()
+    local E=ArcadiaNexus.RS_Engine
+    if self._difficultyDD then
+        self._difficultyDD:SetEnabled(not E._gameState)
+        self._difficultyDD:RefreshDisplay()
+    end
+    self._lastDiff=E._gameState and E._gameState.difficulty or ArcadiaNexus.RS_Settings:Get("difficulty")
 end
 
 function R:ShowWaiting(gs)
@@ -607,6 +619,9 @@ function R:ShowWaiting(gs)
     self:_StartPulse()
     self:_EnableKeyboard(true)
     if self.overlay then self.overlay:Hide() end
+    ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
+    if self._scoreFS then self._scoreFS:SetText((L.lbl_score or "Score")..": 0") end
+    if self._reactionFS then self._reactionFS:SetText("ms: --") end
     if self._waitHintFS then
         self._waitHintFS:SetText(L["state_waiting"] or "Warte auf den Orb...")
         self._waitHintFS:Show()
@@ -616,7 +631,10 @@ end
 function R:ShowSignal(gs)
     self:_StopPulse()
     self:_EnableKeyboard(true)
-    if self._waitHintFS then self._waitHintFS:Hide() end
+    if self._waitHintFS then
+        self._waitHintFS:SetText(ArcadiaNexus.GetLocaleTable("REACTIONSTRIKE").state_signal)
+        self._waitHintFS:Show()
+    end
     self:_ShowOrb(gs, "SIGNAL")
 end
 
@@ -643,8 +661,7 @@ function R:ShowFakeoutSurvived(gs)
     ov.sub2FS:SetText("")
     if ov.retryBtn then ov.retryBtn:Hide() end
     if ov.exitBtn  then ov.exitBtn:Hide()  end
-    ov:SetAlpha(0); ov:Show()
-    UIFrameFadeIn(ov, 0.3, 0, 0.70)
+    ov:SetAlpha(0.70); ov:Show()
 end
 
 function R:ShowResult(gs)
@@ -654,7 +671,7 @@ function R:ShowResult(gs)
 
     self:_HideOrb()
     self:_StopPulse()
-    self:_EnableKeyboard(false)
+    self:_EnableKeyboard(true)
     if self._waitHintFS then self._waitHintFS:Hide() end
 
     local ms = gs.reactionMs or 0
@@ -666,25 +683,51 @@ function R:ShowResult(gs)
     end
     self:_RefreshStatus(gs.difficulty)
 
-    local label, color = Logic:GetResultLabel(ms)
+    local key,color="result_slow",{0.75,0.80,0.90}
+    if ms<200 then key,color="result_great",{0.20,1.00,0.20}
+    elseif ms<350 then key,color="result_good",{1.00,0.84,0.00}
+    elseif ms<500 then key,color="result_ok",{1.00,0.65,0.10} end
+    local label=L[key]
+    local E=ArcadiaNexus.RS_Engine
+    local sid,runId=E._sessionId,gs.runId
+    local function owned() return E._sessionId==sid and E._gameState==gs and gs.runId==runId end
+    local data=gs.resultData or {}
 
     UI.ShowArcadeResult(self._fieldFrame, {
         title      = label,
         titleColor = color,
         subtitle   = ms .. " " .. (L["lbl_ms"] or "ms"),
         score      = gs.score,
+        result     = "WIN",
+        xp         = data.awardedXP or 0,
+        gold       = data.awardedGold or 0,
+        hideHighscore = true,
+        lines      = { (L.lbl_besttime or "Best Time")..": "..tostring(ArcadiaNexus.RS_Settings:GetBestMs(gs.difficulty) or ms).." ms" },
         gameId     = "REACTIONSTRIKE",
         difficulty = gs.difficulty,
         L          = L,
+        isCurrent  = owned,
         onRetry    = function()
             local E = ArcadiaNexus.RS_Engine
-            if E then E:Retry() end
+            if owned() then E:Retry() end
         end,
         onExit = function()
             local E = ArcadiaNexus.RS_Engine
-            if E then E:StopGame() end
+            if owned() then E:StopGame() end
         end,
     })
+end
+
+function R:ShowResultPending(gs)
+    self:_HideOrb(); self:_StopPulse()
+    if self.overlay then self.overlay:Hide() end
+    local E,UI=ArcadiaNexus.RS_Engine,ArcadiaNexus.UI
+    local sid=E._sessionId
+    local L=ArcadiaNexus.GetLocaleTable("REACTIONSTRIKE")
+    UI.ShowResultDialog({parent=self._fieldFrame,title=L.result_pending,hideHighscore=true,buttons={
+        {label=L.btn_retry,onClick=function() if E._sessionId==sid and E._gameState==gs then E:RetryResult() end end},
+        {label=L.btn_exit,onClick=function() if E._sessionId==sid and E._gameState==gs then E:StopGame() end end},
+    }})
 end
 
 function R:ShowPenalty(gs, duration)
@@ -711,8 +754,7 @@ function R:ShowPenalty(gs, duration)
     ov.sub2FS:SetText("")
     if ov.retryBtn then ov.retryBtn:Hide() end
     if ov.exitBtn  then ov.exitBtn:Hide()  end
-    ov:SetAlpha(0); ov:Show()
-    UIFrameFadeIn(ov, 0.2, 0, 0.88)
+    ov:SetAlpha(0.88); ov:Show()
 end
 
 function R:UpdatePenaltyCountdown(remaining)
@@ -732,6 +774,8 @@ function R:EnterIdleState()
     self:_HideOrb()
     self:_StopPulse()
     self:_EnableKeyboard(false)
+    self._spaceHeld=nil
+    self:RefreshConfiguration()
 
     if self.overlay      then self.overlay:Hide()      end
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)

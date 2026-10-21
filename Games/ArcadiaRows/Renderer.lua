@@ -301,13 +301,13 @@ end
 
 local function PlayDropSound()
     local S = ArcadiaNexus.AR_Settings
-    if not S or not S:Get("soundEnabled") then return end
+    if not S or not S:Get("soundEnabled") or not S:Get("soundOnDrop") then return end
     PlaySound(CFG.sound_drop, "SFX")
 end
 
 local function PlayPopSound()
     local S = ArcadiaNexus.AR_Settings
-    if not S or not S:Get("soundEnabled") then return end
+    if not S or not S:Get("soundEnabled") or not S:Get("soundOnPop") then return end
     PlaySound(CFG.sound_pop or 863, "SFX")
 end
 

@@ -87,6 +87,60 @@ local DIFF = {
     hard   = { lives = 2, barrelSpeed = 100, spawnInterval = 2.1, ladderChance = 0.40, bonus = 4000 },
 }
 
+Logic.DIFFICULTY=DIFF
+function Logic:Copy(v)
+    if type(v)~="table" then return v end
+    local t={} for k,x in pairs(v) do t[k]=self:Copy(x) end return t
+end
+function Logic:Neutralize(board)
+    if board then board.input={left=false,right=false,up=false,down=false,jump=false}; board.player.moving=false end
+end
+function Logic:Snapshot(board,phase)
+    if not board or board.state~="PLAYING" or board.lives<=0 then return nil end
+    local save=self:Copy(board); self:Neutralize(save)
+    save.version=2; save.ruleVersion=2; save.phase=phase or "PLAYING"; save.diff=board.difficulty
+    return save
+end
+function Logic:Restore(save)
+    local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
+    local function integer(n) return finite(n) and n>=0 and n%1==0 end
+    if type(save)~="table" or save.version~=2 or save.ruleVersion~=2 or save.state~="PLAYING"
+        or save.phase~="PLAYING" and save.phase~="PAUSED" or not DIFF[save.difficulty]
+        or type(save.runId)~="string" or type(save.player)~="table" or type(save.stats)~="table"
+        or type(save.barrels)~="table" or #save.barrels>self.MAX_BARRELS then return nil end
+    for _,key in ipairs({"score","level","lives","bonus","bonusStart","jumpSerial"}) do if not integer(save[key]) then return nil end end
+    local maxLives=save.legacyContinuation==true and 3 or DIFF[save.difficulty].lives
+    if save.lives<1 or save.lives>maxLives or save.level<1 or save.bonus>save.bonusStart
+        or save.bonusStart~=DIFF[save.difficulty].bonus or save.bonus%100~=0 then return nil end
+    for _,key in ipairs({"time","_bonusAcc","spawnTimer","simRemainder","barrelSpeed","spawnInterval","ladderChance","bannerT","flashT"}) do if not finite(save[key]) then return nil end end
+    if save.firstSpawnTimer~=nil and (not finite(save.firstSpawnTimer) or save.firstSpawnTimer<0 or save.firstSpawnTimer>1) then return nil end
+    if save.time<0 or save._bonusAcc<0 or save._bonusAcc>=2 or save.spawnTimer<0 or save.simRemainder<0 or save.simRemainder>=1/120+1e-8
+        or save.barrelSpeed<=0 or save.spawnInterval<1 or save.ladderChance<0 or save.ladderChance>0.55 then return nil end
+    for _,key in ipairs({"jumped","rescues","spawned"}) do if not integer(save.stats[key]) then return nil end end
+    local function entity(obj,states)
+        if type(obj)~="table" or not states[obj.state] or not integer(obj.floor) or not self.PLATFORMS[obj.floor] then return false end
+        for _,key in ipairs({"x","y","vy"}) do if not finite(obj[key]) then return false end end
+        if obj.state=="CLIMB" or obj.state=="LADDER" then if not self.LADDERS[obj.ladder] then return false end end
+        return true
+    end
+    if not entity(save.player,{GROUND=true,JUMP=true,CLIMB=true}) then return nil end
+    for _,key in ipairs({"vx","invuln","animT","jumpStartY"}) do if not finite(save.player[key]) then return nil end end
+    if save.player.invuln<0 or save.player.invuln>2.5 or save.player.dir~=1 and save.player.dir~=-1 then return nil end
+    if save.player.jumpId and (not integer(save.player.jumpId) or save.player.jumpId>save.jumpSerial or not self.PLATFORMS[save.player.jumpFloor]) then return nil end
+    for _,b in ipairs(save.barrels) do
+        if not entity(b,{ROLL=true,FALL=true,LADDER=true}) or not finite(b.rollT) or type(b.scored)~="boolean" or b.dir~=1 and b.dir~=-1 then return nil end
+        if b.passage and (type(b.passage)~="table" or not integer(b.passage.jumpId) or b.passage.jumpId>save.jumpSerial or b.passage.side~=1 and b.passage.side~=-1
+            or b.passage.crossed~=nil and type(b.passage.crossed)~="boolean" or b.passage.blocked~=nil and type(b.passage.blocked)~="boolean") then return nil end
+    end
+    if type(save.troll)~="table" or type(save.princess)~="table" then return nil end
+    for _,obj in ipairs({save.troll,save.princess}) do
+        if type(obj)~="table" or not finite(obj.x) or not finite(obj.y) then return nil end
+    end
+    if not finite(save.troll.animT) or not finite(save.troll.throwT) then return nil end
+    local board=self:Copy(save); self:Neutralize(board); return board
+end
+function Logic:RemainingTime(board) return math.max(0,board.bonus/100*2-board._bonusAcc) end
+
 -- ============================================================
 -- Geometrie-Helfer (pur)
 -- ============================================================
@@ -154,6 +208,7 @@ function Logic:NewBoard(cfg)
 
     local board = {
         difficulty    = diff,
+        ruleVersion=2, firstSpawnTimer=1, spawnTimer=d.spawnInterval, simRemainder=0, jumpSerial=0,
         state         = "PLAYING",   -- PLAYING | LOST
         time          = 0,
         score         = 0,
@@ -199,13 +254,12 @@ function Logic:NewBoard(cfg)
 
     local targetLevel = tonumber(cfg.level) or 1
     if targetLevel > 1 then
-        for _ = 2, targetLevel do
-            board.barrelSpeed   = math.min(d.barrelSpeed * 2.2, board.barrelSpeed * 1.10)
-            board.spawnInterval = math.max(1.0, board.spawnInterval * 0.88)
-            board.ladderChance  = math.min(0.55, board.ladderChance + 0.03)
-        end
+        board.barrelSpeed=math.min(d.barrelSpeed*2.2,d.barrelSpeed*1.10^(targetLevel-1))
+        board.spawnInterval=math.max(1,d.spawnInterval*0.88^(targetLevel-1))
+        board.ladderChance=math.min(0.55,d.ladderChance+0.03*(targetLevel-1))
         board.level = targetLevel
     end
+    board.spawnTimer=board.spawnInterval
     if cfg.score then board.score = cfg.score end
     if cfg.lives then board.lives = cfg.lives end
     if cfg.time  then board.time  = cfg.time  end
@@ -265,14 +319,20 @@ function Logic:_RespawnPlayer(board)
     p.invuln = 2.5
     board.bonus = board.bonusStart
     board._bonusAcc = 0
+    board.warned=false
+    p.jumpId=nil
 end
 
-function Logic:_ApplyHit(board, events)
+function Logic:_ApplyHit(board, events, cause)
+    if board.state~="PLAYING" then return end
+    board.lastCause=cause or "BARREL"
+    self:Neutralize(board)
     board.lives = board.lives - 1
     board.flashT = 0.8
     events[#events + 1] = { type = "hit" }
     if board.lives <= 0 then
         board.state = "LOST"
+        board.endCause=board.lastCause
         events[#events + 1] = { type = "lost" }
     else
         self:_RespawnPlayer(board)
@@ -281,6 +341,7 @@ end
 
 function Logic:_AdvanceLevel(board, events)
     local d = DIFF[board.difficulty]
+    board.lastRescueBonus=board.bonus
     board.score = board.score + board.bonus
     board.level = board.level + 1
     board.stats.rescues = board.stats.rescues + 1
@@ -295,7 +356,10 @@ function Logic:_AdvanceLevel(board, events)
     self:_RespawnPlayer(board)
     board.player.invuln = 1.0
     board.bannerT = 2.2
-    events[#events + 1] = { type = "rescue" }
+    board.firstSpawnTimer=1
+    board.spawnTimer=board.spawnInterval
+    self:Neutralize(board)
+    events[#events + 1] = { type = "rescue", bonus=board.lastRescueBonus }
 end
 
 -- ============================================================
@@ -334,12 +398,12 @@ function Logic:_UpdatePlayer(board, dt, events)
             if idx then
                 p.y, p.floor, p.state, p.vx = sy, idx, "GROUND", 0
                 if sy - p.jumpStartY > MAX_FALL then
-                    self:_ApplyHit(board, events)
+                    self:_ApplyHit(board, events,"FALL")
                 end
             end
         end
         if p.y > Logic.FIELD_H + 40 then
-            self:_ApplyHit(board, events)
+            self:_ApplyHit(board, events,"FALL")
         end
         return
     end
@@ -364,6 +428,8 @@ function Logic:_UpdatePlayer(board, dt, events)
 
     if in_.jump then
         board.input.jump = false
+        board.jumpSerial=board.jumpSerial+1
+        p.jumpId=board.jumpSerial; p.jumpFloor=p.floor
         p.state, p.vy = "JUMP", -JUMP_V
         p.vx = dir * MOVE_SPEED
         if dir ~= 0 then p.dir = dir end
@@ -390,6 +456,7 @@ function Logic:_UpdatePlayer(board, dt, events)
                 p.y = Logic.PlatformYAt(p.floor, p.x)
             else
                 -- ueber die offene Kante gelaufen → freier Fall
+                p.jumpId=nil
                 p.state, p.vy = "JUMP", 0
                 p.vx = dir * MOVE_SPEED * 0.6
                 p.jumpStartY = p.y
@@ -484,33 +551,38 @@ end
 -- ============================================================
 -- Kollision & Sprung-Bonus
 -- ============================================================
-function Logic:_CheckCollisions(board, events)
-    local p = board.player
-    local pcx, pcy = p.x, p.y - P_HALF_H   -- Hitbox-Mittelpunkt
-
-    for _, b in ipairs(board.barrels) do
-        -- Punkte fuers Ueberspringen (einmal pro Fass)
-        if p.state == "JUMP" and not b.scored
-            and math.abs(b.x - p.x) < 16
-            and b.y > p.y and (b.y - p.y) < 40 then
-            b.scored = true
-            board.score = board.score + 100
-            board.stats.jumped = board.stats.jumped + 1
-            events[#events + 1] = { type = "jumped" }
-        end
-
-        if p.invuln <= 0 and board.state == "PLAYING"
-            and Logic.AABBOverlap(pcx, pcy, P_HALF_W, P_HALF_H, b.x, b.y, B_HALF, B_HALF) then
-            self:_ApplyHit(board, events)
-            if board.state ~= "PLAYING" then return end
-        end
+function Logic:_CheckCollisions(board,events)
+    local p=board.player
+    for _,b in ipairs(board.barrels) do
+        local touching=self.AABBOverlap(p.x,p.y-P_HALF_H,P_HALF_W,P_HALF_H,b.x,b.y,B_HALF,B_HALF)
+        if touching and p.invuln<=0 then self:_ApplyHit(board,events,"BARREL"); return end
+        if not b.scored and p.state=="JUMP" and p.jumpId and b.state=="ROLL" and b.floor==p.jumpFloor then
+            local delta=b.x-p.x; local phase=b.passage
+            if not phase or phase.jumpId~=p.jumpId then
+                phase=nil
+                if math.abs(delta)>=P_HALF_W+B_HALF then
+                    phase={side=delta>0 and 1 or -1,jumpId=p.jumpId}; b.passage=phase
+                end
+            end
+            if phase then
+                local safe=p.y<b.y-B_HALF and not touching
+                if math.abs(delta)<P_HALF_W+B_HALF and not safe then phase.blocked=true end
+                if delta*phase.side<=0 then
+                    if safe then phase.crossed=true else phase.blocked=true end
+                end
+                if phase.crossed and not phase.blocked and delta*phase.side<=-(P_HALF_W+B_HALF) then
+                    b.scored=true; board.score=board.score+100; board.stats.jumped=board.stats.jumped+1
+                    events[#events+1]={type="jumped"}
+                end
+            end
+        elseif not b.scored then b.passage=nil end
     end
 end
 
 -- ============================================================
 -- Haupt-Update (vom Engine-GameLoop pro Frame aufgerufen)
 -- ============================================================
-function Logic:Update(board, dt)
+function Logic:_Step(board, dt)
     local events = {}
     if not board or board.state ~= "PLAYING" then return events end
 
@@ -523,16 +595,31 @@ function Logic:Update(board, dt)
 
     -- Bonus-Countdown (alle 2 s -100); bei 0 geht ein Leben verloren
     board._bonusAcc = board._bonusAcc + dt
-    while board._bonusAcc >= 2 do
-        board._bonusAcc = board._bonusAcc - 2
+    while board._bonusAcc >= 2-1e-10 do
+        board._bonusAcc = math.max(0,board._bonusAcc - 2)
         board.bonus = math.max(0, board.bonus - 100)
     end
     if board.bonus <= 0 then
         events[#events + 1] = { type = "timeout" }
-        self:_ApplyHit(board, events)
+        self:_ApplyHit(board, events,"TIMEOUT")
         if board.state ~= "PLAYING" then return events end
     end
 
+    if self:RemainingTime(board)<=10 and not board.warned then
+        board.warned=true; events[#events+1]={type="warning"}
+    end
+    -- Preserve the initial throw and periodic phase, both on the simulation clock.
+    if board.firstSpawnTimer then
+        board.firstSpawnTimer=board.firstSpawnTimer-dt
+        if board.firstSpawnTimer<=1e-10 then
+            board.firstSpawnTimer=nil
+            self:SpawnBarrel(board)
+        end
+    end
+    board.spawnTimer=board.spawnTimer-dt
+    if board.spawnTimer<=1e-10 then
+        self:SpawnBarrel(board); board.spawnTimer=board.spawnTimer+board.spawnInterval
+    end
     board.troll.animT = board.troll.animT + dt
     if board.troll.throwT > 0 then board.troll.throwT = board.troll.throwT - dt end
 
@@ -549,5 +636,21 @@ function Logic:Update(board, dt)
         self:_AdvanceLevel(board, events)
     end
 
+    return events
+end
+
+function Logic:Update(board,dt)
+    if not board or board.state~="PLAYING" then return {} end
+    local step=1/120; board.simRemainder=(board.simRemainder or 0)+math.max(0,math.min(dt or 0,0.1))
+    local n=math.min(12,math.floor((board.simRemainder+1e-10)/step)); local events={}
+    for _=1,n do
+        board.simRemainder=math.max(0,board.simRemainder-step)
+        local transition=false
+        for _,ev in ipairs(self:_Step(board,step)) do
+            events[#events+1]=ev
+            if ev.type=="hit" or ev.type=="rescue" then transition=true end
+        end
+        if board.state~="PLAYING" or transition then board.simRemainder=0; break end
+    end
     return events
 end

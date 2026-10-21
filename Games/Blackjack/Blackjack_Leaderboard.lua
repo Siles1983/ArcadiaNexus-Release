@@ -1,17 +1,10 @@
---[[
-    ArcadiaNexus - Blackjack Leaderboard-Schema
-    Games/Blackjack/Blackjack_Leaderboard.lua
-]]
-
-local LR = ArcadiaNexus.LeaderboardRegistry
-if not LR or not LR.SECTION then return end
-local S  = LR.SECTION
-
-ArcadiaNexus.RegisterLeaderboard({
-    gameId = "BLACKJACK",
-    difficulties = { "easy", "normal", "hard" },
-    sections = {
-        S.GlobalStats("lb_capital", { S.MaxCapitalRow() }),
-        S.StatsWL(),
-    },
-})
+local S=ArcadiaNexus.LeaderboardRegistry.SECTION
+local old={"easy","normal","hard","default"}
+local current={{id="table",labelKey="lb_table"}}
+local capital={type="stats",titleKey="lb_capital",difficulties=current,rows={
+    {fromStats="finalChips",labelKey="lb_max_capital",valueColor="gold",format="halfChips"}}}
+local rounds=S.StatsWLD("lb_rounds"); rounds.difficulties=current
+local legacy=S.StatsWLD("lb_legacy_sessions"); legacy.difficulties=old
+local legacyCapital={type="stats",titleKey="lb_legacy_capital",difficulties=old,rows={
+    {fromStats="finalChips",labelKey="lb_max_capital",valueColor="gold",format="halfChips"}}}
+ArcadiaNexus.RegisterLeaderboard({gameId="BLACKJACK",difficulties=current,sections={capital,rounds,legacy,legacyCapital}})

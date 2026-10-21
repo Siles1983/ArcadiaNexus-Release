@@ -11,7 +11,16 @@
 -- ============================================================
 -- DEUTSCH (deDE)
 -- ============================================================
-ArcadiaNexus.RegisterLocale("TICTACTOE", "deDE", {
+local function RegisterLocale(locale,strings)
+    for _,diff in ipairs({"easy","normal","hard"}) do
+        for size=3,5 do for win=3,size do
+            strings["solo_"..diff.."_"..size.."_"..win]=strings["diff_"..diff].." · "..size.."×"..size.." / "..win
+        end end
+    end
+    ArcadiaNexus.RegisterLocale("TICTACTOE",locale,strings)
+end
+
+RegisterLocale("deDE", {
 
     -- Settings-Panel: Box-Titel
     box_symbols     = "Symbole",
@@ -89,7 +98,7 @@ ArcadiaNexus.RegisterLocale("TICTACTOE", "deDE", {
     guide_4 = "Standard-Symbole sind X und O. Optional Fraktions-Wappen.",
     guide_5 = "Die KI setzt nach dir, außer du wählst KI zuerst. Unentschieden, wenn das Feld voll ist.",
     guide_6 = "Gegen andere Spieler: Mehrspieler-Tab, zwei Sitze, klassisches 3x3.",
-    guide_7 = "Im Spiele-Tab zählt Best of 3. Unentschieden zählen nicht als Sieg.",
+    guide_7 = "2 Siege gewinnen die Serie. Remis zählen nicht als Sieg und können mehr als drei Bretter erfordern. Regeln bleiben für die Serie fest; Beenden verwirft den offenen Serienfortschritt, fertige Bretter bleiben gewertet. Keine Saves.",
 
     -- Spielfeld-UI
     btn_start       = "Spiel starten",
@@ -104,9 +113,16 @@ ArcadiaNexus.RegisterLocale("TICTACTOE", "deDE", {
     win_4           = "4 in Folge",
     win_5           = "5 in Folge",
     hud_series          = "Serie %d : %d",
+    hud_series_detail   = "%d:%d · Remis %d · Ziel 2",
+    confirm_exit        = "Serie beenden?",
+    confirm_exit_body   = "Offenes Brett und Serienfortschritt werden verworfen. Bereits entschiedene Bretter bleiben gewertet; die Siegesserie endet.",
+    btn_cancel          = "Abbrechen",
+    btn_new_series      = "Neue Serie",
+    btn_retry           = "Erneut verbuchen",
+    result_pending      = "Ergebnis noch nicht verbucht",
     result_series_win   = "Serie gewonnen!",
     result_series_loss  = "Serie verloren.",
-    result_series_bestof= "Best of 3",
+    result_series_bestof= "2 Siege zum Seriensieg; Remis verlängern die Serie",
     btn_next_round      = "Nächste Runde",
     lbl_your_turn   = "Du bist dran",
     lbl_opp_turn    = "Gegner ist dran",
@@ -140,7 +156,7 @@ ArcadiaNexus.RegisterLocale("TICTACTOE", "deDE", {
     tip_diff        = "Wie stark die KI im Spiele-Tab spielt. Gilt nicht für den Mehrspieler-Tab.",
     tip_diff_easy   = "Setzt fast zufällig. Gut zum Ausprobieren.",
     tip_diff_normal = "Nimmt offene Siege und blockt deine Drohungen.",
-    tip_diff_hard   = "Auf 3x3 unbesiegbar. Auf großen Feldern sucht sie Gabeln und Doppeldrohungen.",
+    tip_diff_hard   = "Perfekt auf klassischem 3x3: optimal ist Remis. Auf größeren Brettern spielt die KI strategisch und bleibt besiegbar.",
 
     tip_start_title = "Wer beginnt",
     tip_start       = "Wer den ersten Stein setzt. Auf kleinem Feld hat der Startende einen Vorteil.",
@@ -152,7 +168,7 @@ ArcadiaNexus.RegisterLocale("TICTACTOE", "deDE", {
 -- ============================================================
 -- ENGLISCH (enUS) – Fallback für alle anderen Clients
 -- ============================================================
-ArcadiaNexus.RegisterLocale("TICTACTOE", "enUS", {
+RegisterLocale("enUS", {
 
     -- Settings-Panel: Box-Titel
     box_symbols     = "Symbols",
@@ -230,7 +246,7 @@ ArcadiaNexus.RegisterLocale("TICTACTOE", "enUS", {
     guide_4 = "Default symbols are X and O. Faction crests are optional.",
     guide_5 = "The AI moves after you, unless you let it start. A full board without a line is a draw.",
     guide_6 = "Against other players: Multiplayer tab, two seats, classic 3x3.",
-    guide_7 = "On the Games tab, play is best of 3. Draws do not count as a win.",
+    guide_7 = "2 wins win the series. Draws award no win and can require more than three boards. Rules stay fixed throughout the series; leaving discards open series progress, while completed boards remain recorded. No saves.",
 
     -- Spielfeld-UI
     btn_start       = "Start Game",
@@ -245,9 +261,16 @@ ArcadiaNexus.RegisterLocale("TICTACTOE", "enUS", {
     win_4           = "4 in a row",
     win_5           = "5 in a row",
     hud_series          = "Series %d : %d",
+    hud_series_detail   = "%d:%d · Draws %d · Goal 2",
+    confirm_exit        = "End series?",
+    confirm_exit_body   = "The open board and series progress will be discarded. Completed boards remain recorded; the winning streak ends.",
+    btn_cancel          = "Cancel",
+    btn_new_series      = "New series",
+    btn_retry           = "Retry recording",
+    result_pending      = "Result not recorded yet",
     result_series_win   = "You won the series!",
     result_series_loss  = "You lost the series.",
-    result_series_bestof= "Best of 3",
+    result_series_bestof= "2 wins win the series; draws extend it",
     btn_next_round      = "Next round",
     lbl_your_turn   = "Your turn",
     lbl_opp_turn    = "Opponent's turn",
@@ -281,7 +304,7 @@ ArcadiaNexus.RegisterLocale("TICTACTOE", "enUS", {
     tip_diff        = "How strong the AI is on the Games tab. Multiplayer ignores this.",
     tip_diff_easy   = "Almost random moves. Good for learning.",
     tip_diff_normal = "Takes open wins and blocks your threats.",
-    tip_diff_hard   = "Unbeatable on 3x3. On larger boards it hunts forks and double threats.",
+    tip_diff_hard   = "Perfect on classic 3x3: a draw is optimal. On larger boards the strategic AI can be defeated.",
 
     tip_start_title = "Who starts",
     tip_start       = "Who places the first mark. Going first is an edge on a small board.",

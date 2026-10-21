@@ -7,7 +7,7 @@
     Öffentliche API:
       local tg = ArcadiaNexus.TimerGuard.New()
       tg:After(delay, fn)              -- one-shot
-      tg:EveryAfter(interval, fn)      -- recursive After chain (Match3-style)
+      tg:EveryAfter(interval, fn)      -- guarded recursive After chain
       tg:EveryTicker(interval, fn)     -- C_Timer.NewTicker (cancelled on :Cancel)
       tg:RunSequence(steps, onDone)    -- { { delay, fn }, ... } Schrittfolge
       tg:Cancel()                      -- invalidate callbacks + cancel tickers

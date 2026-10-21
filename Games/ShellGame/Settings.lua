@@ -36,11 +36,21 @@ function S:Get(key)
     return self.Defaults[key]
 end
 
-function S:Set(key, value) P:SetGameSetting(DB_KEY, key, value) end
+function S:Set(key,value)
+    if key=="difficulty" then
+        if ArcadiaNexus.SHG_Engine.gameState or not ArcadiaNexus.SHG_Logic:IsDifficulty(value) then return false end
+    end
+    P:SetGameSetting(DB_KEY,key,value)
+    local R=ArcadiaNexus.SHG_Renderer; if R and R.RefreshConfiguration then R:RefreshConfiguration() end
+    return true
+end
 
 function S:Reset()
     local db = GetDB()
-    for k in pairs(self.Defaults) do db[k] = nil end
+    for k in pairs(self.Defaults) do if k~="chips" and k~="bet" then db[k]=nil end end
+    local E=ArcadiaNexus.SHG_Engine
+    if E.gameState then db.difficulty=E.gameState.difficulty end
+    local R=ArcadiaNexus.SHG_Renderer; if R and R.RefreshConfiguration then R:RefreshConfiguration() end
 end
 
 function S:GetAll()
@@ -55,10 +65,6 @@ end
 
 function S:LoadChips()
     local chips = self:Get("chips")
-    if not chips or chips <= 0 then
-        self:SaveChips(100)
-        return 100
-    end
     return chips
 end
 
@@ -72,4 +78,34 @@ end
 
 function S:LoadBet()
     return self:Get("bet") or 25
+end
+
+S.MAX_SLOTS=3
+function S:EnsureMigration()
+    local db=GetDB(); db.slots=db.slots or {}
+    if db.capitalMigration==2 then return end
+    local L=ArcadiaNexus.SHG_Logic
+    if db.chips~=nil then
+        if type(db.chips)~="number" or not L:IsUnits(db.chips*2) then return end
+        local slot; for i=1,3 do if not db.slots[i] then slot=i; break end end
+        if not slot then return end
+        local diff=L:IsDifficulty(db.difficulty) and db.difficulty or self.Defaults.difficulty
+        local gs=L:NewGameState(diff,db.chips,0)
+        gs.legacyCapital=true
+        if gs.chips2<50 then gs.phase="GAMEOVER" end
+        gs.runId=ArcadiaNexus.LocalResults:NewRun("SHELLGAME"); gs.tableId=gs.runId
+        db.slots[slot]=gs
+    end
+    db.capitalMigration=2
+end
+function S:LoadSlot(slot) self:EnsureMigration(); return GetDB().slots[slot] end
+function S:SaveSlot(slot,save)
+    if not ArcadiaNexus.SHG_Logic:IsUnits(slot) or slot<1 or slot>3 then return false end
+    local db=GetDB(); db.slots=db.slots or {}; db.slots[slot]=save; return true
+end
+function S:DeleteSlot(slot)
+    local E=ArcadiaNexus.SHG_Engine
+    if E.gameState and E.activeSlot==slot then return false end
+    local db=GetDB(); if db.slots then db.slots[slot]=nil end
+    ArcadiaNexus.LocalResults:Prune(); return true
 end

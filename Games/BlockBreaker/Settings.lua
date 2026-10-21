@@ -32,16 +32,28 @@ local function GetDB()
 end
 
 function S:Get(key)
+    local E=ArcadiaNexus.BB_Engine
+    if key=="difficulty" and E and E.gameState and E.state~="IDLE" and E.state~="GAMEOVER" then return E.gameState.difficulty end
     local db = GetDB()
     if db[key] ~= nil then return db[key] end
     return self.Defaults[key]
 end
 
-function S:Set(key, value) P:SetGameSetting(DB_KEY, key, value) end
+function S:Set(key,value)
+    if key=="difficulty" then
+        local E=ArcadiaNexus.BB_Engine
+        if E and E.gameState and E.state~="IDLE" and E.state~="GAMEOVER" then return false end
+        if not ArcadiaNexus.BB_Logic.DIFFICULTY_DEFS[value] then return false end
+    end
+    P:SetGameSetting(DB_KEY,key,value); return true
+end
 
 function S:Reset()
     local db = GetDB()
-    for k in pairs(self.Defaults) do db[k] = nil end
+    local E=ArcadiaNexus.BB_Engine
+    local locked=E and E.gameState and E.state~="IDLE" and E.state~="GAMEOVER"
+    for k in pairs(self.Defaults) do if k~="difficulty" or not locked then db[k]=nil end end
+    local R=ArcadiaNexus.BB_Renderer; if R and R.RefreshConfig then R:RefreshConfig() end
 end
 
 function S:GetAll()
@@ -93,8 +105,8 @@ end
 function S:SaveSlot(slot, data)
     if not slot or slot < 1 or slot > S.MAX_SLOTS then return end
     local db = GetDB()
-    EnsureSaves(db)[slot] = data
-    if data then data.timestamp = data.timestamp or time() end
+    EnsureSaves(db)[slot] = ArcadiaNexus.BB_Logic:Copy(data)
+    if data then EnsureSaves(db)[slot].timestamp=time() end
 end
 
 function S:DeleteSlot(slot)
@@ -103,39 +115,49 @@ function S:DeleteSlot(slot)
     local db = GetDB()
     EnsureSaves(db)
     db.saves[slot] = nil
+    self:ClearLevelTimes(slot)
 end
 
-function S:ResetSlot(slot)
-    self:SaveSlot(slot, {
-        level = 1, score = 0, lives = 3,
-        diff = self:Get("difficulty") or "easy",
-    })
+function S:NoteLevelTime(slot, level, elapsedMs)
+    slot, level, elapsedMs = tonumber(slot), tonumber(level), tonumber(elapsedMs)
+    if not slot or slot < 1 or slot > S.MAX_SLOTS then return end
+    if not level or level < 1 or level > 100 or level % 1 ~= 0 then return end
+    if not elapsedMs or elapsedMs < 0 or elapsedMs ~= elapsedMs or elapsedMs >= math.huge or elapsedMs % 1 ~= 0 then return end
+    local db = GetDB()
+    db.levelBestMs = db.levelBestMs or {}
+    db.levelBestMs[slot] = db.levelBestMs[slot] or {}
+    local prev = db.levelBestMs[slot][level]
+    if not prev or elapsedMs < prev then db.levelBestMs[slot][level] = elapsedMs end
 end
 
-function S:SaveProgress(level, score, lives, diff, completed)
-    local slot = self:GetActiveSlot()
-    self:SaveSlot(slot, {
-        level     = level,
-        score     = score,
-        lives     = lives,
-        diff      = diff,
-        completed = completed and true or nil,
-    })
+function S:GetLevelTime(slot, level)
+    local all = GetDB().levelBestMs
+    local row = all and all[tonumber(slot)]
+    return row and row[tonumber(level)] or nil
 end
 
-function S:LoadProgress(slot)
-    local save = self:LoadSlot(slot or self:GetActiveSlot())
-    if not save then return nil end
-    local level = save.level or 1
-    if save.completed then level = level + 1 end
-    return {
-        level = level,
-        score = save.score or 0,
-        lives = save.lives or 3,
-        diff  = save.diff or "easy",
-    }
+function S:ClearLevelTimes(slot)
+    slot = tonumber(slot)
+    local all = GetDB().levelBestMs
+    if all and slot then all[slot] = nil end
 end
+
+function S:SaveProgress(state,slot,phase)
+    local save=ArcadiaNexus.BB_Logic:Snapshot(state,phase)
+    if save then self:SaveSlot(slot,save) end
+end
+function S:LoadProgress(slot) return ArcadiaNexus.BB_Logic:Copy(self:LoadSlot(slot)) end
+function S:SavePending(data)
+    local db=GetDB(); db.pendingResults=db.pendingResults or {}
+    db.pendingResults[data.runId]=ArcadiaNexus.BB_Logic:Copy(data)
+end
+function S:ClearPending(id) local db=GetDB(); if db.pendingResults then db.pendingResults[id]=nil end end
+function S:GetPending() return GetDB().pendingResults or {} end
 
 function S:ClearProgress(slot)
-    self:DeleteSlot(slot or self:GetActiveSlot())
+    slot = tonumber(slot) or self:GetActiveSlot()
+    if not slot or slot < 1 or slot > S.MAX_SLOTS then return end
+    local db = GetDB()
+    EnsureSaves(db)
+    db.saves[slot] = nil
 end

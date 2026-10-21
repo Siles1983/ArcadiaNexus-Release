@@ -80,6 +80,14 @@ ArcadiaNexus.RegisterAchievements({
         icon="Interface\\Icons\\INV_Misc_Note_01",
         condition = function(data, db)
             if data.gameId ~= "ARCADIAROWS" then return 0 end
+            -- Nur Stellung: Partie setzt recordPlayed=true, MATCH lässt es weg.
+            -- Sonst zählt ein späteres Partie-GAME_RESULT denselben Leaderboard-Zähler
+            -- und löst Stellungskenner fälschlich in der Partie aus.
+            if data.recordPlayed ~= false then return nil end
+            local S = ArcadiaNexus.AR_Settings
+            if S and S.GetPuzzlesSolved then
+                return S:GetPuzzlesSolved()
+            end
             local lb = db.leaderboard and db.leaderboard["ARCADIAROWS"]
             if not lb then
                 return (data.stats and data.stats.puzzleSolved) or 0

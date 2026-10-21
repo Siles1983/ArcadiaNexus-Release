@@ -55,13 +55,24 @@ function NexusTabs.SetFrameRefs(refs)
 end
 
 local function StopAllGames()
-    if not _G.ArcadiaNexus then return end
+    if not _G.ArcadiaNexus then return true end
     local GR = ArcadiaNexus.GameRegistry
     if GR and GR.StopActiveGame then
-        GR.StopActiveGame()
+        return GR.StopActiveGame()
     end
+    return true
 end
 NexusTabs.StopAllGames = StopAllGames
+
+local function LeaveActiveGame()
+    if not _G.ArcadiaNexus then return true end
+    local GR = ArcadiaNexus.GameRegistry
+    if GR and GR.LeaveActiveGame then
+        return GR.LeaveActiveGame()
+    end
+    return true
+end
+NexusTabs.LeaveActiveGame = LeaveActiveGame
 
 local function ResolveTabLabel(tab)
     if tab.labelKey then
@@ -93,15 +104,32 @@ function NexusTabs.SetActive(id)
 
     if NexusTabState.activeTab == id and not tab.alwaysActivate then return end
 
+    local Nav = ArcadiaNexus.UI and ArcadiaNexus.UI.Navigation
+    if Nav and not Nav._pass and Nav.Request({
+        kind = "tab",
+        target = id,
+        purpose = "leave",
+        run = function()
+            Nav._pass = true
+            NexusTabs.SetActive(id)
+            Nav._pass = false
+        end,
+    }) then
+        return
+    end
+
     local prevId = NexusTabState.activeTab
     local prevTab = TR.GetById(prevId)
+    local GS = ArcadiaNexus.GameSession
+    if GS and GS.ReleaseResumeFailure then GS:ReleaseResumeFailure() end
 
     if tab.onBeforeSelect then
         pcall(tab.onBeforeSelect, tab, prevTab)
     end
 
     if prevTab and prevTab.onDeselect and prevId ~= id then
-        pcall(prevTab.onDeselect, prevTab, tab)
+        local ran, proceed = pcall(prevTab.onDeselect, prevTab, tab)
+        if not ran or proceed == false then return end
     end
 
     NexusTabState.activeTab = id

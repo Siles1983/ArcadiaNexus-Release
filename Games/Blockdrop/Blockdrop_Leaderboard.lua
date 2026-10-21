@@ -13,8 +13,10 @@ ArcadiaNexus.RegisterLeaderboard({
     sections = {
         S.TopScores(3),
         S.StatsPlayed(),
-        S.StatBox("lb_lines_cleared", {
-            { fromStats = "linesCleared", labelKey = "lb_lines_cleared", valueColor = "gold" },
+        {type="top_scores",field="legacyHighscores",count=3,titleKey="lb_bld_legacy",hideIfEmpty=true},
+        S.StatBox("lb_bld_legacy_lines",{{field="legacyBestLines",labelKey="lb_bld_best_lines"}}),
+        S.StatBox("lb_bld_best_lines", {
+            { fromStats = "linesCleared", labelKey = "lb_bld_best_lines", valueColor = "gold" },
         }),
     },
 })

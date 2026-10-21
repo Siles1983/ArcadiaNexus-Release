@@ -9,7 +9,7 @@
 --    _cupAtSlot[slotIdx]   = becherIdx
 --    _slotOfCup[becherIdx] = slotIdx
 --
---  gs.ballCup ist ein becherIdx — bleibt korrekt durch Logic:SwapCups.
+--  gs.ballCup is a slot index; only Engine/Logic advance the permutation.
 -- ============================================================
 
 local ArcadiaNexus = _G.ArcadiaNexus
@@ -212,10 +212,16 @@ local CHIP_SLOTS = {
 local CHIP_SIZE = 48
 
 local _animLoop = ArcadiaNexus.GameLoop.Create("ArcadiaNexus_SHG_AnimLoop")
+local _viewGuard = ArcadiaNexus.TimerGuard.New()
 
 local function StartAnimLoop(tickFn)
     _animLoop:Stop()
-    _animLoop:Start(tickFn, { maxDt = 0.1 })
+    local E=ArcadiaNexus.SHG_Engine
+    local gs,sid=E.gameState,E._sessionId; local runId=gs and gs.runId
+    _animLoop:Start(function(dt)
+        if not E:_IsRound(sid,gs,runId) then _animLoop:Stop(); return end
+        tickFn(dt)
+    end, { maxDt = 0.1 })
 end
 
 local function StopAnimLoop()
@@ -247,7 +253,6 @@ R._slotPool        = nil
 R._chipStackBtns   = {}
 R._chipStackTexs   = {}
 R._chipBetFrames   = {}   -- Pool dynamischer Bet-Chip-Frames
-R._continueOverlay = nil
 
 -- ── Helpers ───────────────────────────────────────────────────
 local function L(key)
@@ -387,6 +392,15 @@ local function CreateSlotPool()
             local btn = CreateFrame("Button", nil, poolParent)
             btn:SetAlpha(0)
             btn:RegisterForClicks("LeftButtonUp")
+            btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square","ADD")
+            btn:SetScript("OnEnter",function(self)
+                if self._slotIdx and ArcadiaNexus.SHG_Engine.state=="GUESSING" then
+                    GameTooltip:SetOwner(self,"ANCHOR_TOP")
+                    GameTooltip:SetText(string.format(L("cup_slot"),self._slotIdx),1,1,1,1,true)
+                    GameTooltip:Show()
+                end
+            end)
+            btn:SetScript("OnLeave",function() GameTooltip:Hide() end)
             btn:SetScript("OnClick", function(self)
                 local E = ArcadiaNexus.SHG_Engine
                 if E and self._slotIdx then
@@ -431,7 +445,6 @@ function R:Init()
     self:_CreateStatusBar()
     self:_CreateChipSystem()
     self:_CreateControls()
-    self:_CreateContinueOverlay()
     self:EnterIdleState()
 end
 
@@ -452,9 +465,10 @@ function R:_CreateMainFrame()
     self._canvas = viewport.canvas
     if _G.ArcadiaNexus then _G.ArcadiaNexus._shgContainer = f end
     f:SetScript("OnHide", function()
+        R:CancelAnimations()
         ArcadiaNexus.GameSession:HandleRendererHide("SHELLGAME", ArcadiaNexus.SHG_Engine, function(E)
             if E.state ~= "IDLE" then
-                E:StopGame()
+                E:SaveAndPause()
             end
         end)
         R:EnterIdleState()
@@ -580,8 +594,7 @@ function R:_CreateChipSystem()
             if not gs then return end
 
             if button == "RightButton" then
-                R:_RemoveLastBetChipOfColor(slotRef.color)
-                E:RemoveBetOfColor(slotRef.color, slotRef.value)
+                if E:RemoveBetOfColor(slotRef.color, slotRef.value) then R:_RemoveLastBetChipOfColor(slotRef.color) end
                 return
             end
 
@@ -589,9 +602,10 @@ function R:_CreateChipSystem()
             if (gs.bet or 0) + slotRef.value > gs.chips then return end
             local atlas   = CHIP_ATLAS[slotRef.color]
             local variant = atlas.coords[math.random(1, #atlas.coords)]
-            R:_AddBetChip(slotRef.color, variant, slotRef.value)
-            SetRandomChipVariant(texRef, slotRef.color)
-            E:AddBet(slotRef.value)
+            if E:AddBet(slotRef.value) then
+                R:_AddBetChip(slotRef.color, variant, slotRef.value)
+                SetRandomChipVariant(texRef, slotRef.color)
+            end
         end)
         stackFrame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
@@ -624,10 +638,7 @@ function R:_CreateChipSystem()
             local E = ArcadiaNexus.SHG_Engine
             if not E or E.state ~= "BETTING" then return end
             local gs = E.gameState; if not gs then return end
-            R:_ClearBetChips()
-            gs.bet          = 0
-            gs.betConfirmed = false
-            R:UpdateBetDisplay(gs)
+            if E:ResetBet() then R:_ClearBetChips() end
         end)
         resetBtn:RegisterForClicks("LeftButtonUp")
         resetBtn:Hide()
@@ -689,6 +700,21 @@ function R:_ClearBetChips()
     self._chipBetFrames = {}
 end
 
+-- Reconstruct only when loading a saved selection. Live additions retain their
+-- existing frames and positions; huge saved stakes use a bounded visual stack.
+function R:_RestoreBetChips(gs)
+    self:_ClearBetChips()
+    local remaining=gs.bet2/2
+    for i=#CHIP_SLOTS,1,-1 do
+        local chip=CHIP_SLOTS[i]
+        local count=math.floor(remaining/chip.value)
+        for _=1,math.min(count,20-#self._chipBetFrames) do
+            self:_AddBetChip(chip.color,CHIP_ATLAS[chip.color].coords[1],chip.value)
+        end
+        remaining=remaining-count*chip.value
+    end
+end
+
 -- ── Controls (narrow) ─────────────────────────────────────────
 function R:_CreateControls()
     local UI = ArcadiaNexus.UI; if not UI then return end
@@ -707,11 +733,12 @@ function R:_CreateControls()
         { key="normal", label=L("diff_normal") },
         { key="hard",   label=L("diff_hard")   },
     }
-    UI.CreateSimpleDropdown(ddAnchor, 0, 0, CFG.dd_w, "",
+    self._difficultyDD=UI.CreateSimpleDropdown(ddAnchor, 0, 0, CFG.dd_w, "",
         diffOpts,
         function()
             local s = ArcadiaNexus.SHG_Settings
-            return s and s:Get("difficulty") or "easy"
+            local E=ArcadiaNexus.SHG_Engine
+            return E.gameState and E.gameState.difficulty or s and s:Get("difficulty") or "easy"
         end,
         function(key)
             local E = ArcadiaNexus.SHG_Engine
@@ -725,9 +752,9 @@ function R:_CreateControls()
         local E = ArcadiaNexus.SHG_Engine
         if not E then return end
         if E.state == "IDLE" then
-            E:StartGame()
+            if R._slotMenu and R._slotMenu:IsShown() then R:EnterIdleState() else R:ShowSlots() end
         else
-            E:StopGame()
+            R:RequestExit()
         end
     end)
     self._toggleBtn = toggleBtn
@@ -754,6 +781,57 @@ function R:_UpdateControlButtons(state)
             self._roundBtn:Hide()
         end
     end
+end
+
+function R:CancelAnimations() StopAnimLoop(); _viewGuard:Cancel() end
+function R:RefreshConfiguration()
+    if self._difficultyDD then
+        self._difficultyDD:SetEnabled(not ArcadiaNexus.SHG_Engine.gameState)
+        self._difficultyDD:RefreshDisplay()
+    end
+end
+function R:RequestExit()
+    local E,UI=ArcadiaNexus.SHG_Engine,ArcadiaNexus.UI
+    local gs,sid=E.gameState,E._sessionId
+    if not gs then self:EnterIdleState(); return end
+    if gs.phase~="REVEAL" and gs.phase~="SHUFFLE" and gs.phase~="GUESSING" then E:SaveAndPause(); return end
+    local runId=gs.runId
+    local GR=ArcadiaNexus.GameRegistry
+    if GR and GR._confirm and GR._confirm.gameId=="SHELLGAME" and GR._confirm.sessionId==sid then
+        GR._confirm.parent=self._canvas
+    end
+    local owner={gameId="SHELLGAME",sessionId=sid,identity=runId}
+    UI.ShowChoicePopup({parent=self._canvas,owner=owner,title=L("confirm_exit"),body=L("confirm_exit_body"),buttons={
+        {label=L("btn_exit"),onClick=function()
+            local current=UI.ChoicePopupOwner and UI.ChoicePopupOwner(R._canvas)
+            if current and (current.sessionId~=sid or current.identity~=runId) then return end
+            UI.HideChoicePopup(R._canvas)
+            if E:_IsRound(sid,gs,runId) and GR and GR.AcceptClose then GR.AcceptClose("SHELLGAME",sid,runId) end
+        end},
+        {label=L("btn_cancel"),onClick=function()
+            local current=UI.ChoicePopupOwner and UI.ChoicePopupOwner(R._canvas)
+            if current and (current.sessionId~=sid or current.identity~=runId) then return end
+            UI.HideChoicePopup(R._canvas)
+            if GR and GR.DeclineClose then GR.DeclineClose("SHELLGAME",sid) end
+        end},
+    }})
+end
+function R:ShowSlots()
+    self:EnterIdleState(); if self._logoTex then self._logoTex:Hide() end
+    local A,S=ArcadiaNexus,ArcadiaNexus.SHG_Settings
+    self._slotMenu=A.UI.CreateSaveSlotMenu({parent=self._canvas,maxSlots=3,L=A.GetLocaleTable("SHELLGAME"),
+        loadSlot=function(slot) return S:LoadSlot(slot) end,
+        deleteSlot=function(slot) return S:DeleteSlot(slot) end,
+        canContinue=function(save) return A.SHG_Engine:CanContinueSave(save) end,
+        formatInfo=function(save)
+            if not A.SHG_Logic:ValidateSave(save) then return L("slot_invalid") end
+            return L("diff_"..save.difficulty).." · "..A.Format.HalfUnits(save.chips2).." · "..L("phase_"..save.phase)
+        end,
+        isPaused=function() return true end,
+        onNewGame=function(slot) return A.SHG_Engine:StartGame({slot=slot,overwrite=true}) end,
+        onContinue=function(slot) return A.SHG_Engine:StartGame({slot=slot,mode="continue"}) end,
+        onCancel=function() R:EnterIdleState() end,
+    }); self._slotMenu:Show(); self._toggleBtn:SetLabel(L("btn_exit"))
 end
 
 -- ── Becher aufbauen ───────────────────────────────────────────
@@ -824,44 +902,10 @@ function R:_ResetCupPositions()
 end
 
 -- ── Continue Overlay ──────────────────────────────────────────
-function R:_CreateContinueOverlay()
-    local f = self._canvas; if not f then return end
-    local UI = ArcadiaNexus.UI
-    local ov = CreateFrame("Frame", nil, f, "BackdropTemplate")
-    ov:SetSize(CFG.ov_w, CFG.ov_h)
-    ov:SetPoint("CENTER", f, "CENTER", 0, 20)
-    ov:SetFrameLevel(110)
-    ov:SetBackdrop({ bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile="Interface\\Tooltips\\UI-Tooltip-Border", edgeSize=16,
-        insets={left=4,right=4,top=4,bottom=4} })
-    ov:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
-    ov:SetBackdropBorderColor(0.6, 0.55, 0.3, 1.0)
-    local titleFS = ov:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    titleFS:SetPoint("TOP", ov, "TOP", 0, CFG.ov_title_y)
-    titleFS:SetTextColor(0.95, 0.90, 0.50)
-    ov._titleFS = titleFS
-    local capitalFS = ov:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    capitalFS:SetPoint("TOP", titleFS, "BOTTOM", 0, -8)
-    capitalFS:SetTextColor(0.75, 0.70, 0.45)
-    ov._capitalFS = capitalFS
-    if UI then
-        local btnCont = UI.CreateArcadiaButton(ov, L("btn_continue"), CFG.ov_btn_w, CFG.ov_btn_h)
-        btnCont:SetPoint("BOTTOMLEFT", ov, "CENTER", -(CFG.ov_btn_w + 6), CFG.ov_btn_gap)
-        btnCont:SetScript("OnClick", function()
-            local E = ArcadiaNexus.SHG_Engine; if E then E:ContinuePlaying() end
-        end)
-        local btnStop = UI.CreateArcadiaButton(ov, L("btn_stop"), CFG.ov_btn_w, CFG.ov_btn_h)
-        btnStop:SetPoint("BOTTOMLEFT", ov, "CENTER", 6, CFG.ov_btn_gap)
-        btnStop:SetScript("OnClick", function()
-            local E = ArcadiaNexus.SHG_Engine; if E then E:EndGame() end
-        end)
-    end
-    ov:Hide()
-    self._continueOverlay = ov
-end
-
 -- ── Engine-Callbacks ──────────────────────────────────────────
 function R:OnGameStarted(gs)
+    self:CancelAnimations()
+    if self._slotMenu then self._slotMenu:Hide() end
     if self._logoTex then self._logoTex:Hide() end
     self:_ClearBetChips()
     if self._capitalBox then self._capitalBox:Show() end
@@ -875,6 +919,7 @@ function R:OnGameStarted(gs)
     self:UpdateBetDisplay(gs)
     self:UpdateCapitalDisplay(gs)
     self:_UpdateControlButtons("BETTING")
+    self:RefreshConfiguration()
 end
 
 function R:OnGameStopped()
@@ -886,7 +931,6 @@ function R:OnNewRound(gs)
     if self._fieldFrame and ArcadiaNexus.UI then
         ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     end
-    if self._continueOverlay then self._continueOverlay:Hide() end
 
     local count = gs.cups or 3
     if count ~= #self._cups then
@@ -917,6 +961,11 @@ function R:OnStateChanged(newState)
         self._stateLbl:SetText(stateKeys[newState] and L(stateKeys[newState]) or "")
     end
     self:_UpdateControlButtons(newState)
+    self:RefreshConfiguration()
+    local gs=ArcadiaNexus.SHG_Engine.gameState
+    if self._stateLbl and gs and newState=="BETTING" then
+        self._stateLbl:SetText(L("state_betting").." · "..string.format(L("profit_factor"),ArcadiaNexus.SHG_Logic.DIFFICULTY[gs.difficulty].payout))
+    end
 
     -- Chip-Stapel: nur im BETTING-State klickbar (wie Blackjack)
     local isBet = (newState == "BETTING")
@@ -938,21 +987,19 @@ function R:OnStateChanged(newState)
 
     -- Bet zurücksetzen wenn neuer Einsatz-Zustand
     if newState == "BETTING" then
-        self:_ClearBetChips()
+        self:_RestoreBetChips(gs)
     end
 
     -- Slot-Buttons nur im GUESSING-State aktiv
     for _, btn in ipairs(self._slotBtns or {}) do
         btn:EnableMouse(newState == "GUESSING")
+        btn:SetAlpha(newState=="GUESSING" and 1 or 0)
     end
 
     if newState ~= "RESULT" and newState ~= "GAMEOVER" then
         if self._fieldFrame and ArcadiaNexus.UI then
             ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
         end
-    end
-    if newState ~= "CONTINUE_PROMPT" then
-        if self._continueOverlay then self._continueOverlay:Hide() end
     end
 end
 
@@ -1022,59 +1069,12 @@ function R:HideReveal()
 end
 
 -- ── Shuffle-Sequenz ───────────────────────────────────────────
-function R:RunShuffleSequence(sequence, onDone)
-    if not sequence or #sequence == 0 then
-        if onDone then onDone() end
-        return
+function R:AnimateShuffleStep(step,onDone)
+    if step.fake then
+        self:_AnimateFakeLift(self._cupAtSlot[step.a],step.duration,onDone)
+    else
+        self:_AnimateSwap(self._cupAtSlot[step.a],self._cupAtSlot[step.b],step.a,step.b,step.duration,onDone)
     end
-
-    local Logic = ArcadiaNexus.SHG_Logic
-    local E     = ArcadiaNexus.SHG_Engine
-    local gs    = E and E.gameState
-
-    E._timerGuard:Cancel()
-    local gen = E._timerGuard:Generation()
-    local idx = 1
-
-    local function nextStep()
-        if E._timerGuard:Generation() ~= gen then return end
-        if idx > #sequence then
-            if onDone then onDone() end
-            return
-        end
-        local step = sequence[idx]
-        idx = idx + 1
-
-        if step.fake then
-            local becherIdx = self._cupAtSlot[step.a]
-            if becherIdx then
-                self:_AnimateFakeLift(becherIdx, step.duration, function()
-                    if E._timerGuard:Generation() ~= gen then return end
-                    E._timerGuard:After(step.pause, function()
-                        if E._timerGuard:Generation() ~= gen then return end
-                        nextStep()
-                    end)
-                end)
-            else nextStep() end
-        else
-            local slotA   = step.a
-            local slotB   = step.b
-            local becherA = self._cupAtSlot[slotA]
-            local becherB = self._cupAtSlot[slotB]
-            if becherA and becherB then
-                self:_AnimateSwap(becherA, becherB, slotA, slotB, step.duration, function()
-                    if E._timerGuard:Generation() ~= gen then return end
-                    -- gs.ballCup ist Slot-Index → direkt mit Slot-Indizes tauschen
-                    if gs then Logic:SwapCups(gs, slotA, slotB) end
-                    E._timerGuard:After(step.pause, function()
-                        if E._timerGuard:Generation() ~= gen then return end
-                        nextStep()
-                    end)
-                end)
-            else nextStep() end
-        end
-    end
-    nextStep()
 end
 
 -- ── Swap-Animation ────────────────────────────────────────────
@@ -1184,104 +1184,72 @@ function R:ShowResult(gs, won, payout, bankrupt)
 
     -- Gewählten Cup anheben; wenn falsch: danach auch den richtigen
     self:_LiftRevealCups(guessSlot, ballSlot, function()
-        if not self._fieldFrame then return end
-        local E = ArcadiaNexus.SHG_Engine
-        if bankrupt then
-            if E and E.gameState and E._GameOver then E:_GameOver() end
-            return
-        end
-        local UI     = ArcadiaNexus.UI
-        local loc    = ArcadiaNexus.GetLocaleTable("SHELLGAME")
-        local parent = self._fieldFrame
-
-        local title, titleColor, goldVal
-        if won then
-            title      = FormatStr(L("result_win"), payout)
-            titleColor = {0.3, 0.9, 0.3}
-            goldVal    = payout
-        else
-            title      = FormatStr(L("result_lose"), gs.bet)
-            titleColor = {0.9, 0.3, 0.3}
-            goldVal    = -gs.bet
-        end
-
-        UI.ShowResultDialog({
-            parent     = parent,
-            title      = title,
-            titleColor = titleColor,
-            subtitle   = L("lbl_capital") .. ": " .. gs.chips .. " Gold",
-            gold       = goldVal,
-            goldLabel  = "Gold",
-            gameId     = "SHELLGAME",
-            difficulty = gs.difficulty,
-            hideHighscore = true,
-            result     = won and "WIN" or "LOSS",
-            buttons    = UI.ResultDialogButtons.Round(loc,
-                function()
-                    UI.HideResultDialog(parent)
-                    local E = ArcadiaNexus.SHG_Engine
-                    if not E or not E.gameState then return end
-                    E._timerGuard:Cancel()
-                    if E.gameState.chips >= 25 then
-                        E.gameState.bet = 0
-                        E.gameState.betConfirmed = false
-                        E:_SetState("BETTING")
-                        R:OnNewRound(E.gameState)
-                    end
-                end,
-                function()
-                    UI.HideResultDialog(parent)
-                    local E = ArcadiaNexus.SHG_Engine
-                    if E then
-                        E._timerGuard:Cancel()
-                        E:StopGame()
-                    end
-                end),
-        })
+        self:_ShowRoundDialog(gs)
     end)
     self:UpdateCapitalDisplay(gs)
 end
 
-function R:ShowContinuePrompt(gs)
-    if not self._continueOverlay then return end
-    if self._fieldFrame and ArcadiaNexus.UI then
-        ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
-    end
-    self._continueOverlay._titleFS:SetText(L("prompt_title"))
-    self._continueOverlay._capitalFS:SetText(FormatStr(L("prompt_capital"), gs.chips))
-    self._continueOverlay:Show()
+function R:ShowGameOver(gs)
+    self:_ShowRoundDialog(gs)
 end
 
-function R:ShowGameOver(gs)
-    if not self._fieldFrame then return end
-    local UI     = ArcadiaNexus.UI
-    local loc    = ArcadiaNexus.GetLocaleTable("SHELLGAME")
-    local parent = self._fieldFrame
-
-    UI.ShowResultDialog({
-        parent     = parent,
-        title      = L("state_gameover"),
-        titleColor = {0.9, 0.2, 0.2},
-        subtitle   = L("lbl_capital") .. ": 0 Gold",
-        gameId     = "SHELLGAME",
-        difficulty = gs and gs.difficulty,
-        hideHighscore = true,
-        result     = "LOSS",
-        buttons    = UI.ResultDialogButtons.Bankrupt(loc,
-            function()
-                UI.HideResultDialog(parent)
-                local E = ArcadiaNexus.SHG_Engine
-                local S = ArcadiaNexus.SHG_Settings
-                if E and S then
-                    E:StartGame({ difficulty = (gs and gs.difficulty) or S:Get("difficulty") })
-                end
-            end,
-            function()
-                UI.HideResultDialog(parent)
-                local E = ArcadiaNexus.SHG_Engine
-                if E then E:StopGame() end
-            end),
-    })
+function R:_ShowRoundDialog(gs)
+    local A=ArcadiaNexus; local E,UI=A.SHG_Engine,A.UI
+    if not self._fieldFrame or E.gameState~=gs or E.state~="RESULT" and E.state~="GAMEOVER" then return end
+    local parent,loc=self._fieldFrame,A.GetLocaleTable("SHELLGAME")
+    local sid,runId=E._sessionId,gs.runId
+    local function owned(fn) return function()
+        if not E:_IsRound(sid,gs,runId) then return end
+        UI.HideResultDialog(parent); fn()
+    end end
+    local paused=gs.reason=="ABORT"
+    local bankrupt=gs.phase=="GAMEOVER"
+    local function nextRound() E:ContinuePlaying() end
+    local function newTable() E:SaveAndPause(); R:ShowSlots() end
+    local exit=owned(function() E:SaveAndPause() end)
+    local buttons=bankrupt and UI.ResultDialogButtons.Bankrupt(loc,owned(newTable),exit)
+        or UI.ResultDialogButtons.Round(loc,owned(nextRound),exit)
+    local data=gs.resultData or {}
+    UI.ShowResultDialog({parent=parent,title=bankrupt and L("state_gameover") or paused and L("result_aborted")
+            or FormatStr(L(gs.net2>0 and "result_win" or "result_lose"),A.Format.HalfUnits(math.abs(gs.net2 or 0))),
+        titleColor=gs.net2 and gs.net2>0 and {0.3,0.9,0.3} or {0.9,0.3,0.3},
+        subtitle=L("lbl_capital")..": "..A.Format.HalfUnits(gs.chips2),
+        lines=gs.roundNo>0 and {
+            L("lbl_bet")..": "..A.Format.HalfUnits(gs.bet2),
+            L("lbl_return")..": "..A.Format.HalfUnits(gs.return2 or 0),
+            L("lbl_net")..": "..A.Format.HalfUnits(gs.net2 or 0),
+            gs.reason=="GUESS" and string.format(L("chosen_correct"),gs.guess,gs.ballCup) or L("result_aborted"),
+        } or nil,
+        gameId="SHELLGAME",difficulty=gs.difficulty,score=0,xp=data.awardedXP or 0,gold=data.awardedGold or 0,
+        hideHighscore=true,result=data.result or "LOSS",buttons=buttons})
+end
+function R:ShowSavedResult(gs)
+    self:_RestorePermutation(gs)
+    if gs.reason=="GUESS" then
+        for slot,index in ipairs(self._cupAtSlot) do
+            local cup=self._cups[index]
+            cup.ballFrame:SetShown(slot==gs.ballCup)
+            if slot==gs.guess or slot==gs.ballCup then
+                cup.frame:ClearAllPoints(); cup.frame:SetPoint("CENTER",self._fieldFrame,"CENTER",self._slotX[slot],CFG.cup_y+CFG.cup_reveal_lift)
+            end
+        end
+    end
+    self:_ShowRoundDialog(gs); self:UpdateCapitalDisplay(gs)
+end
+function R:_RestorePermutation(gs)
+    if not gs.cupAtSlot or #gs.cupAtSlot~=gs.cups then return end
+    for slot,index in ipairs(gs.cupAtSlot) do
+        self._cupAtSlot[slot]=index; self._slotOfCup[index]=slot
+        MoveCupToX(self._cups[index],self._fieldFrame,self._slotX[slot])
+    end
+end
+function R:ShowResultPending(gs)
+    local E,UI=ArcadiaNexus.SHG_Engine,ArcadiaNexus.UI
+    local sid,runId=E._sessionId,gs.runId
+    UI.ShowResultDialog({parent=self._fieldFrame,title=L("result_pending"),hideHighscore=true,buttons={
+        {label=L("btn_retry"),onClick=function() if E:_IsRound(sid,gs,runId) then E:RetryResult() end end},
+        {label=L("btn_exit"),onClick=function() if E:_IsRound(sid,gs,runId) then E:SaveAndPause() end end},
+    }})
 end
 
 -- Hebt einen einzelnen Slot-Becher animiert an (Ease-in).
@@ -1316,22 +1284,27 @@ end
 -- Dann 0.3s Pause, Overlay.
 function R:_LiftRevealCups(guessSlot, ballSlot, onDone)
     local E = ArcadiaNexus.SHG_Engine
+    local gs,sid=E.gameState,E._sessionId; local runId=gs and gs.runId
     local correct = (guessSlot == ballSlot)
 
     -- Schritt 1: gewählten Cup anheben
     self:_LiftOneCup(guessSlot, function()
+        if not E:_IsRound(sid,gs,runId) then return end
         if not E or not E._timerGuard then
             if onDone then onDone() end
             return
         end
         if correct then
-            E._timerGuard:After(0.3, function()
+            _viewGuard:After(0.3, function()
+                if not E:_IsRound(sid,gs,runId) then return end
                 if onDone then onDone() end
             end)
         else
-            E._timerGuard:After(0.5, function()
+            _viewGuard:After(0.5, function()
+                if not E:_IsRound(sid,gs,runId) then return end
                 self:_LiftOneCup(ballSlot, function()
-                    E._timerGuard:After(0.3, function()
+                    _viewGuard:After(0.3, function()
+                        if not E:_IsRound(sid,gs,runId) then return end
                         if onDone then onDone() end
                     end)
                 end)
@@ -1345,7 +1318,7 @@ function R:UpdateBetDisplay(gs)
     if not self._betDisplay or not gs then return end
     local bet = gs.bet or 0
     if bet > 0 then
-        self._betDisplay:SetText(L("lbl_bet") .. ": " .. bet .. "g")
+        self._betDisplay:SetText(L("lbl_bet") .. ": " .. ArcadiaNexus.Format.HalfUnits(gs.bet2))
     else
         self._betDisplay:SetText(L("lbl_bet") .. ": --")
     end
@@ -1353,7 +1326,7 @@ end
 
 function R:UpdateCapitalDisplay(gs)
     if not gs or not self._capitalLbl then return end
-    self._capitalLbl:SetText(L("lbl_capital") .. ": " .. gs.chips .. "g")
+    self._capitalLbl:SetText(L("lbl_capital") .. ": " .. ArcadiaNexus.Format.HalfUnits(gs.chips2))
 end
 
 function R:UpdateCupCount(gs)
@@ -1381,13 +1354,14 @@ end
 
 -- ── IDLE ──────────────────────────────────────────────────────
 function R:EnterIdleState()
-    StopAnimLoop()
+    self:CancelAnimations()
+    if self._slotMenu then self._slotMenu:Hide() end
+    if ArcadiaNexus.UI.HideChoicePopup then ArcadiaNexus.UI.HideChoicePopup(self._canvas) end
 
     self:_ClearBetChips()
     if self._fieldFrame and ArcadiaNexus.UI then
         ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     end
-    if self._continueOverlay then self._continueOverlay:Hide() end
     if self._capitalBox      then self._capitalBox:Hide()      end
     if self._betDisplay      then self._betDisplay:SetText("") end
     if self._stateLbl        then self._stateLbl:SetText(L("state_idle")) end
@@ -1412,4 +1386,5 @@ function R:EnterIdleState()
 
     self:_UpdateControlButtons("IDLE")
     if self._logoTex then self._logoTex:Show() end
+    self:RefreshConfiguration()
 end

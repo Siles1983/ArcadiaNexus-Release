@@ -94,13 +94,27 @@ function SB.Build(parent, config)
     local GS = ArcadiaNexus.GameSettings
     if not GS or not GS.Build then return end
 
+    local function LocText(key)
+        local v = L[key]
+        if type(v) ~= "string" or v == "" or v == "[" .. key .. "]" then return nil end
+        return v
+    end
     local soundItems = {
         { key = "soundOnWin",  label = L.sound_win  },
         { key = "soundOnLoss", label = L.sound_loss },
         { key = "soundOnDraw", label = L.sound_draw },
     }
-    if L.sound_place then
-        table.insert(soundItems, 1, { key = "soundOnPlace", label = L.sound_place })
+    local pop = LocText("sound_pop")
+    if pop then
+        table.insert(soundItems, 1, { key = "soundOnPop", label = pop })
+    end
+    local drop = LocText("sound_drop")
+    if drop then
+        table.insert(soundItems, 1, { key = "soundOnDrop", label = drop })
+    end
+    local place = LocText("sound_place")
+    if place then
+        table.insert(soundItems, 1, { key = "soundOnPlace", label = place })
     end
 
     GS.Build(parent, {
@@ -109,6 +123,7 @@ function SB.Build(parent, config)
         layout   = "standard",
         sound = {
             masterLabel = L.sound_enabled,
+            footer      = L.sound_hint,
             rowSpacing  = 26,
             items = soundItems,
         },

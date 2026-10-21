@@ -88,6 +88,7 @@ function UI.ShowArcadeResult(parent, opts)
 
     local function wrap(fn)
         return function()
+            if opts.isCurrent and not opts.isCurrent() then return end
             UI.HideResultDialog(parent)
             if fn then fn() end
         end
@@ -118,6 +119,7 @@ function UI.ShowArcadeResult(parent, opts)
         titleColor   = titleColor,
         subtitle     = opts.subtitle,
         score        = opts.score,
+        xp           = opts.xp,
         scoreLabel   = opts.scoreLabel,
         highscore    = opts.highscore,
         newHighscore = opts.newHighscore,
@@ -128,6 +130,7 @@ function UI.ShowArcadeResult(parent, opts)
         result       = opts.result,
         hideHighscore = opts.hideHighscore,
         lines        = lines,
+        symbolRow    = opts.symbolRow,
         buttons      = buttons,
         mode         = opts.mode,
         fadeIn       = opts.fadeIn,

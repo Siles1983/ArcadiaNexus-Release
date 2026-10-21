@@ -6,6 +6,8 @@
 local ArcadiaNexus = _G.ArcadiaNexus
 ArcadiaNexus.LOA_Dice = {}
 local D = ArcadiaNexus.LOA_Dice
+local probeGuard=ArcadiaNexus.TimerGuard.New()
+local rollGuard=ArcadiaNexus.TimerGuard.New()
 
 D.MODEL_FILE_ID = 1266984
 D.NATIVE_MODEL_ID = 1266984
@@ -269,6 +271,10 @@ end
 
 function D:ProbeModel(scene, callback)
     if not scene or not callback then return end
+    probeGuard:Cancel()
+    local E=ArcadiaNexus.LOA_Engine
+    local sid=E and E._sessionId
+    local function valid() return not sid or ArcadiaNexus.GameSession:IsSession(E,sid) end
 
     local actor = self:EnsureScene(scene)
     if not actor then
@@ -281,6 +287,7 @@ function D:ProbeModel(scene, callback)
     local idx = 1
 
     local function tryNext()
+        if not valid() then return end
         if idx > #candidates then
             callback(false, actor, nil)
             return
@@ -296,6 +303,7 @@ function D:ProbeModel(scene, callback)
 
         local attempts = 0
         local function waitReady()
+            if not valid() then return end
             attempts = attempts + 1
             if self:IsModelReady(actor, fileId) then
                 self._modelVerified = true
@@ -304,10 +312,10 @@ function D:ProbeModel(scene, callback)
             elseif attempts >= self.MODEL_RETRIES then
                 tryNext()
             else
-                C_Timer.After(self.MODEL_PROBE, waitReady)
+                probeGuard:After(self.MODEL_PROBE, waitReady)
             end
         end
-        C_Timer.After(self.MODEL_PROBE, waitReady)
+        probeGuard:After(self.MODEL_PROBE, waitReady)
     end
 
     tryNext()
@@ -354,6 +362,7 @@ function D:Warmup(scene, onReady)
 end
 
 function D:CancelRoll()
+    probeGuard:Cancel(); rollGuard:Cancel(); self._warmingUp=false
     self._rollTicker = nil
     self._spinTicker = nil
     self._iconTicker = nil
@@ -411,7 +420,11 @@ function D:AnimateRoll(renderer, theme, finalVal, callback)
     local scene    = renderer._diceScene
     local icon     = renderer._diceIcon
     local resultFS = renderer._diceResultFS
-    local running  = function() return renderer._running end
+    local E=ArcadiaNexus.LOA_Engine
+    local sid=E and E._sessionId
+    local game=renderer._game
+    local running=function() return renderer._running and renderer._game==game
+        and sid and ArcadiaNexus.GameSession:IsSession(E,sid) end
     local token    = {}
     self._rollTicker = token
 
@@ -441,7 +454,7 @@ function D:AnimateRoll(renderer, theme, finalVal, callback)
         self:RunIconShuffle(icon, theme, token, running)
     end
 
-    C_Timer.After(self.ROLL_DURATION, function()
+    rollGuard:After(self.ROLL_DURATION, function()
         if self._rollTicker ~= token or not running() then return end
         self._rollTicker = nil
         self._spinTicker = nil

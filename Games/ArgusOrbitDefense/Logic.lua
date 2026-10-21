@@ -165,10 +165,29 @@ local function RandBetween(a, b)
     return a + math.random() * (b - a)
 end
 
-local function CircleHit(a, b)
-    local dx = a.x - b.x
-    local dy = a.y - b.y
-    return (dx*dx + dy*dy) < (a.radius + b.radius)^2
+-- Swept paths are local to one fixed simulation step, never persisted.
+local motion = {}
+local function CircleHit(a,b)
+    local pa,pb=motion[a],motion[b]; local radius=a.radius+b.radius
+    if not pa and not pb then return (a.x-b.x)^2+(a.y-b.y)^2<=radius^2 end
+    local aa=pa or {{t0=0,t1=1,x=a.x,y=a.y,dx=0,dy=0,minx=a.x,maxx=a.x,miny=a.y,maxy=a.y}}
+    local bb=pb or {{t0=0,t1=1,x=b.x,y=b.y,dx=0,dy=0,minx=b.x,maxx=b.x,miny=b.y,maxy=b.y}}
+    local i,j=1,1
+    while i<=#aa and j<=#bb do
+        local p,q=aa[i],bb[j]
+        local lo,hi=math.max(p.t0,q.t0),math.min(p.t1,q.t1)
+        if hi>=lo and p.minx<=q.maxx+radius and q.minx<=p.maxx+radius
+            and p.miny<=q.maxy+radius and q.miny<=p.maxy+radius then
+            local x=p.x+p.dx*(lo-p.t0)-q.x-q.dx*(lo-q.t0)
+            local y=p.y+p.dy*(lo-p.t0)-q.y-q.dy*(lo-q.t0)
+            local dx,dy=(p.dx-q.dx)*(hi-lo),(p.dy-q.dy)*(hi-lo)
+            local len=dx*dx+dy*dy
+            local t=len>0 and math.max(0,math.min(1,-(x*dx+y*dy)/len)) or 0
+            if (x+dx*t)^2+(y+dy*t)^2<=radius^2 then return true end
+        end
+        if p.t1<=q.t1 then i=i+1 else j=j+1 end
+    end
+    return false
 end
 
 -- WRAP_MARGIN: Pixel-Überlauf über den Rand bevor der Wrap auslöst.
@@ -178,11 +197,35 @@ end
 local WRAP_MARGIN = 28
 
 local function Wrap(obj, W, H)
-    local r = (obj.wrapRadius or obj.radius or 0) - WRAP_MARGIN
-    if obj.x - r > W then obj.x = obj.x - W - r * 2 end
-    if obj.x + r < 0 then obj.x = obj.x + W + r * 2 end
-    if obj.y - r > H then obj.y = obj.y - H - r * 2 end
-    if obj.y + r < 0 then obj.y = obj.y + H + r * 2 end
+    local r=(obj.wrapRadius or obj.radius or 0)-WRAP_MARGIN
+    obj.x=(obj.x+r)%(W+2*r)-r
+    obj.y=(obj.y+r)%(H+2*r)-r
+end
+local function Move(obj,dt,W,H)
+    local r=(obj.wrapRadius or obj.radius or 0)-WRAP_MARGIN
+    local low=-r; local xp,yp=W+2*r,H+2*r
+    local x,y,dx,dy=obj.x,obj.y,obj.vx*dt,obj.vy*dt
+    local cuts={0,1}
+    local function crossings(base,delta,period)
+        if delta==0 then return end
+        local lo,hi=math.min(base,base+delta),math.max(base,base+delta)
+        for n=math.floor((lo-low)/period)+1,math.floor((hi-low)/period) do
+            local t=(low+n*period-base)/delta
+            if t>0 and t<1 then cuts[#cuts+1]=t end
+        end
+    end
+    crossings(x,dx,xp); crossings(y,dy,yp); table.sort(cuts)
+    local parts={}
+    for i=1,#cuts-1 do
+        local t0,t1=cuts[i],cuts[i+1]; local mid=(t0+t1)/2
+        local sx=x+dx*t0-math.floor((x+dx*mid-low)/xp)*xp
+        local sy=y+dy*t0-math.floor((y+dy*mid-low)/yp)*yp
+        local ex,ey=sx+dx*(t1-t0),sy+dy*(t1-t0)
+        parts[#parts+1]={t0=t0,t1=t1,x=sx,y=sy,dx=dx,dy=dy,
+            minx=math.min(sx,ex),maxx=math.max(sx,ex),miny=math.min(sy,ey),maxy=math.max(sy,ey)}
+    end
+    motion[obj]=parts
+    obj.x=x+dx; obj.y=y+dy; Wrap(obj,W,H)
 end
 
 -- Richtungswinkel zwischen zwei Punkten (Radiant)
@@ -215,6 +258,7 @@ function Logic:NewState(difficulty, gameMode, savedProgress)
     local mode = gameMode or "endless"
 
     local s = {
+        fieldW=self.FIELD_W, fieldH=self.FIELD_H,
         difficulty   = difficulty or "normal",
         gameMode     = mode,
         diffDef      = def,
@@ -282,24 +326,105 @@ function Logic:NewState(difficulty, gameMode, savedProgress)
     }
 
     -- Gespeicherten Fortschritt laden
+    if savedProgress and savedProgress.version==2 then
+        return self:Restore(savedProgress)
+    end
     if savedProgress then
         s.level    = savedProgress.level or 1
-        s.score    = savedProgress.score or 0
+        s.legacyScore = savedProgress.score or 0
+        s.score    = 0
+        s.legacyContinuation = true
         s.lives    = savedProgress.lives or def.startLives
-        s.wave     = savedProgress.level or 1  -- im Level-Modus = Level-Nummer
+        s.wave     = savedProgress.mode=="endless" and 1 or s.level
+        if savedProgress.mode=="endless" then s.level=1 end
         s.difficulty = savedProgress.diff or difficulty
         s.gameMode   = savedProgress.mode or mode
         s.diffDef    = self.DIFFICULTY_DEFS[s.difficulty] or def
         s.scoreFac   = s.diffDef.scoreFac
     end
 
+    s.ruleVersion=2; s.stageNo=0; s.meteorsKilled=0; s.huntersKilled=0
+    s.clearedWave=0; s.clearedLevel=0; s.stagesCleared=0
+    s.hardLevelsCleared=0; s.bombLevelsCleared=0; s.simRemainder=0
     return s
+end
+
+function Logic:Copy(v)
+    if type(v)~="table" then return v end
+    local t={} for k,x in pairs(v) do t[k]=self:Copy(x) end return t
+end
+function Logic:Snapshot(state,phase)
+    if not state or state.gameOver or state.win then return nil end
+    local save=self:Copy(state)
+    save.keyLeft,save.keyRight,save.keyThrust,save.keyFire=false,false,false,false
+    save.ship.thrusting=false
+    save.version=2; save.phase=phase or "PLAYING"
+    save.diff=state.difficulty; save.mode=state.gameMode
+    return save
+end
+function Logic:Restore(save)
+    local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
+    local function integer(n) return finite(n) and n>=0 and n%1==0 end
+    if type(save)~="table" or save.version~=2 or save.ruleVersion~=2
+        or save.gameOver or save.win or type(save.runId)~="string"
+        or not self.DIFFICULTY_DEFS[save.difficulty]
+        or save.gameMode~="levels" and save.gameMode~="endless"
+        or save.phase~="PLAYING" and save.phase~="PAUSED" and save.phase~="WAVE_CLEAR"
+        or type(save.ship)~="table" or type(save.lives)~="number" or save.lives<=0
+        or type(save.wave)~="number" or save.wave<1
+        or type(save.level)~="number" or save.level<1 or save.level>30 then return nil end
+    for _,key in ipairs({"score","lives","wave","level","stageNo","meteorsKilled","huntersKilled","clearedWave","clearedLevel","stagesCleared","hardLevelsCleared","bombLevelsCleared"}) do
+        if not integer(save[key]) then return nil end
+    end
+    if save.lives>self.MAX_LIVES or save.stageNo<1
+        or save.stageId~=save.runId..":stage:"..save.stageNo
+        or save.clearedLevel>30 or save.hardLevelsCleared>save.stagesCleared or save.bombLevelsCleared>save.stagesCleared
+        or save.phase=="WAVE_CLEAR" and (save.gameMode~="levels" or not save.allClear or save.level>=30)
+        or save.gameMode=="levels" and save.allClear and save.phase~="WAVE_CLEAR" then return nil end
+    for _,key in ipairs({"fieldW","fieldH","waveSpeedMul","waveTimer","shootTimer","simRemainder"}) do
+        if not finite(save[key]) then return nil end
+    end
+    if save.fieldW<=56 or save.fieldH<=56 or save.waveSpeedMul<=0 or save.simRemainder<0 or save.simRemainder>=1/240+1e-8 then return nil end
+    for _,key in ipairs({"shieldTimer","rapidTimer","spreadTimer"}) do
+        if save[key]~=nil and (not finite(save[key]) or save[key]<0) then return nil end
+    end
+    for _,key in ipairs({"x","y","vx","vy","angle","radius","invTimer","respawnTimer"}) do
+        if not finite(save.ship[key]) then return nil end
+    end
+    if type(save.ship.alive)~="boolean" or save.ship.radius~=self.SHIP_RADIUS or save.ship.invTimer<0 or save.ship.respawnTimer<0 then return nil end
+    for _,key in ipairs({"meteors","hunters","bullets","hunterBullets","powerDrops"}) do
+        if type(save[key])~="table" then return nil end
+        for _,obj in ipairs(save[key]) do
+            if type(obj)~="table" then return nil end
+            for _,field in ipairs(key=="powerDrops" and {"x","y","radius","lifetime"} or {"x","y","vx","vy","radius"}) do
+                if not finite(obj[field]) then return nil end
+            end
+            if obj.radius<=0 or obj.wrapRadius and (not finite(obj.wrapRadius) or obj.wrapRadius<0) then return nil end
+            if key=="meteors" and (not self.METEOR_DEFS[obj.size] or not finite(obj.rotAngle) or not finite(obj.rotSpeed) or not integer(obj.points)) then return nil end
+            if key=="hunters" and (not finite(obj.shootTimer) or not integer(obj.points) or not finite(obj.maxSpeed)) then return nil end
+            if (key=="bullets" or key=="hunterBullets") and (not finite(obj.lifetime) or obj.lifetime<=0) then return nil end
+            if key=="powerDrops" and (not ({SHIELD=true,RAPID=true,SPREAD=true,BOMB=true,LIFE=true})[obj.puType] or obj.lifetime<=0) then return nil end
+        end
+    end
+    local state=self:Copy(save)
+    state.keyLeft,state.keyRight,state.keyThrust,state.keyFire=false,false,false,false
+    state.ship.thrusting=false
+    state.diffDef=self.DIFFICULTY_DEFS[state.difficulty]
+    state.scoreFac=state.diffDef.scoreFac
+    return state
+end
+function Logic:MeteorPoints(state,meteor)
+    local bonus=state.gameMode=="endless" and (1+(state.wave-1)*0.05) or 1
+    return math.floor(meteor.points*state.scoreFac*bonus)
 end
 
 -- ── Welle/Level initialisieren ───────────────────────────────
 function Logic:SpawnWave(state)
+    state.stageNo=(state.stageNo or 0)+1
+    state.stageId=tostring(state.runId or "test")..":stage:"..state.stageNo
+    state.usedBomb=false
     local def     = state.diffDef
-    local W, H    = self.FIELD_W, self.FIELD_H
+    local W, H    = state.fieldW or self.FIELD_W, state.fieldH or self.FIELD_H
     local sx, sy  = state.ship.x, state.ship.y
 
     -- Geschwindikeitsmultiplikator für diese Wave
@@ -471,6 +596,7 @@ function Logic:_ApplyPowerUp(puType, state, actions)
         state.spreadTimer = math.min(current + self.SPREAD_DURATION, self.SPREAD_DURATION * 2)
     elseif puType == "BOMB" then
         -- Alle Objekte in Radius zerstören — kein Split, Bombe = Totalvernichtung
+        state.runUsedBomb = true
         state.usedBomb = true   -- Achievement-Tracking AOD_NAARU
         local bx, by = state.ship.x, state.ship.y
         local R2 = self.BOMB_RADIUS^2
@@ -479,7 +605,7 @@ function Logic:_ApplyPowerUp(puType, state, actions)
             local dx = m.x - bx; local dy = m.y - by
             if dx*dx + dy*dy <= R2 then
                 toRemove[i] = true
-                state.score = state.score + math.floor(m.points * state.scoreFac * (1 + (state.wave-1)*0.05))
+                state.score = state.score + self:MeteorPoints(state,m)
                 table.insert(actions, { type="meteor_destroyed", meteor=m, bomb=true })
                 table.insert(actions, { type="stat_meteor" })
             end
@@ -532,11 +658,12 @@ end
 
 -- ── Haupt-Tick ────────────────────────────────────────────────
 -- Gibt actions-Tabelle zurück. Kein WoW-API-Call hier.
-function Logic:Tick(state, dt)
+function Logic:_Step(state, dt)
+    motion={}
     local actions = {}
     if state.gameOver or state.win then return actions end
 
-    local W, H = self.FIELD_W, self.FIELD_H
+    local W, H = state.fieldW or self.FIELD_W, state.fieldH or self.FIELD_H
     local ship  = state.ship
 
     -- ── Respawn-Timer ─────────────────────────────────────────
@@ -583,9 +710,7 @@ function Logic:Tick(state, dt)
         end
 
         -- Bewegung
-        ship.x = ship.x + ship.vx * dt
-        ship.y = ship.y + ship.vy * dt
-        Wrap(ship, W, H)
+        Move(ship,dt,W,H)
 
         -- Unverwundbarkeit dekrementieren
         if ship.invTimer > 0 then
@@ -622,7 +747,7 @@ function Logic:Tick(state, dt)
                 }
                 table.insert(state.bullets, b)
             end
-            state.shootTimer = cooldown
+            state.shootTimer = state.shootTimer+cooldown
             table.insert(actions, { type="shoot" })
         end
     else
@@ -633,9 +758,7 @@ function Logic:Tick(state, dt)
     do
         local toRemove = {}
         for i, b in ipairs(state.bullets) do
-            b.x = b.x + b.vx * dt
-            b.y = b.y + b.vy * dt
-            Wrap(b, W, H)
+            Move(b,dt,W,H)
             b.lifetime = b.lifetime - dt
             if b.lifetime <= 0 then toRemove[i] = true end
         end
@@ -646,9 +769,7 @@ function Logic:Tick(state, dt)
 
     -- ── Meteore bewegen & rotieren ────────────────────────────
     for _, m in ipairs(state.meteors) do
-        m.x = m.x + m.vx * dt
-        m.y = m.y + m.vy * dt
-        Wrap(m, W, H)
+        Move(m,dt,W,H)
         m.rotAngle = m.rotAngle + m.rotSpeed * dt
     end
 
@@ -677,15 +798,13 @@ function Logic:Tick(state, dt)
                 h.vx = h.vx / spd * (h.maxSpeed or self.MAX_HUNTER_SPEED)
                 h.vy = h.vy / spd * (h.maxSpeed or self.MAX_HUNTER_SPEED)
             end
-            h.x = h.x + h.vx * dt
-            h.y = h.y + h.vy * dt
-            Wrap(h, W, H)
+            Move(h,dt,W,H)
 
             -- Schuss-Cooldown
             h.shootTimer = h.shootTimer - dt
             if h.shootTimer <= 0 and ship.alive then
                 local shootRate = state.diffDef.hunterShootRate or 4.0
-                h.shootTimer = RandBetween(shootRate * 0.7, shootRate * 1.3)
+                h.shootTimer = h.shootTimer+RandBetween(shootRate * 0.7, shootRate * 1.3)
                 local ang = AngleTo(h.x, h.y, ship.x, ship.y)
                 table.insert(state.hunterBullets, {
                     x        = h.x,
@@ -705,9 +824,7 @@ function Logic:Tick(state, dt)
     do
         local toRemove = {}
         for i, b in ipairs(state.hunterBullets) do
-            b.x = b.x + b.vx * dt
-            b.y = b.y + b.vy * dt
-            Wrap(b, W, H)
+            Move(b,dt,W,H)
             b.lifetime = b.lifetime - dt
             if b.lifetime <= 0 then toRemove[i] = true end
         end
@@ -765,7 +882,7 @@ function Logic:Tick(state, dt)
                     removeBullets[bi] = true
                     removeMeteors[mi] = true
                     local waveBonus = (state.gameMode == "endless") and (1 + (state.wave-1)*0.05) or 1.0
-                    state.score = state.score + math.floor(m.points * state.scoreFac * waveBonus)
+                    state.score = state.score + self:MeteorPoints(state,m)
                     table.insert(actions, { type="meteor_destroyed", meteor=m })
                     -- Statistik
                     table.insert(actions, { type="stat_meteor" })
@@ -854,6 +971,8 @@ function Logic:Tick(state, dt)
         end
     end
 
+    if state.gameOver then return actions end
+
     -- 6. Power-Up Drops ↔ Schiff
     if ship.alive then
         local toRemove = {}
@@ -875,6 +994,12 @@ function Logic:Tick(state, dt)
     if not state.gameOver and #state.meteors == 0 and #state.hunters == 0 then
         if not state.allClear then
             state.allClear = true
+            state.stagesCleared=(state.stagesCleared or 0)+1
+            if state.gameMode=="levels" then
+                state.clearedLevel=state.level
+                if state.difficulty=="hard" then state.hardLevelsCleared=(state.hardLevelsCleared or 0)+1 end
+                if state.usedBomb then state.bombLevelsCleared=(state.bombLevelsCleared or 0)+1 end
+            else state.clearedWave=state.wave end
             if state.gameMode == "levels" then
                 if state.level >= 30 then
                     state.win = true
@@ -904,5 +1029,25 @@ function Logic:Tick(state, dt)
         end
     end
 
+    return actions
+end
+
+-- Render stalls never create catch-up volleys. Remainder is part of a save.
+function Logic:Tick(state,dt)
+    if state.gameOver or state.win or state.gameMode=="levels" and state.allClear then return {} end
+    local step=1/240
+    state.simRemainder=(state.simRemainder or 0)+math.max(0,math.min(dt or 0,0.1))
+    local actions={}
+    local n=math.min(24,math.floor((state.simRemainder+1e-10)/step))
+    for _=1,n do
+        state.simRemainder=math.max(0,state.simRemainder-step)
+        for _,act in ipairs(self:_Step(state,step)) do
+            actions[#actions+1]=act
+            if act.type=="stat_meteor" then state.meteorsKilled=(state.meteorsKilled or 0)+1 end
+            if act.type=="stat_hunter" then state.huntersKilled=(state.huntersKilled or 0)+1 end
+        end
+        if state.gameOver or state.win or state.gameMode=="levels" and state.allClear then state.simRemainder=0; break end
+    end
+    motion={}
     return actions
 end

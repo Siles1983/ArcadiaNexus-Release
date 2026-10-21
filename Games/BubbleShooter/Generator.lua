@@ -286,6 +286,16 @@ function G:BuildGrid(seed, spec)
     local rng = MakeRng(seed)
     local grid = L:EmptyGrid(cols, rows)
     local placed = 0
+    if spec.roots then
+        -- Four ceiling sectors: no single sparse root owns the whole board.
+        local previous=0
+        for c=1,cols,2 do
+            local color=L:RandInt(rng,colors)
+            if color==previous then color=color%colors+1 end
+            grid[1][c],grid[1][c+1]=color,color
+            previous=color; placed=placed+1
+        end
+    end
     local guard = 0
     while placed < pairs and guard < pairs * 20 do
         guard = guard + 1
@@ -298,13 +308,12 @@ end
 
 function G:CampaignSpec(index)
     index = tonumber(index) or 1
-    local colors = 2 + math.min(4, math.floor((index - 1) / 12))
-    local pairs = 3 + math.floor((index - 1) / 7)
-    if pairs > 14 then pairs = 14 end
-    local maxRow = 4 + math.min(5, math.floor((index - 1) / 14))
+    local colors = 3 + math.min(3, math.floor((index - 1) / 25))
+    local pairs = index<=3 and (4+index) or math.min(26,10+math.floor(index/5))
+    local maxRow = 5 + math.min(3, math.floor((index - 1) / 25))
     local slack = (index <= 20) and 3 or ((index <= 60) and 2 or 1)
     return {
-        cols = 8, rows = 12, colors = colors, pairs = pairs, maxRow = maxRow, slack = slack,
+        cols = 8, rows = 12, colors = colors, pairs = pairs, maxRow = maxRow, slack = slack, roots=true,
     }
 end
 
@@ -312,6 +321,15 @@ function G:MakeCampaignLevel(index)
     local L = Logic()
     index = tonumber(index) or 1
     local spec = self:CampaignSpec(index)
+    local verified=self.VERIFIED and self.VERIFIED[index]
+    if verified then
+        local grid,placed=self:BuildGrid(verified.seed,spec)
+        assert(placed*2==verified.orbs,"Arcane Barrage content drift: "..index)
+        return {id=index,nameKey="lvl_gen",cols=spec.cols,rows=spec.rows,colors=spec.colors,
+            map=L:EncodeMap(grid,spec.cols,spec.rows),seed=verified.seed,
+            queueSeed=L:CampaignQueueSeed(index),shotLimit=verified.shotLimit,
+            solverShots=verified.shots,layoutVersion=3}
+    end
     local def
     for attempt = 0, 24 do
         local seed = MASTER + index * 7919 + attempt * 104729
@@ -341,12 +359,7 @@ function G:MakeCampaignLevel(index)
             end
         end
     end
-    if not def then
-        def = {
-            id = index, nameKey = "lvl_gen", cols = 8, rows = 12, colors = 2,
-            shotLimit = 12 + G.CAMPAIGN_SHOT_BUFFER, map = "11......|11......", solverShots = 1,
-        }
-    end
+    assert(def, "Arcane Barrage campaign generation failed: "..index)
     return def
 end
 

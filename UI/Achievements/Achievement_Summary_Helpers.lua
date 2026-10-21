@@ -39,9 +39,11 @@ function SH.GetOverallStats()
     local total, unlocked = 0, 0
     local ul = GetUnlocked()
     for _, group in ipairs(GetAD()) do
-        for _, tier in ipairs(group.tiers or {}) do
-            total = total + 1
-            if ul[tier.id] then unlocked = unlocked + 1 end
+        if not group.retired then
+            for _, tier in ipairs(group.tiers or {}) do
+                total = total + 1
+                if ul[tier.id] then unlocked = unlocked + 1 end
+            end
         end
     end
     local pct = total > 0 and math.floor((unlocked / total) * 100) or 0
@@ -59,16 +61,17 @@ function SH.GetStatsByCategory()
     local byGame = {}   -- [gameId] = { total, unlocked }
 
     for _, group in ipairs(GetAD()) do
-        local gid = group.gameId or "ALLGEMEIN"
-        if not byGame[gid] then byGame[gid] = { total = 0, unlocked = 0 } end
-        for _, tier in ipairs(group.tiers or {}) do
-            byGame[gid].total = byGame[gid].total + 1
-            if ul[tier.id] then
-                byGame[gid].unlocked = byGame[gid].unlocked + 1
+        if not group.retired then
+            local gid = group.gameId or "ALLGEMEIN"
+            if not byGame[gid] then byGame[gid] = { total = 0, unlocked = 0 } end
+            for _, tier in ipairs(group.tiers or {}) do
+                byGame[gid].total = byGame[gid].total + 1
+                if ul[tier.id] then
+                    byGame[gid].unlocked = byGame[gid].unlocked + 1
+                end
             end
         end
     end
-
     local GR = ArcadiaNexus.GameRegistry
     local labelMap = {}
     if GR then
@@ -131,8 +134,9 @@ function SH.GetRecentUnlocks(maxCount)
                 tierXP     = info.tier.xp or 0,
                 groupTitle = groupTitle,
                 groupIcon  = info.group.icon,
-                gameId     = info.group.gameId,
-                timestamp  = ts,
+                gameId     = info.group.retired and "HELDENTATEN" or info.group.gameId,
+                retired    = info.group.retired,
+                timestamp  = type(ts)=="number" and ts or 0,
             }
         end
     end

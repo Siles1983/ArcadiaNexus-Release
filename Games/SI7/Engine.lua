@@ -88,9 +88,8 @@ function E:OnMatchReject(f)
 end
 
 function E:OnMatchResult(node, resultId)
+    if self._resultEmitted then return true end
     if self.match ~= node or not self._sessionId or node:GetState() ~= "FINISHED" then return end
-    if self._resultEmitted then return end
-    self._resultEmitted = true
     local pub = node and node:GetPublicState()
     local seat = node and node.seat
     local team = LocalTeam(seat)
@@ -108,7 +107,7 @@ function E:OnMatchResult(node, resultId)
         score = 100 + enemyLeft * 10
         if reason == "cleared" then score = score + 50 end
     end
-    ArcadiaNexus.Engine:Emit("GAME_RESULT", {
+    local payload = {
         gameId = "SI7",
         resultId = resultId,
         matchHost = node.hostKey,
@@ -126,8 +125,12 @@ function E:OnMatchResult(node, resultId)
             clues = pub and pub.clues or 0,
             guesses = pub and pub.guesses or 0,
         },
-    })
+    }
+    ArcadiaNexus.Engine:Emit("GAME_RESULT", payload)
+    if payload.matchBooked ~= true then return false end
+    self._resultEmitted = true
     self:MaybeShowResult()
+    return true
 end
 
 function E:MaybeShowResult()
@@ -162,6 +165,8 @@ function E:StartGame(config)
         })
         return
     end
+    local sid = ArcadiaNexus.Lifecycle:ClaimRestart("SI7", E._sessionId)
+    if not sid then return false end
     self.mode = mode
     self._resultEmitted = false
     self._notice = nil
@@ -174,7 +179,7 @@ function E:StartGame(config)
     self.public = pub
     self.key = key
     self.viewSeat = 1
-    E._sessionId = ArcadiaNexus.Lifecycle:RestartGame("SI7", E._sessionId)
+    E._sessionId = sid
     self.state = "PLAYING"
     Play(857)
     Notify()

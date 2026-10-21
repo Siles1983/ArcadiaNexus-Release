@@ -1,536 +1,179 @@
--- ============================================================
---  Blackjack – Engine.lua
---  Spielfluss, State-Machine, Runden-Verwaltung.
---
---  State-Machine:
---    IDLE → BETTING → PLAYING → DEALER_TURN → ROUND_RESULT
---                                              ↘ GAMEOVER (Bankrott)
---
---  Regeln:
---  - TimerGuard (Core/TimerGuard) für Deal-Sequenzen und Delays
---  - OnHide → StopGame (kein Spiel läuft im Hintergrund)
---  - GAME_RESULT-Event bei Bankrott oder manuellem Beenden
---  - Spielregeln NUR in Logic.lua, UI NUR in Renderer.lua
--- ============================================================
-
-local ArcadiaNexus = _G.ArcadiaNexus
-ArcadiaNexus.BJ_Engine = {}
-local E = ArcadiaNexus.BJ_Engine
-
-E._sessionId = nil
-
-E.state      = "IDLE"
-E.gameState  = nil
-
-local _timerGuard = ArcadiaNexus.TimerGuard.New()
-E._timerGuard     = _timerGuard
-
--- ── Sound-Hilfsfunktion ───────────────────────────────────────
-local SND_DEAL  = 774   -- IG_MAINMENU_OPTION_CHECKBOX_ON
-local SND_FLIP  = 774
-local SND_WIN   = 888   -- UI_ACHIEVEMENT_TOAST_SPARK
-local SND_LOSE  = 847   -- IG_QUEST_ABANDON
-local SND_BUST  = 847
-local SND_CHIP  = 774
-
-local function PlayBJSound(key, soundId)
-    local S = ArcadiaNexus.BJ_Settings
-    if not S then return end
-    if not S:Get("soundEnabled") then return end
-    local keyMap = {
-        deal = "soundOnDeal",
-        flip = "soundOnFlip",
-        win  = "soundOnWin",
-        lose = "soundOnLose",
-        bust = "soundOnBust",
-        chip = "soundOnChip",
-    }
-    if keyMap[key] and S:Get(keyMap[key]) then
-        PlaySound(soundId, "Master")
-    end
+-- Fixed blackjack table: stable draws, slot ownership and one result per round.
+local A=_G.ArcadiaNexus
+local E={state="IDLE"}; A.BJ_Engine=E
+local guard=A.TimerGuard.New(); E._timerGuard=guard
+local function Render(method,...)
+    local R=A.BJ_Renderer; if R and R[method] then R[method](R,...) end
 end
-
--- ── Timer-Hilfsfunktionen ─────────────────────────────────────
--- Erzeugt eine generationsgesicherte Timer-Sequenz.
--- steps: { {delay, fn}, ... } – werden nacheinander ausgeführt.
-function E:_RunSequence(steps, onDone)
-    _timerGuard:RunSequence(steps, onDone)
+local function Sound(key)
+    local S=A.BJ_Settings
+    local options={deal="soundOnDeal",flip="soundOnFlip",win="soundOnWin",lose="soundOnLose",chip="soundOnChip"}
+    if S:Get("soundEnabled") and S:Get(options[key]) then PlaySound(({deal=774,flip=774,win=888,lose=847,chip=774})[key],"SFX") end
 end
-
-function E:_InvalidateTimers()
-    _timerGuard:Cancel()
+function E:_Snapshot()
+    if not self.gameState then return true end
+    return A.BJ_Settings:SaveSlot(self.activeSlot,A.BJ_Logic:Copy(self.gameState))
 end
-
--- ── State-Setter ──────────────────────────────────────────────
-function E:_SetState(newState)
-    E.state = newState
-    local R = ArcadiaNexus.BJ_Renderer
-    if R then R:OnStateChanged(newState) end
+function E:_SetState(state)
+    self.state=state; if self.gameState then self.gameState.phase=state end
+    Render("OnStateChanged",state)
 end
-
--- ── Init / Lifecycle ──────────────────────────────────────────
+function E:_Refresh()
+    self.state=self.gameState.phase; self:_Snapshot(); Render("RestoreBoard",self.gameState)
+end
+function E:_Schedule(delay,fn)
+    local sid,gs=self._sessionId,self.gameState
+    guard:After(delay,function()
+        if A.GameSession:IsSession(E,sid) and E.gameState==gs then fn() end
+    end)
+end
+function E:CanContinueSave(save)
+    if not A.BJ_Logic:ValidateSave(save) or save.phase=="GAMEOVER" then return false end
+    local serial=A.LocalResults:GetSerial("BLACKJACK",save.runId)
+    if not serial then return false end
+    local j,r=A.LocalResults:GetJournal(),A.LocalResults:GetReceipt(save.runId)
+    if not r and not j.issued[save.runId] and serial<=j.retiredThrough then return false end
+    if save.phase=="ROUND_RESULT" and not r then return false end
+    if r and (not save.settled or r.finalChips2~=save.chips2 or r.net2~=save.net2 or r.tableId~=save.tableId
+        or r.roundNo~=save.roundNo or r.blackjacks~=save.roundBlackjacks) then return false end
+    return true
+end
 function E:StartGame(config)
-    E._sessionId = ArcadiaNexus.Lifecycle:RestartGame("BLACKJACK", E._sessionId)
-    self:_InvalidateTimers()
-    local S     = ArcadiaNexus.BJ_Settings
-    local Logic = ArcadiaNexus.BJ_Logic
-    local diff  = (config and config.difficulty) or (S and S:Get("difficulty")) or "easy"
-    local aiCnt = (config and config.aiCount)    or (S and S:Get("aiCount"))    or 0
-    -- Kapital aus Settings laden (persistent zwischen Sessions)
-    local chips = S and S:LoadChips() or 100
-    E.gameState = Logic:NewGameState(diff, aiCnt, chips)
-    -- State setzen VOR OnGameStarted, damit UpdateActionButtons korrekte State liest
-    E.state = "BETTING"
-    local R = ArcadiaNexus.BJ_Renderer
-    if R then
-        R:OnStateChanged("BETTING")
-        R:OnGameStarted(E.gameState)
+    if self.gameState then return false end
+    config=type(config)=="table" and config or {}; local S=A.BJ_Settings
+    S:EnsureMigration()
+    local slot=config.slot or 1; local mode=config.mode or "new"
+    if type(slot)~="number" or slot~=math.floor(slot) or slot<1 or slot>3 or (mode~="new" and mode~="continue") then return false end
+    local save=S:LoadSlot(slot); local gs
+    if mode=="continue" then
+        if not self:CanContinueSave(save) then return false end
+        gs=A.BJ_Logic:Copy(save)
+    else
+        local count=config.aiCount or S:Get("aiCount")
+        if save and not config.overwrite or type(count)~="number" or count~=math.floor(count) or count<0 or count>2 then return false end
+        gs=A.BJ_Logic:NewGameState("table",count,100)
     end
+    local sid=A.Lifecycle:ClaimRestart("BLACKJACK",self._sessionId)
+    if not sid then return false end
+    if mode~="continue" then gs.runId=A.LocalResults:NewRun("BLACKJACK"); gs.tableId=gs.runId end
+    self.gameState,self.activeSlot,self.activeConfig=gs,slot,{ruleVersion=2}
+    self._sessionId=sid; self._busy=false; self._lastResult=nil
+    self.state=gs.phase; self:_Snapshot(); Render("OnGameStarted",gs); self:_Refresh()
+    if gs.phase=="DEALING" then self:_ContinueDeal()
+    elseif gs.phase=="DEALER_TURN" then self:_ContinueDealer()
+    elseif gs.phase=="RESULT_PENDING" then self:RetryResult()
+    elseif gs.phase=="ROUND_RESULT" then Render("ShowRoundResult",gs,gs.results) end
+    A.LocalResults:Prune(); return true
 end
-
-function E:StopGame()
-    if E._sessionId then
-        ArcadiaNexus.Lifecycle:EndGame("BLACKJACK", E._sessionId)
-        E._sessionId = nil
+function E:SaveAndPause()
+    if self.gameState and self:_Snapshot()==false then return false end
+    guard:Cancel(); self._busy=false
+    if self._sessionId then
+        A.Lifecycle:PauseGame("BLACKJACK",self._sessionId); A.Lifecycle:EndGame("BLACKJACK",self._sessionId); self._sessionId=nil
     end
-    self:_InvalidateTimers()
-
-    local S = ArcadiaNexus.BJ_Settings
-    if E.gameState and S then
-        -- Kapital immer speichern — Einsatz ist bereits abgezogen wenn Runde läuft
-        -- Bei Abbruch in BETTING (noch kein Abzug): Kapital unverändert speichern
-        S:SaveChips(E.gameState.chips)
-    end
-
-    -- GAME_RESULT nur wenn mindestens eine Runde vollständig gespielt wurde
-    if E.state ~= "IDLE"
-    and E.gameState
-    and not E.gameState._gameOverFired
-    and (E.gameState.roundsPlayed or 0) > 0 then
-        local gs    = E.gameState
-        ArcadiaNexus.Engine:Emit("GAME_RESULT", {
-            gameId     = "BLACKJACK",
-            difficulty = gs.difficulty,
-            score      = 0,
-            result     = (gs.chips or 0) >= 100 and "WIN" or "LOSS",
-            stats      = {
-                finalChips = gs.chips,
-                blackjacks = gs.blackjacks or 0,
-            },
-        })
-    end
-    -- Renderer zurücksetzen
-    local R = ArcadiaNexus.BJ_Renderer
-    if R then R:OnGameStopped() end
-    E.gameState = nil
-    E.state     = "IDLE"
+    self.gameState,self.activeSlot,self.activeConfig,self._lastResult=nil,nil,nil,nil
+    self.state="IDLE"; Render("OnGameStopped"); return true
 end
-
--- ── Einsatz setzen (BETTING-State) ────────────────────────────
+function E:StopGame() return self:SaveAndPause() end
 function E:SetBet(amount)
-    if E.state ~= "BETTING" then return end
-    local gs = E.gameState
-    if not gs then return end
-    -- Guthaben-Check: reicht das verfügbare Kapital für diesen zusätzlichen Chip?
-    local newBet = (gs.bet or 0) + amount
-    if newBet > gs.chips then return end  -- nicht genug Guthaben (Gleichheit = Allin erlaubt)
-    gs.bet          = newBet
-    gs.betConfirmed = true
-    PlayBJSound("chip", SND_CHIP)
-    local R = ArcadiaNexus.BJ_Renderer
-    if R then R:UpdateBetDisplay(gs) end
+    if not self.gameState or not A.BJ_Logic:SetBet(self.gameState,amount) then return false end
+    self:_Snapshot(); Sound("chip"); Render("UpdateBetDisplay",self.gameState); Render("UpdateActionButtons",self.gameState); return true
 end
-
-function E:RemoveLastBetOfColor(color, amount)
-    if E.state ~= "BETTING" then return end
-    local gs = E.gameState
-    if not gs then return end
-    local newBet = (gs.bet or 0) - amount
-    if newBet < 0 then newBet = 0 end
-    gs.bet = newBet
-    if gs.bet == 0 then gs.betConfirmed = false end
-    local R = ArcadiaNexus.BJ_Renderer
-    if R then R:UpdateBetDisplay(gs) end
-end
-
+function E:RemoveLastBetOfColor(_,amount) return self:SetBet(-amount) end
 function E:ClearBet()
-    if E.state ~= "BETTING" then return end
-    local gs = E.gameState
-    if not gs then return end
-    gs.bet          = 0
-    gs.betConfirmed = false
-    local R = ArcadiaNexus.BJ_Renderer
-    if R then
-        R:_ClearBetChip()
-        R:UpdateBetDisplay(gs)
-    end
+    if self.state~="BETTING" then return false end
+    self.gameState.bet2=0; self.gameState.betConfirmed=false; A.BJ_Logic:Sync(self.gameState)
+    self:_Snapshot(); Render("_ClearBetChip"); Render("UpdateBetDisplay",self.gameState); return true
 end
-
--- ── Runde starten (Deal) ──────────────────────────────────────
 function E:StartRound()
-    if E.state ~= "BETTING" then return end
-    local gs    = E.gameState
-    local Logic = ArcadiaNexus.BJ_Logic
-    if not gs then return end
-    -- Spieler muss explizit einen Chip gesetzt haben und Einsatz > 0
-    if not gs.betConfirmed or (gs.bet or 0) <= 0 then return end
-    if gs.chips < gs.bet then return end
-
-    -- Einsatz abziehen
-    gs.chips     = gs.chips - gs.bet
-    gs.firstAction   = true
-    gs.insuranceBet  = 0
-    gs.insuranceOpen = false
-    gs.playerState   = "playing"
-    gs.dealerState   = "waiting"
-    gs.playerHands   = { {} }
-    gs.activeHand    = 1
-    gs.dealerHand    = {}
-    for i = 1, gs.aiCount do
-        gs.aiHands[i]  = {}
-        gs.aiStates[i] = "playing"
-    end
-
-    -- KI-Einsätze VOR PLAYING setzen, sonst zeigt OnStateChanged leere aiBets
-    local aiBets = {}
-    local AI_BET_VALUES = {25, 25, 25, 50, 50, 100, 500}
-    for i = 1, gs.aiCount do
-        aiBets[i] = AI_BET_VALUES[ math.random(#AI_BET_VALUES) ]
-    end
-    gs.aiBets = aiBets
-
-    self:_SetState("PLAYING")
-
-    local sequence = Logic:DealInitial(gs)
-    local steps    = {}
-    for _, deal in ipairs(sequence) do
-        local d = deal
-        table.insert(steps, {
-            delay = 0.3,
-            fn    = function()
-                PlayBJSound("deal", SND_DEAL)
-                local R = ArcadiaNexus.BJ_Renderer
-                if R then R:ShowDealtCard(d.target, d.card) end
-            end,
-        })
-    end
-
-    self:_RunSequence(steps, function()
-        local R = ArcadiaNexus.BJ_Renderer
-        if R then R:UpdateBoard(gs) end
-        -- Insurance-Angebot?
-        if gs.insuranceOpen then
-            if R then R:ShowInsurancePrompt(gs) end
-        else
-            self:_CheckImmediateBlackjack()
-        end
+    if not self.gameState or not A.BJ_Logic:BeginRound(self.gameState) then return false end
+    self:_Refresh(); self:_ContinueDeal(); return true
+end
+function E:_ContinueDeal()
+    self:_Schedule(0.3,function()
+        A.BJ_Logic:DealStep(E.gameState); Sound("deal"); E:_Refresh()
+        if E.state=="DEALING" then E:_ContinueDeal() else E:_AfterPeek() end
     end)
 end
-
--- ── Blackjack-Check nach Deal ─────────────────────────────────
-function E:_CheckImmediateBlackjack()
-    local gs    = E.gameState
-    local Logic = ArcadiaNexus.BJ_Logic
-    if not gs then return end
-
-    local playerBJ = Logic:IsBlackjack(gs.playerHands[1])
-    local dealerBJ = Logic:IsBlackjack(gs.dealerHand)  -- noch verdeckt, wird intern geprüft
-
-    if playerBJ then
-        -- Direkt zu Dealer-Zug springen wenn Spieler BJ hat
-        self:_StartDealerTurn()
-    else
-        local R = ArcadiaNexus.BJ_Renderer
-        if R then R:UpdateActionButtons(gs) end
-    end
+function E:_AfterPeek()
+    local gs=self.gameState
+    A.BJ_Logic:CheckPeek(gs); self:_Refresh()
+    if gs.insuranceOpen then Render("ShowInsurancePrompt",gs)
+    elseif gs.phase=="DEALER_TURN" then self:_ContinueDealer() end
 end
-
--- ── Spieler-Aktionen ──────────────────────────────────────────
-function E:PlayerHit()
-    if E.state ~= "PLAYING" then return end
-    local gs    = E.gameState
-    local Logic = ArcadiaNexus.BJ_Logic
-    if not gs or gs.playerState ~= "playing" then return end
-    gs.firstAction = false
-
-    local card = Logic:PlayerHit(gs)
-    PlayBJSound("deal", SND_DEAL)
-    local R = ArcadiaNexus.BJ_Renderer
-    if R then R:ShowDealtCard("player", card) end
-
-    _timerGuard:After(0.15, function()
-        if not E.gameState then return end
-        if R then R:UpdateBoard(gs) end
-        if gs.playerState == "bust" then
-            PlayBJSound("bust", SND_BUST)
-            self:_StartDealerTurn()
-        elseif Logic:EvalHand(gs.playerHands[gs.activeHand or 1]) >= 21 then
-            Logic:PlayerStand(gs)
-            if R then R:UpdateBoard(gs) end
-            if gs.playerState == "stand" then
-                self:_StartDealerTurn()
-            else
-                if R then R:UpdateActionButtons(gs) end
-            end
-        else
-            if R then R:UpdateActionButtons(gs) end
-        end
+function E:ActionBlockReason(action)
+    if not self.gameState or self._busy then return "action_phase" end
+    return A.BJ_Logic:ActionBlockReason(self.gameState,action)
+end
+function E:CanAction(action)
+    return self.gameState and not self._busy and A.BJ_Logic:CanAction(self.gameState,action) or false
+end
+function E:_Action(method,key)
+    if not self:CanAction(key) or not A.BJ_Logic[method](A.BJ_Logic,self.gameState) then return false end
+    self._busy=true; self:_Refresh(); if key~="stand" then Sound("deal") end
+    self:_Schedule(0.15,function()
+        E._busy=false; E:_Refresh()
+        if E.state=="DEALER_TURN" then E:_ContinueDealer() end
     end)
+    return true
 end
-
-function E:PlayerStand()
-    if E.state ~= "PLAYING" then return end
-    local gs    = E.gameState
-    local Logic = ArcadiaNexus.BJ_Logic
-    if not gs then return end
-    Logic:PlayerStand(gs)
-    local R = ArcadiaNexus.BJ_Renderer
-    if R then R:UpdateBoard(gs) end
-    if gs.playerState == "stand" then
-        self:_StartDealerTurn()
-    else
-        -- Split: Hand 2 ist jetzt dran
-        if R then R:UpdateActionButtons(gs) end
-    end
-end
-
-function E:PlayerDouble()
-    if E.state ~= "PLAYING" then return end
-    local gs    = E.gameState
-    local Logic = ArcadiaNexus.BJ_Logic
-    if not gs or not gs.firstAction then return end
-    if gs.chips < gs.bet then return end
-
-    local card = Logic:PlayerDouble(gs)
-    if not card then return end
-    PlayBJSound("deal", SND_DEAL)
-    local R = ArcadiaNexus.BJ_Renderer
-    if R then R:ShowDealtCard("player", card) end
-
-    _timerGuard:After(0.15, function()
-        if not E.gameState then return end
-        if R then R:UpdateBoard(gs) end
-        if gs.playerState == "bust" then
-            PlayBJSound("bust", SND_BUST)
-        end
-        self:_StartDealerTurn()
-    end)
-end
-
-function E:PlayerSplit()
-    if E.state ~= "PLAYING" then return end
-    local gs    = E.gameState
-    local Logic = ArcadiaNexus.BJ_Logic
-    if not gs or not gs.firstAction then return end
-
-    local ok = Logic:PlayerSplit(gs)
-    if not ok then return end
-
-    local R = ArcadiaNexus.BJ_Renderer
-    if R then R:OnSplit(gs) end
-    if R then R:UpdateBoard(gs) end
-    if R then R:UpdateActionButtons(gs) end
-end
-
+function E:PlayerHit() return self:_Action("PlayerHit","hit") end
+function E:PlayerStand() return self:_Action("PlayerStand","stand") end
+function E:PlayerDouble() return self:_Action("PlayerDouble","double") end
+function E:PlayerSplit() return self:_Action("PlayerSplit","split") end
 function E:PlayerInsurance()
-    if E.state ~= "PLAYING" then return end
-    local gs    = E.gameState
-    local Logic = ArcadiaNexus.BJ_Logic
-    if not gs then return end
-
-    Logic:PlayerInsurance(gs)
-    PlayBJSound("chip", SND_CHIP)
-    local R = ArcadiaNexus.BJ_Renderer
-    if R then R:HideInsurancePrompt() end
-    if R then R:UpdateBoard(gs) end
-    self:_CheckImmediateBlackjack()
+    if not self:CanAction("insurance") or not A.BJ_Logic:PlayerInsurance(self.gameState) then return false end
+    Sound("chip"); Render("HideInsurancePrompt"); self:_AfterPeek(); return true
 end
-
 function E:DeclineInsurance()
-    if E.state ~= "PLAYING" then return end
-    local gs    = E.gameState
-    local Logic = ArcadiaNexus.BJ_Logic
-    if not gs then return end
-
-    Logic:DeclineInsurance(gs)
-    local R = ArcadiaNexus.BJ_Renderer
-    if R then R:HideInsurancePrompt() end
-    self:_CheckImmediateBlackjack()
+    if self._busy or not self.gameState or not A.BJ_Logic:DeclineInsurance(self.gameState) then return false end
+    Render("HideInsurancePrompt"); self:_AfterPeek(); return true
 end
-
--- ── Dealer-Zug ────────────────────────────────────────────────
-function E:_StartDealerTurn()
-    self:_SetState("DEALER_TURN")
-    local gs    = E.gameState
-    local Logic = ArcadiaNexus.BJ_Logic
-    if not gs then return end
-
-    local sequence = Logic:DealerPlay(gs)
-    local steps    = {}
-
-    for _, deal in ipairs(sequence) do
-        local d = deal
-        if d.reveal then
-            table.insert(steps, {
-                delay = 0.4,
-                fn    = function()
-                    PlayBJSound("flip", SND_FLIP)
-                    local R = ArcadiaNexus.BJ_Renderer
-                    if R then R:FlipDealerHiddenCard(d.card) end
-                end,
-            })
-        else
-            table.insert(steps, {
-                delay = 0.5,
-                fn    = function()
-                    PlayBJSound("deal", SND_DEAL)
-                    local R = ArcadiaNexus.BJ_Renderer
-                    if R then R:ShowDealtCard("dealer", d.card) end
-                end,
-            })
-        end
-    end
-
-    -- KI-Spieler nach Dealer
-    local aiSequences = Logic:AIPlay(gs)
-    for i = 1, gs.aiCount do
-        local aiSeq = aiSequences[i] or {}
-        for _, deal in ipairs(aiSeq) do
-            local d = deal
-            table.insert(steps, {
-                delay = 0.3,
-                fn    = function()
-                    PlayBJSound("deal", SND_DEAL)
-                    local R = ArcadiaNexus.BJ_Renderer
-                    if R then R:ShowDealtCard("ai" .. d.aiIdx, d.card) end
-                end,
-            })
-        end
-    end
-
-    self:_RunSequence(steps, function()
-        if not E.gameState then return end
-        local R = ArcadiaNexus.BJ_Renderer
-        if R then R:UpdateBoard(gs) end
-        self:_SettleRound()
+function E:_ContinueDealer()
+    self:_Schedule(0.35,function()
+        local draw=A.BJ_Logic:DealerStep(E.gameState); E:_Refresh()
+        if draw then Sound("deal"); E:_ContinueDealer()
+        else A.BJ_Logic:SettleRound(E.gameState); E:_Refresh(); E:RetryResult() end
     end)
 end
-
--- ── Runden-Abrechnung ─────────────────────────────────────────
-function E:_SettleRound()
-    local gs    = E.gameState
-    local Logic = ArcadiaNexus.BJ_Logic
-    if not gs then return end
-
-    gs.roundsPlayed = (gs.roundsPlayed or 0) + 1
-
-    local results = Logic:SettleRound(gs)
-    local R       = ArcadiaNexus.BJ_Renderer
-
-    -- Ergebnis-Sound
-    local primaryResult = results[1] and results[1].result or "push"
-    if primaryResult == "win" or primaryResult == "blackjack" then
-        PlayBJSound("win", SND_WIN)
-    elseif primaryResult == "lose" or primaryResult == "bust" then
-        PlayBJSound("lose", SND_LOSE)
-    end
-
-    -- Kapital persistieren
-    local S = ArcadiaNexus.BJ_Settings
-    if S then S:SaveChips(gs.chips) end
-
-    -- Bankrott: direkt Game-Over, kein Runden-Result das danach ersetzt wird
-    if gs.chips < 25 then
-        self:_GameOver()
-        return
-    end
-
-    self:_SetState("ROUND_RESULT")
-    if R then R:ShowRoundResult(gs, results) end
+function E:RetryResult()
+    local gs=self.gameState
+    if not gs or gs.phase~="RESULT_PENDING" then return false end
+    local data={gameId="BLACKJACK",difficulty="table",runId=gs.runId,score=0,
+        result=gs.net2>0 and "WIN" or gs.net2<0 and "LOSS" or "DRAW",
+        tableId=gs.tableId,roundNo=gs.roundNo,finalChips2=gs.chips2,net2=gs.net2,
+        startChips2=gs.startChips2,stake2=gs.stake2,return2=gs.return2,
+        stats={finalChips=gs.chips2/2,blackjacks=gs.roundBlackjacks}}
+    A.Engine:Emit("GAME_RESULT",data)
+    if not data.processed then self:_Snapshot(); Render("ShowResultPending",gs); return false end
+    gs.resultPending=nil; self._lastResult=data
+    gs.phase=gs.chips2<50 and "GAMEOVER" or "ROUND_RESULT"
+    self:_Refresh()
+    if not data.localReplay and data.result~="DRAW" then Sound(data.result=="WIN" and "win" or "lose") end
+    if gs.phase=="GAMEOVER" then Render("ShowGameOver",gs) else Render("ShowRoundResult",gs,gs.results) end
+    return true
 end
-
-function E:_GameOver()
-    local gs = E.gameState
-    if not gs then return end
-    self:_SetState("GAMEOVER")
-    ArcadiaNexus.Engine:Emit("GAME_RESULT", {
-        gameId     = "BLACKJACK",
-        difficulty = gs.difficulty,
-        score      = 0,
-        result     = "LOSS",
-        stats      = {
-            finalChips = gs.chips,
-            blackjacks = gs.blackjacks or 0,
-        },
-    })
-    -- Flag damit StopGame kein zweites GAME_RESULT sendet
-    gs._gameOverFired = true
-    -- Kapital bei Bankrott zurücksetzen
-    local S = ArcadiaNexus.BJ_Settings
-    if S then S:ResetChips() end
-    local R = ArcadiaNexus.BJ_Renderer
-    if R then R:ShowGameOver(gs) end
-end
-
--- ── Neue Runde ────────────────────────────────────────────────
 function E:NewRound()
-    if E.state ~= "ROUND_RESULT" and E.state ~= "BETTING" then return end
-    local gs    = E.gameState
-    if not gs then return end
-    -- Reset Runden-State
-    gs.playerHands   = { {} }
-    gs.activeHand    = 1
-    gs.dealerHand    = {}
-    gs.aiHands       = {}
-    gs.aiStates      = {}
-    gs.firstAction   = true
-    gs.insuranceBet  = 0
-    gs.insuranceOpen = false
-    gs.playerState   = "playing"
-    gs.dealerState   = "waiting"
-    gs.betConfirmed  = false
-    gs.bet           = 0
-    gs.aiBets        = nil
-    for i = 1, gs.aiCount do
-        gs.aiHands[i]  = {}
-        gs.aiStates[i] = "playing"
-    end
-    self:_SetState("BETTING")
-    local R = ArcadiaNexus.BJ_Renderer
-    if R then R:OnNewRound(gs) end
+    if not self.gameState or self.state~="ROUND_RESULT" then return false end
+    A.BJ_Logic:ResetRound(self.gameState)
+    self.gameState.runId=A.LocalResults:NewRun("BLACKJACK"); self._lastResult=nil
+    self:_Snapshot(); self:_SetState("BETTING"); Render("OnNewRound",self.gameState); self:_Refresh(); return true
 end
-
--- ── KI-Anzahl ändern (IDLE + zwischen Runden; nicht mitten in der Hand) ──
 function E:SetAICount(count)
-    count = tonumber(count) or 0
-    if count < 0 then count = 0 end
-    if count > 2 then count = 2 end
-
-    local S = ArcadiaNexus.BJ_Settings
-    if S then S:Set("aiCount", count) end
-
-    local gs = E.gameState
-    if not gs then return end
-    if E.state ~= "BETTING" and E.state ~= "ROUND_RESULT" and E.state ~= "IDLE" then
-        return
+    if type(count)~="number" or count~=math.floor(count) or count<0 or count>2 then return false end
+    if self.gameState and self.state~="BETTING" and self.state~="ROUND_RESULT" then return false end
+    A.BJ_Settings:_SetAICount(count)
+    if self.gameState then
+        self.gameState.aiCount=count
+        if self.state=="BETTING" then
+            self.gameState.aiHands={}; self.gameState.aiStates={}; self.gameState.aiBets={}
+            for i=1,count do self.gameState.aiHands[i]={}; self.gameState.aiStates[i]="playing"; self.gameState.aiBets[i]=25 end
+        else
+            -- Completed hands remain in the result; the next round uses this choice.
+            self.gameState.aiCount=count
+            for i=1,count do self.gameState.aiHands[i]=self.gameState.aiHands[i] or {}; self.gameState.aiStates[i]=self.gameState.aiStates[i] or "stand"; self.gameState.aiBets[i]=self.gameState.aiBets[i] or 25 end
+        end
+        self:_Refresh()
     end
-
-    gs.aiCount  = count
-    gs.aiHands  = gs.aiHands or {}
-    gs.aiStates = gs.aiStates or {}
-    for i = 1, count do
-        gs.aiHands[i]  = gs.aiHands[i] or {}
-        gs.aiStates[i] = gs.aiStates[i] or "waiting"
-    end
-
-    local R = ArcadiaNexus.BJ_Renderer
-    if R and R.UpdateBoard then R:UpdateBoard(gs) end
-end
-
--- ── Schwierigkeit ändern (nur im IDLE/BETTING) ────────────────
-function E:SetDifficulty(diff)
-    ArcadiaNexus.BJ_Settings:Set("difficulty", diff)
-    if E.gameState then
-        E.gameState.difficulty = diff
-    end
+    return true
 end

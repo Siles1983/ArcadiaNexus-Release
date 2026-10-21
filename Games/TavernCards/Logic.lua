@@ -118,6 +118,7 @@ function L:NewGameState(config)
 end
 
 function L:StartRound(gs)
+    gs.stats=gs.stats or {}; gs.stats.bySeat=gs.stats.bySeat or {}
     local Deck  = ArcadiaNexus.TC_Deck
     local Rules = ArcadiaNexus.TC_Rules
 
@@ -136,6 +137,7 @@ function L:StartRound(gs)
     gs.drawnThisTurn = nil
     gs.hasDrawnThisTurn = false
     gs.forceDrawPlayer = nil
+    gs.roundOver=false; gs.mpOver=false; gs.closingWinner=nil; gs.lastRoundWinner=nil
 
     for _, p in ipairs(gs.players) do
         p.hand = {}
@@ -146,10 +148,13 @@ function L:StartRound(gs)
         gs.stats.cardsDrawnAtRoundStart[p.index] = #p.hand
     end
 
-    local starter
+    local starter, rejected = nil, {}
     repeat
         starter = Deck:Draw(gs.drawPile)
+        if starter and Rules:IsWildType(starter) then rejected[#rejected+1]=starter end
     until starter and not Rules:IsWildType(starter)
+    for _,card in ipairs(rejected) do gs.drawPile[#gs.drawPile+1]=card end
+    if #rejected>0 then Deck:Shuffle(gs.drawPile) end
     gs.discardPile[1] = starter
     gs.activeColor = starter.color
 
@@ -233,60 +238,19 @@ function L:CheckGameWinner(gs)
     return nil
 end
 
-function L:CloneGameState(gs)
-    local copy = {}
-    for k, v in pairs(gs) do
-        if k == "players" then
-            copy.players = {}
-            for _, p in ipairs(v) do
-                local ph = {}
-                for _, c in ipairs(p.hand) do ph[#ph + 1] = CopyCard(c) end
-                copy.players[#copy.players + 1] = {
-                    index = p.index, isAI = p.isAI, name = p.name,
-                    charKey = p.charKey, charDef = p.charDef,
-                    hand = ph, score = p.score, unoCalled = p.unoCalled,
-                }
-            end
-        elseif k == "drawPile" or k == "discardPile" then
-            copy[k] = {}
-            for _, c in ipairs(v) do copy[k][#copy[k] + 1] = CopyCard(c) end
-        elseif k == "rules" or k == "stats" then
-            copy[k] = {}
-            for rk, rv in pairs(v) do copy[k][rk] = rv end
-        elseif type(v) ~= "table" then
-            copy[k] = v
-        end
-    end
+function L:CloneGameState(value)
+    if type(value)~="table" then return value end
+    local copy={}; for key,item in pairs(value) do copy[key]=self:CloneGameState(item) end
     return copy
 end
 
-function L:CalcGameResult(gs)
-    local human = gs.players[1]
-    local bestAI = gs.players[2]
-    for i = 2, gs.playerCount do
-        if gs.players[i].score > (bestAI and bestAI.score or 0) then
-            bestAI = gs.players[i]
-        end
-    end
-    local result = "LOSS"
-    if gs.gameMode == "single" then
-        if gs.lastRoundWinner == 1 then result = "WIN" end
-    else
-        if human.score >= gs.pointTarget then result = "WIN"
-        elseif bestAI and bestAI.score >= gs.pointTarget then result = "LOSS"
-        elseif human.score >= (bestAI and bestAI.score or 0) then result = "WIN"
-        else result = "LOSS" end
-    end
-    return result, human.score
-end
-
 -- ============================================================
--- Match v1: 2–4 Menschen, eine Runde. Stapel nur Host.
+-- Match v2: 2–4 Menschen, eine Runde. Stapel nur Host.
 -- Private = eigene Hand. Intents: PLAY/COLOR/DRAW/PASS/UNO/CATCH/CHALLENGE/ACCEPT/UNO_EXPIRE
 -- ============================================================
 
 L.GAME_ID = "TAVERNCARDS"
-L.GAME_PROTO = 1
+L.GAME_PROTO = 2
 
 local COL_C = { GREEN = "g", BLUE = "b", RED = "r", YELLOW = "y", WILD = "w" }
 local COL_D = { g = "GREEN", b = "BLUE", r = "RED", y = "YELLOW", w = "WILD" }
@@ -323,11 +287,12 @@ function L.PackHand(hand)
 end
 
 function L.UnpackHand(s)
+    s=tostring(s or ""):match("^[^~]*")
     local hand = {}
     if type(s) ~= "string" or s == "" or s == "." then return hand end
     for token in string.gmatch(s, "[^,]+") do
         local c = L.UnpackCard(token)
-        if c then hand[#hand + 1] = c end
+        if c then c.id=#hand+1; hand[#hand + 1] = c end
     end
     return hand
 end
@@ -398,6 +363,7 @@ function L:NewMpGameState(n, hostCharKey, rules, theme)
         wild4Challengable = false,
         drawnThisTurn = nil,
         hasDrawnThisTurn = false,
+        isMatch = true,
         mpOver = false,
         lastRoundWinner = nil,
     }
@@ -455,207 +421,153 @@ function L.SyncPublic(pub, gs)
         .. (r.playDrawn and "1" or "0")
         .. (r.unoCallRule and "1" or "0")
         .. (r.challengeDraw4 and "1" or "0")
+    pub.cl=gs.closingWinner or 0
+    local own={}
+    for seat=1,gs.playerCount do local st=L:PersonalStats(gs,seat); own[seat]=(st.unosCalled or 0)..":"..(st.wild4Played or 0) end
+    pub.ev=table.concat(own,",")
     pub.o = gs.mpOver and 1 or 0
     pub.over = gs.mpOver and true or false
     pub.w = gs.lastRoundWinner or 0
     pub.winner = pub.w
 end
 
-function L.MpAdvanceTurn(gs)
-    gs.turnNotice = nil
-    gs.drawnThisTurn = nil
-    gs.hasDrawnThisTurn = false
-    local Rules = ArcadiaNexus.TC_Rules
-    local steps = 1 + (gs.skipNext or 0)
-    gs.skipNext = 0
-    gs.currentPlayer = Rules:NextPlayerIndex(gs, steps)
-    L.MpBeginTurn(gs)
+-- Shared phase machine for solo and host-authoritative MATCH.
+local function Count(gs,seat,key)
+    gs.stats=gs.stats or {}; gs.stats.bySeat=gs.stats.bySeat or {}
+    local own=gs.stats.bySeat[seat] or {}; gs.stats.bySeat[seat]=own
+    own[key]=(own[key] or 0)+1
+    if seat==1 then gs.stats[key]=(gs.stats[key] or 0)+1 end
 end
-
-function L.MpBeginTurn(gs)
-    local Rules = ArcadiaNexus.TC_Rules
-    if gs.forceDrawPlayer then
-        local victim = gs.forceDrawPlayer
-        L:DrawCardsForPlayer(gs, victim, gs.pendingDraw or 4)
-        gs.forceDrawPlayer = nil
-        gs.pendingDraw = 0
-        gs.pendingType = nil
-        if victim == gs.currentPlayer then
-            L.MpAdvanceTurn(gs)
-            return
-        end
-    end
-    if gs.wild4Challengable and gs.currentPlayer ~= gs.wild4PlayedBy then
-        return
-    end
-    L.MpHandlePendingDraw(gs)
+function L:PersonalStats(gs,seat)
+    return self:CloneGameState(gs.stats and gs.stats.bySeat and gs.stats.bySeat[seat] or {})
 end
-
-function L.MpHandlePendingDraw(gs)
-    local Rules = ArcadiaNexus.TC_Rules
-    local player = gs.players[gs.currentPlayer]
-    if gs.pendingDraw and gs.pendingDraw > 0 and gs.pendingType ~= "PENALTY" then
-        if Rules:HasPlayableCard(player.hand, gs) then
-            return
+function L:CanPlayIndex(gs,seat,index)
+    if not gs or gs.roundOver or gs.pendingColorPick or gs.unoWindow or gs.currentPlayer~=seat or gs.closingWinner then return false end
+    local p=gs.players[seat]; local card=p and p.hand[index]
+    if not card or gs.drawnThisTurn and gs.drawnThisTurn.id~=card.id then return false end
+    if gs.wild4Challengable and (card.type~="WILD4" or not gs.rules.stackDraw4) then return false end
+    return ArcadiaNexus.TC_Rules:CanPlay(card,gs)
+end
+function L:Phase(gs)
+    if gs.roundOver then return "ROUND_END" end
+    if gs.pendingColorPick then return "COLOR" end
+    if gs.unoWindow then return "UNO" end
+    if gs.wild4Challengable then return "CHALLENGE" end
+    if (gs.pendingDraw or 0)>0 then return "PENALTY" end
+    if gs.drawnThisTurn then return "DRAWN" end
+    return "TURN"
+end
+local function Complete(gs)
+    local winner=L:CheckRoundWinner(gs)
+    if not winner or (gs.pendingDraw or 0)>0 or gs.pendingColorPick or gs.unoWindow or gs.wild4Challengable then return false end
+    gs.lastRoundPoints=L:ScoreRound(gs,winner); gs.lastRoundWinner=winner
+    gs.roundOver=true; gs.mpOver=gs.isMatch==true; gs.closingWinner=nil
+    return true
+end
+local function ClearPenalty(gs)
+    gs.pendingDraw=0; gs.pendingType=nil; gs.wild4Challengable=false; gs.wild4Context=nil
+end
+local Advance, BeginTurn
+Advance=function(gs)
+    gs.turnNotice=nil; gs.drawnThisTurn=nil; gs.hasDrawnThisTurn=false
+    local Rules=ArcadiaNexus.TC_Rules; local steps=1+(gs.skipNext or 0); gs.skipNext=0
+    gs.currentPlayer=Rules:NextPlayerIndex(gs,steps); BeginTurn(gs)
+end
+local function TakePenalty(gs)
+    L:DrawCardsForPlayer(gs,gs.currentPlayer,gs.pendingDraw); ClearPenalty(gs)
+    if not Complete(gs) then Advance(gs) end
+end
+BeginTurn=function(gs)
+    if Complete(gs) or gs.wild4Challengable then return end
+    if (gs.pendingDraw or 0)>0 then
+        local canStack=false
+        if not gs.closingWinner then
+            for i in ipairs(gs.players[gs.currentPlayer].hand) do if L:CanPlayIndex(gs,gs.currentPlayer,i) then canStack=true; break end end
         end
-        L:DrawCardsForPlayer(gs, gs.currentPlayer, gs.pendingDraw)
-        gs.pendingDraw = 0
-        gs.pendingType = nil
-        L.MpAdvanceTurn(gs)
-        return
+        if not canStack then TakePenalty(gs) end
     end
 end
-
-function L.MpAfterPlay(gs, playerIndex, played)
-    local winner = L:CheckRoundWinner(gs)
-    if winner then
-        L:ScoreRound(gs, winner)
-        gs.lastRoundWinner = winner
-        gs.mpOver = true
-        return
-    end
-    if #gs.players[playerIndex].hand == 1 and gs.rules.unoCallRule then
-        gs.players[playerIndex].unoCalled = false
-        gs.unoWindow = { playerIndex = playerIndex, resolved = false }
-        return
-    end
-    L.MpAdvanceTurn(gs)
+function L.AfterPlay(gs,seat,card)
+    local p=gs.players[seat]
+    if #p.hand==0 then
+        if (gs.pendingDraw or 0)>0 then gs.closingWinner=seat; Advance(gs) else Complete(gs) end
+    elseif #p.hand==1 and gs.rules.unoCallRule then
+        p.unoCalled=false; gs.unoWindow={playerIndex=seat,resolved=false,remainingMs=3000}
+    else Advance(gs) end
 end
-
-function L.ApplyMp(gs, intent, seat)
-    if not gs or gs.mpOver then return false end
-    seat = tonumber(seat) or 0
-    if seat < 1 or seat > (gs.playerCount or 0) then return false end
-    local kind = (intent and intent.kind) or "PLAY"
-    local Rules = ArcadiaNexus.TC_Rules
-
-    if kind == "UNO_EXPIRE" then
-        if seat ~= 1 then return false end
-        local uw = gs.unoWindow
-        if not uw or uw.resolved then return false end
-        uw.resolved = true
-        if not gs.players[uw.playerIndex].unoCalled then
-            gs.players[uw.playerIndex].unoCalled = true
-        end
-        gs.unoWindow = nil
-        L.MpAdvanceTurn(gs)
-        return true
+L.MpAdvanceTurn=Advance; L.MpBeginTurn=BeginTurn; L.MpHandlePendingDraw=BeginTurn; L.MpAfterPlay=L.AfterPlay
+function L.ApplyAction(gs,intent,seat)
+    if not gs or gs.roundOver or gs.mpOver then return false end
+    if type(seat)~="number" or seat~=math.floor(seat) or seat<1 or seat>gs.playerCount then return false end
+    local kind=intent and intent.kind or "PLAY"; local Rules=ArcadiaNexus.TC_Rules
+    local uw=gs.unoWindow
+    if uw then
+        if kind=="UNO" and seat==uw.playerIndex then gs.players[seat].unoCalled=true; Count(gs,seat,"unosCalled")
+        elseif kind=="CATCH" and seat~=uw.playerIndex and not gs.players[uw.playerIndex].unoCalled then
+            Count(gs,uw.playerIndex,"unosMissed"); Count(gs,seat,"unosCaught"); L:DrawCardsForPlayer(gs,uw.playerIndex,2)
+        elseif kind=="UNO_EXPIRE" and seat==1 then gs.players[uw.playerIndex].unoCalled=true
+        else return false end
+        gs.unoWindow=nil; Advance(gs); return true
     end
-    if kind == "UNO" then
-        local uw = gs.unoWindow
-        if not uw or uw.resolved or uw.playerIndex ~= seat then return false end
-        gs.players[seat].unoCalled = true
-        gs.stats.unosCalled = (gs.stats.unosCalled or 0) + 1
-        uw.resolved = true
-        gs.unoWindow = nil
-        L.MpAdvanceTurn(gs)
-        return true
+    if gs.pendingColorPick then
+        local pick=gs.pendingColorPick; local color=L.UnpackColor(intent.c)
+        if kind~="COLOR" or seat~=pick.playerIndex or not color or color=="WILD" then return false end
+        gs.pendingColorPick=nil; Rules:ApplyCardEffect(gs,pick.card,color); L.AfterPlay(gs,seat,pick.card); return true
     end
-    if kind == "CATCH" then
-        local uw = gs.unoWindow
-        if not uw or uw.resolved then return false end
-        local target = uw.playerIndex
-        if target == seat or gs.players[target].unoCalled then return false end
-        gs.stats.unosMissed = (gs.stats.unosMissed or 0) + 1
-        gs.stats.unosCaught = (gs.stats.unosCaught or 0) + 1
-        L:DrawCardsForPlayer(gs, target, 2)
-        uw.resolved = true
-        gs.unoWindow = nil
-        L.MpAdvanceTurn(gs)
-        return true
-    end
-    if gs.unoWindow and not gs.unoWindow.resolved then return false end
-
-    if kind == "COLOR" then
-        local pick = gs.pendingColorPick
-        if not pick or pick.playerIndex ~= seat then return false end
-        local color = L.UnpackColor(intent.c)
-        if not color or color == "WILD" then return false end
-        Rules:ApplyCardEffect(gs, pick.card, color)
-        gs.pendingColorPick = nil
-        gs.currentPlayer = pick.playerIndex
-        L.MpAfterPlay(gs, pick.playerIndex, pick.card)
-        return true
-    end
-    if kind == "CHALLENGE" then
-        if not gs.wild4Challengable or gs.currentPlayer ~= seat then return false end
-        local wins = Rules:PlayerHadPlayableBeforeWild4(gs, gs.wild4PlayedBy)
-        Rules:ResolveChallenge(gs, wins)
-        gs.wild4Challengable = false
-        L.MpBeginTurn(gs)
-        return true
-    end
-    if kind == "ACCEPT" then
-        if not gs.wild4Challengable or gs.currentPlayer ~= seat then return false end
-        gs.wild4Challengable = false
-        L.MpHandlePendingDraw(gs)
-        return true
-    end
-    if gs.pendingColorPick then return false end
-    if gs.currentPlayer ~= seat then return false end
-
-    if kind == "PASS" then
-        if not gs.drawnThisTurn then return false end
-        gs.drawnThisTurn = nil
-        L.MpAdvanceTurn(gs)
-        return true
-    end
-    if kind == "DRAW" then
-        if gs.hasDrawnThisTurn or gs.drawnThisTurn then return false end
-        gs.hasDrawnThisTurn = true
-        local drawn = L:DrawCardsForPlayer(gs, seat, 1)
-        if #drawn == 0 then
-            L.MpAdvanceTurn(gs)
-            return true
-        end
-        gs.drawnThisTurn = drawn[1]
-        if gs.rules.playDrawn and Rules:CanPlay(drawn[1], gs) then
-            return true
-        end
-        gs.drawnThisTurn = nil
-        L.MpAdvanceTurn(gs)
-        return true
-    end
-    if kind == "PLAY" then
-        local player = gs.players[seat]
-        local idx = tonumber(intent.i)
-        local card = player.hand[idx]
-        if not card or not Rules:CanPlay(card, gs) then return false end
-        if card.type == "WILD4" then
-            gs.wild4Context = {
-                playerIndex = seat,
-                handSnapshot = {},
-                activeColorBefore = Rules:GetActiveColor(gs),
-                topCard = Rules:GetTopCard(gs),
-            }
-            for _, c in ipairs(player.hand) do
-                gs.wild4Context.handSnapshot[#gs.wild4Context.handSnapshot + 1] = {
-                    color = c.color, type = c.type, value = c.value,
-                }
+    if gs.currentPlayer~=seat then return false end
+    if gs.wild4Challengable then
+        if kind=="CHALLENGE" then
+            local wins=Rules:PlayerHadPlayableBeforeWild4(gs,gs.wild4PlayedBy)
+            local previous=math.max(0,(gs.pendingDraw or 4)-4); local dealer=gs.wild4PlayedBy
+            gs.lastChallengeSucceeded=wins
+            if wins then
+                L:DrawCardsForPlayer(gs,dealer,4); gs.closingWinner=nil
+                gs.pendingDraw=previous; gs.pendingType=previous>0 and "WILD4" or nil
+                gs.wild4Challengable=false; gs.wild4Context=nil; BeginTurn(gs)
+            else
+                L:DrawCardsForPlayer(gs,seat,(gs.pendingDraw or 4)+2); ClearPenalty(gs)
+                if not Complete(gs) then Advance(gs) end
             end
-        end
-        local played = L:RemoveCardFromHand(player, idx)
-        L:AddToDiscard(gs, played)
-        gs.drawnThisTurn = nil
-        local wildColor = L.UnpackColor(intent.c)
-        if Rules:IsWildType(played) and not wildColor then
-            gs.pendingColorPick = { playerIndex = seat, card = played }
             return true
+        elseif kind=="ACCEPT" or kind=="DRAW" then TakePenalty(gs); return true
+        elseif kind~="PLAY" then return false end
+    end
+    if kind=="PASS" then
+        if not gs.drawnThisTurn then return false end
+        Advance(gs); return true
+    elseif kind=="DRAW" then
+        if gs.drawnThisTurn or gs.hasDrawnThisTurn then return false end
+        if (gs.pendingDraw or 0)>0 then TakePenalty(gs); return true end
+        gs.hasDrawnThisTurn=true
+        local drawn=L:DrawCardsForPlayer(gs,seat,1); gs.drawnThisTurn=drawn[1]
+        if drawn[1] and gs.rules.playDrawn and Rules:CanPlay(drawn[1],gs) then return true end
+        Advance(gs); return true
+    elseif kind=="PLAY" then
+        local index=tonumber(intent.i)
+        if not index or index~=math.floor(index) or not L:CanPlayIndex(gs,seat,index) then return false end
+        local color=intent.c and L.UnpackColor(intent.c)
+        if intent.c and (not color or color=="WILD") then return false end
+        local p=gs.players[seat]; local card=p.hand[index]
+        if card.type=="WILD4" then
+            gs.wild4Context={playerIndex=seat,activeColorBefore=Rules:GetActiveColor(gs),handSnapshot=L:CloneGameState(p.hand)}
+            Count(gs,seat,"wild4Played")
         end
-        Rules:ApplyCardEffect(gs, played, wildColor)
-        gs.pendingColorPick = nil
-        L.MpAfterPlay(gs, seat, played)
-        return true
+        gs.wild4Challengable=false
+        local played=L:RemoveCardFromHand(p,index); L:AddToDiscard(gs,played)
+        gs.drawnThisTurn=nil; gs.hasDrawnThisTurn=false
+        if Rules:IsWildType(played) and not color then gs.pendingColorPick={playerIndex=seat,card=played}; return true end
+        Rules:ApplyCardEffect(gs,played,color); L.AfterPlay(gs,seat,played); return true
     end
     return false
 end
+L.ApplyMp=L.ApplyAction
 
 function L.IsFinished(pub)
     return pub and (pub.over == true or tonumber(pub.o) == 1)
 end
 
 local MP_FIELDS = { "n", "t", "dir", "ac", "top", "ds", "pd", "pt", "hs", "sc",
-    "ck", "dc", "uw", "uwp", "w4", "pc", "hd", "o", "w", "th", "rl" }
+    "ck", "dc", "uw", "uwp", "w4", "pc", "hd", "o", "w", "th", "rl", "cl", "ev" }
 
 function L.PackPublic(pub)
     if not pub then return {} end
@@ -676,11 +588,11 @@ function L.UnpackPublic(pub, f)
         f = unpacked
     end
     for _, k in ipairs({
-        "n", "t", "dir", "pd", "dc", "uw", "uwp", "w4", "pc", "hd", "o", "w",
+        "n", "t", "dir", "pd", "dc", "uw", "uwp", "w4", "pc", "hd", "o", "w", "cl",
     }) do
         if f[k] ~= nil then pub[k] = tonumber(f[k]) or pub[k] end
     end
-    for _, k in ipairs({ "ac", "top", "ds", "pt", "hs", "sc", "ck", "th", "rl" }) do
+    for _, k in ipairs({ "ac", "top", "ds", "pt", "hs", "sc", "ck", "th", "rl", "ev" }) do
         if f[k] ~= nil then pub[k] = f[k] end
     end
     pub.turn = pub.t
@@ -732,7 +644,14 @@ function L.BoardStateFromMatch(pub, handStr, localSeat)
         scores[i] = tonumber(token) or 0
         i = i + 1
     end
-    local myHand = L.UnpackHand(handStr)
+    local packed, drawnId=tostring(handStr or "."):match("^(.-)~(%d+)$")
+    local myHand=L.UnpackHand(packed or handStr)
+    local drawn; for _,card in ipairs(myHand) do if card.id==tonumber(drawnId) then drawn=card; break end end
+    local personal={}; local eventSeat=1
+    for u,w in tostring(pub.ev or ""):gmatch("(%d+):(%d+)") do
+        if eventSeat==localSeat then personal={unosCalled=tonumber(u),wild4Played=tonumber(w)} end
+        eventSeat=eventSeat+1
+    end
     local players = {}
     for s = 1, n do
         local def = Npc and Npc.GetByKey and Npc:GetByKey(keys[s] or "thrall")
@@ -805,14 +724,16 @@ function L.BoardStateFromMatch(pub, handStr, localSeat)
         wild4Challengable = tonumber(pub.w4) == 1,
         pendingColorPick = (tonumber(pub.pc) or 0) > 0 and { playerIndex = tonumber(pub.pc) } or nil,
         hasDrawnThisTurn = tonumber(pub.hd) == 1,
-        drawnThisTurn = nil,
+        drawnThisTurn = drawn,
+        closingWinner = tonumber(pub.cl)~=0 and tonumber(pub.cl) or nil,
+        roundOver = over,
         localSeat = localSeat,
         gameOver = over,
         result = result,
         lastRoundWinner = winner,
         mp = true,
         skipNext = 0,
-        stats = {},
+        stats = personal,
     }
 end
 
@@ -860,14 +781,18 @@ function L.MatchOpts(engine)
                 return "."
             end
             local packed = L.PackHand(hid.players[seat].hand)
-            return (packed ~= "" and packed) or "."
+            local drawnIndex=0
+            if hid.currentPlayer==seat and hid.drawnThisTurn then
+                for index,card in ipairs(hid.players[seat].hand) do if card.id==hid.drawnThisTurn.id then drawnIndex=index; break end end
+            end
+            return ((packed ~= "" and packed) or ".") .. "~" .. tostring(drawnIndex)
         end,
         isFinished = L.IsFinished,
         onState = function(_, st)
             if engine then engine:OnMatchState(st) end
         end,
         onResult = function(node, resultId)
-            if engine then engine:OnMatchResult(node, resultId) end
+            if engine then return engine:OnMatchResult(node, resultId) end
         end,
         onReject = function(_, f)
             if engine then engine:OnMatchReject(f) end
@@ -879,4 +804,93 @@ function L.MatchOpts(engine)
             return L.CanTryStart(node)
         end,
     }
+end
+
+function L:IsDifficulty(value) return value=="easy" or value=="normal" or value=="hard" end
+local function Int(n) return type(n)=="number" and n==math.floor(n) and n>=0 and n<=2147483647 end
+function L:ValidateSave(gs)
+    if type(gs)~="table" or gs.saveVersion~=2 or gs.isMatch or not self:IsDifficulty(gs.difficulty)
+        or not Int(gs.aiCount) or gs.aiCount<1 or gs.aiCount>3 or gs.playerCount~=gs.aiCount+1
+        or (gs.gameMode~="single" and gs.gameMode~="multi") or not Int(gs.pointTarget) or gs.pointTarget<1
+        or type(gs.runId)~="string" or type(gs.players)~="table" or #gs.players~=gs.playerCount
+        or not Int(gs.roundNumber) or not Int(gs.roundsPlayed) or not Int(gs.currentPlayer) or gs.currentPlayer<1 or gs.currentPlayer>gs.playerCount
+        or type(gs.rules)~="table" then return false end
+    for _,key in ipairs({"stackDraw2","stackDraw4","playDrawn","unoCallRule","challengeDraw4"}) do if type(gs.rules[key])~="boolean" then return false end end
+    if gs.direction~=1 and gs.direction~=-1 or not Int(gs.pendingDraw) or not Int(gs.skipNext) then return false end
+    if gs.pendingDraw>0 and gs.pendingType~="DRAW2" and gs.pendingType~="WILD4" then return false end
+    local seen,total={},0; local deck=ArcadiaNexus.TC_Deck:BuildDeck()
+    local function Cards(pile)
+        if type(pile)~="table" then return false end
+        for _,c in ipairs(pile) do
+            local expected=type(c)=="table" and deck[c.id]
+            if not expected or seen[c.id] or expected.color~=c.color or expected.type~=c.type or expected.value~=c.value or expected.points~=c.points then return false end
+            seen[c.id]=true; total=total+1
+        end; return true
+    end
+    if not Cards(gs.drawPile) or not Cards(gs.discardPile) or #gs.discardPile==0 then return false end
+    for seat,p in ipairs(gs.players) do if type(p)~="table" or p.index~=seat or not Int(p.score) or not Cards(p.hand) then return false end end
+    if total~=108 then return false end
+    local top=gs.discardPile[#gs.discardPile]
+    if gs.pendingColorPick and (type(gs.pendingColorPick)~="table" or type(gs.pendingColorPick.card)~="table"
+        or gs.pendingColorPick.card.id~=top.id or (top.type~="WILD" and top.type~="WILD4")
+        or gs.pendingColorPick.playerIndex~=gs.currentPlayer) then return false end
+    if gs.drawnThisTurn then
+        if type(gs.drawnThisTurn)~="table" or not gs.hasDrawnThisTurn or gs.pendingColorPick or gs.unoWindow or gs.pendingDraw>0 then return false end
+        local found=false; for _,c in ipairs(gs.players[gs.currentPlayer].hand) do if c.id==gs.drawnThisTurn.id then found=true end end
+        if not found then return false end
+    elseif gs.hasDrawnThisTurn then return false end
+    if gs.closingWinner and (not Int(gs.closingWinner) or not gs.players[gs.closingWinner] or #gs.players[gs.closingWinner].hand~=0 or gs.pendingDraw<=0) then return false end
+    if type(gs.stats)~="table" or type(gs.stats.bySeat)~="table" then return false end
+    for seat,st in pairs(gs.stats.bySeat) do
+        if not Int(seat) or not gs.players[seat] or type(st)~="table" then return false end
+        for _,key in ipairs({"unosCalled","unosMissed","unosCaught","wild4Played"}) do if st[key]~=nil and not Int(st[key]) then return false end end
+    end
+    if gs.wild4Challengable then
+        local ctx=gs.wild4Context
+        if type(ctx)~="table" or not gs.players[ctx.playerIndex] or type(ctx.handSnapshot)~="table"
+            or not ctx.activeColorBefore or gs.pendingDraw<4 or gs.pendingType~="WILD4" then return false end
+    end
+    if gs.unoWindow and (type(gs.unoWindow)~="table" or not Int(gs.unoWindow.remainingMs) or gs.unoWindow.remainingMs>3000 or not gs.players[gs.unoWindow.playerIndex]) then return false end
+    if gs.phase~="PLAYING" and gs.phase~="ROUND_END" and gs.phase~="RESULT_PENDING" and gs.phase~="FINISHED" then return false end
+    if gs.phase=="ROUND_END" and not gs.roundOver then return false end
+    if (gs.phase=="RESULT_PENDING" or gs.phase=="FINISHED") and gs.result~="WIN" and gs.result~="LOSS" then return false end
+    return true
+end
+function L:MigrateSave(old)
+    if type(old)~="table" then return nil end
+    local gs=self:CloneGameState(old)
+    if gs.saveVersion==2 then return self:ValidateSave(gs) and gs or nil end
+    -- A pre-deal pause contains no cards; finish that original first deal before exposing the save.
+    if (gs.roundNumber or 0)==0 and gs.players and #(gs.players[1].hand or {})==0 then self:StartRound(gs) end
+    if gs.wild4Challengable and not gs.wild4Context then return nil end -- preserve the original instead of inventing hidden facts
+    local top=gs.discardPile and gs.discardPile[#gs.discardPile]
+    -- The old clone removed pendingColorPick entirely: a wild top cannot prove whether
+    -- its color was already chosen. Keep this ambiguous legacy state rather than skipping a choice.
+    if top and ArcadiaNexus.TC_Rules:IsWildType(top) and not gs.pendingColorPick then return nil end
+    local active=gs.players and gs.players[gs.currentPlayer]
+    if gs.rules and gs.rules.unoCallRule and active and #active.hand==1 and gs.lastPlayedBy==gs.currentPlayer
+        and not active.unoCalled and not gs.unoWindow then return nil end
+
+    -- Old StartRound discarded rejected wild starters. Restore only their canonical missing IDs,
+    -- at the bottom of the pile, preserving all known hands, scores and draw order.
+    local known={}
+    for _,pile in ipairs({gs.drawPile,gs.discardPile}) do for _,card in ipairs(pile or {}) do known[card.id]=true end end
+    for _,player in ipairs(gs.players or {}) do for _,card in ipairs(player.hand or {}) do known[card.id]=true end end
+    for _,card in ipairs(ArcadiaNexus.TC_Deck:BuildDeck()) do
+        if not known[card.id] and (card.type=="WILD" or card.type=="WILD4") then gs.drawPile[#gs.drawPile+1]=card end
+    end
+    if gs.hasDrawnThisTurn and not gs.drawnThisTurn then
+        local hand=gs.players[gs.currentPlayer].hand
+        local drawn=hand[#hand]
+        if not drawn or not gs.rules.playDrawn or not ArcadiaNexus.TC_Rules:CanPlay(drawn,gs) then return nil end
+        gs.drawnThisTurn=self:CloneGameState(drawn)
+    end
+    gs.saveVersion=2; gs.phase=gs.roundOver and "ROUND_END" or "PLAYING"
+    gs.runId="migration-validation"
+    gs.legacyActionStats=self:CloneGameState(gs.stats); gs.stats=gs.stats or {}; gs.stats.bySeat={}
+    gs.stats.unosCalled=0; gs.stats.wild4Played=0
+    if gs.unoWindow then gs.unoWindow.remainingMs=3000 end
+    if not self:ValidateSave(gs) then return nil end
+    gs.runId=ArcadiaNexus.LocalResults:NewRun("TAVERNCARDS")
+    return gs
 end

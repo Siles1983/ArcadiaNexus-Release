@@ -10,8 +10,8 @@
 --    StartGame  → Validierung, dann BeginGame (bzw. ResumeGame bei
 --                 pausierter eigener Session)
 --    StopGame   → EndGame, _sessionId = nil
---    SaveAndPause → PauseGame, _sessionId BLEIBT gesetzt,
---                   Mid-Level-State in den aktiven Slot
+--    SaveAndPause → PauseGame, Mid-Level-State in den aktiven Slot,
+--                   dann EndGame und _sessionId = nil
 -- ============================================================
 
 local ArcadiaNexus = _G.ArcadiaNexus
@@ -76,20 +76,33 @@ function E:_ArmIdleHint()
     end)
 end
 
+-- Keine Addon-WAVs; Client-Pfade wie ShiningRay.ogg fehlen in aktuellen Builds.
+-- Wie Mosaic/Shadows: C_Sound.PlaySound mit festen SoundKit-IDs.
+local AJ_SOUND_KEY = {
+    match    = "soundOnMatch",
+    powerup  = "soundOnPowerup",
+    lowmoves = "soundOnLowMoves",
+    win      = "soundOnGameover",
+    loss     = "soundOnGameover",
+}
+local AJ_SOUND_ID = {
+    match    = (SOUNDKIT and SOUNDKIT.UI_ACHIEVEMENT_TOAST_SPARK) or 888,
+    powerup  = (SOUNDKIT and SOUNDKIT.UI_LEGENDARY_LOOT_TOAST) or 63971,
+    lowmoves = (SOUNDKIT and SOUNDKIT.ALARM_CLOCK_WARNING_3) or 18871,
+    win      = (SOUNDKIT and SOUNDKIT.READY_CHECK) or 8960,
+    loss     = (SOUNDKIT and SOUNDKIT.INTERFACE_SOUND_LOST_TARGET_UNIT) or 847,
+}
+
 local function PlayAJ(event)
     local S = ArcadiaNexus.AJ_Settings
-    if not S or not S:Get("soundEnabled") then return end
-    if event == "match" and S:Get("soundOnMatch") then
-        PlaySoundFile("Sound\\Spells\\ShiningRay.ogg", "Master")
-    elseif event == "powerup" and S:Get("soundOnPowerup") then
-        PlaySound(SOUNDKIT.UI_LEGENDARY_LOOT_TOAST or 63971, "SFX")
-    elseif event == "lowmoves" and S:Get("soundOnLowMoves") ~= false
-           and S:Get("soundOnGameover") ~= false then
-        PlaySound(SOUNDKIT.ALARM_CLOCK_WARNING_3 or 18871, "SFX")
-    elseif event == "win" and S:Get("soundOnGameover") then
-        PlaySound(SOUNDKIT.READY_CHECK or 8960, "SFX")
-    elseif event == "loss" and S:Get("soundOnGameover") then
-        PlaySoundFile("Sound\\Doodad\\BellTollHorde.ogg", "Master")
+    local key = AJ_SOUND_KEY[event]
+    if not S or not key or not S:Get("soundEnabled") or not S:Get(key) then return end
+    local id = AJ_SOUND_ID[event]
+    if not id then return end
+    if C_Sound and C_Sound.PlaySound then
+        pcall(C_Sound.PlaySound, id, "Master")
+    elseif PlaySound then
+        pcall(PlaySound, id, "Master")
     end
 end
 
@@ -222,7 +235,9 @@ function E:StartGame(config)
         -- Pausierte eigene Session weiterführen
         ArcadiaNexus.Lifecycle:ResumeGame(GAME_ID, E._sessionId)
     else
-        E._sessionId = ArcadiaNexus.Lifecycle:RestartGame(GAME_ID, E._sessionId)
+        local sid = ArcadiaNexus.Lifecycle:ClaimRestart(GAME_ID, E._sessionId)
+        if not sid then return false end
+        E._sessionId = sid
     end
 
     Settings:SetActiveSlot(slot)
@@ -289,21 +304,7 @@ function E:StartEndless(config)
         return
     end
 
-    _timerGuard:Cancel()
-    _idleGuard:Cancel()
-    _gameLoop:Stop()
-    _animGen        = _animGen + 1
-    _selected       = nil
-    _pendingPowerUp = nil
-    _moveCount      = 0
-
-    if config.resetRun then
-        save.endlessWave = 1
-        save.endlessRunScore = 0
-        Settings:ClearMidLevel(slot)
-    end
-
-    local wave = math.max(1, tonumber(config.wave) or save.endlessWave or 1)
+    local wave = math.max(1, tonumber(config.wave) or (config.resetRun and 1 or save.endlessWave) or 1)
     local def = Levels:GetEndlessDef(wave)
     if not def or not Levels:ValidateDef(def) then return end
 
@@ -311,8 +312,22 @@ function E:StartEndless(config)
     if E._sessionId and GS:IsCurrent(GAME_ID, E._sessionId) then
         ArcadiaNexus.Lifecycle:ResumeGame(GAME_ID, E._sessionId)
     else
-        E._sessionId = ArcadiaNexus.Lifecycle:RestartGame(GAME_ID, E._sessionId)
+        local sid = ArcadiaNexus.Lifecycle:ClaimRestart(GAME_ID, E._sessionId)
+        if not sid then return false end
+        E._sessionId = sid
     end
+    if config.resetRun then
+        save.endlessWave = 1
+        save.endlessRunScore = 0
+        Settings:ClearMidLevel(slot)
+    end
+    _timerGuard:Cancel()
+    _idleGuard:Cancel()
+    _gameLoop:Stop()
+    _animGen = _animGen + 1
+    _selected = nil
+    _pendingPowerUp = nil
+    _moveCount = 0
 
     Settings:SetActiveSlot(slot)
     self.activeSlot = slot
@@ -387,7 +402,7 @@ end
 
 -- ============================================================
 -- SaveAndPause (Tab schließen / Renderer OnHide)
--- Session bleibt registriert, _sessionId bleibt gesetzt.
+-- Fortschritt speichern, danach Session beenden und _sessionId freigeben.
 -- ============================================================
 function E:SaveAndPause()
     if E._sessionId then
@@ -931,7 +946,7 @@ function E:MapBackToSlots()
     if R then R:EnterSlotMenu() end
 end
 
--- ── Weiter: zurück zur Karte ──────────────────────────────────
+-- ── Weiter: nächstes Brett, Endlos bleibt eine Welle ───────────
 function E:SelectEndless()
     if E.state ~= "MAP" then return end
     self:StartEndless({
@@ -953,7 +968,17 @@ function E:ContinueToNextLevel()
         return
     end
     local nextLevel = gs and (gs.level + 1) or 1
-    self:OpenMap(self.activeSlot, nextLevel)
+    local Levels = ArcadiaNexus.AJ_Levels
+    if not Levels or nextLevel > Levels.COUNT then
+        self:OpenMap(self.activeSlot, Levels and Levels.COUNT or nextLevel)
+        return
+    end
+    self:StartGame({
+        slot    = self.activeSlot,
+        mode    = "continue",
+        level   = nextLevel,
+        skipMid = true,
+    })
 end
 
 function E:ContinueCampaign()

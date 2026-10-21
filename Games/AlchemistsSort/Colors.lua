@@ -39,13 +39,15 @@ function C:Get(colorID)
 end
 
 -- Anzahl Farben für einen Level-Bereich
+-- Fixed catalog 1–1000, then 8 colors for every later random level.
+-- Bands match _tools/build_als_catalog.py.
 function C:GetColorCount(levelNum)
-    if levelNum <= 5  then return 3
-    elseif levelNum <= 15 then return 4
-    elseif levelNum <= 30 then return 5
-    elseif levelNum <= 50 then return 6
-    elseif levelNum <= 75 then return 7
-    else                       return 8
+    if levelNum <= 40  then return 3
+    elseif levelNum <= 120 then return 4
+    elseif levelNum <= 250 then return 5
+    elseif levelNum <= 450 then return 6
+    elseif levelNum <= 700 then return 7
+    else                        return 8
     end
 end
 

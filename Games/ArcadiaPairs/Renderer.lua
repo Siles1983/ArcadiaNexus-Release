@@ -1,13 +1,13 @@
 -- ============================================================
 --  ArcadiaNexus
 --  Games/Memory/Renderer.lua
---  Version: 2.0.0  (Blueprint v2 – nach Match-3/2048-Muster)
+--  Version: 2.0.0  (gemeinsames Blueprint-v2-Layout)
 --
 --  Layout-Strategie:
 --    - Alle Elemente direkt an self.frame (GamesPanel) verankert
 --    - CENTER-Ankern für Spielfeld, Border, Logo
 --    - HUD (Züge, Paare, Timer) über dem Spielfeld
---    - Controls-Leiste am BOTTOM von self.frame (1:1 wie Match-3)
+--    - Gemeinsame Controls-Leiste am BOTTOM von self.frame
 --    - Border als eigener Frame (FrameLevel +10 über _fieldFrame)
 --    - Logo via UI.CreateGameLogo (IDLE-Zustand)
 --    - Dropdown (Schwierigkeit) + Timer-Checkbox + Start/Beenden + Neues Spiel

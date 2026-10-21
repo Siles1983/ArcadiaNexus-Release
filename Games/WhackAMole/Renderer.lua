@@ -19,6 +19,7 @@
 local ArcadiaNexus = _G.ArcadiaNexus
 ArcadiaNexus.WAM_Renderer = {}
 local R = ArcadiaNexus.WAM_Renderer
+R._fxGuard = ArcadiaNexus.TimerGuard.New()
 
 -- ============================================================
 -- CFG – alle Layout-Konstanten zentral (Upvalue-Limit: max 60)
@@ -42,7 +43,7 @@ local CFG = {
     logo_ofs_y   = 0,
     hud_y        = 225,
     hud_x        = 0,
-    hud_w        = 405,
+    hud_w        = 570,
     hud_h        = 28,
     hud_alpha    = 0.75,
     dd_w         = 120,
@@ -235,8 +236,11 @@ function R:UpdateHUD(board)
     if self._hudFS then
         self._hudFS:SetText(
             (L["lbl_score"] or "Score") .. ": " .. tostring(board.score or 0) .. "   " ..
-            (L["lbl_time"] or "Zeit") .. ": " .. tostring(board.timeLeft or 0) .. "   " ..
-            (L["lbl_missed"] or "Verpasst") .. ": " .. tostring(board.missed or 0)
+            (L["lbl_time"] or "Zeit") .. ": " ..
+            ((board.timeLeft or 0)<=10 and "|cffff4444" or "") .. tostring(board.timeLeft or 0) .. "|r   " ..
+            (L["lbl_hits"] or "Hits") .. ": " .. tostring(board.hitCount or 0) .. "   " ..
+            (L["lbl_missed"] or "Verpasst") .. ": " .. tostring(board.missed or 0) .. "   " ..
+            (L["go_highscore"] or "Best: ") .. tostring(ArcadiaNexus.ScoreManager:GetBestScore("WHACKAMOLE",board.difficulty:lower()) or 0)
         )
     end
 end
@@ -254,27 +258,29 @@ function R:_CreateControls()
 
     -- Schwierigkeits-Dropdown (linkes Segment)
     local S = ArcadiaNexus.WAM_Settings
+    local options={}
+    for _,key in ipairs({"EASY","NORMAL","HARD"}) do
+        local cfg=ArcadiaNexus.WAM_Logic.DIFFICULTY[key]
+        options[#options+1]={key=key,label=L["diff_"..key:lower()],
+            tooltip=string.format(L.tip_format,cfg.gridSize,cfg.gridSize,cfg.moleSpeed,math.floor(10*cfg.scoreFactor))}
+    end
 
     local ddAnchor = CreateFrame("Frame", nil, cf)
     ddAnchor:SetSize(CFG.dd_w, CFG.btn_h)
     ddAnchor:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
 
-    UI.CreateSimpleDropdown(
+    self._difficultyDD=UI.CreateSimpleDropdown(
         ddAnchor,
         0, 0,
         CFG.dd_w,
         "",
-        {
-            { key = "EASY",   label = L["diff_easy"]   },
-            { key = "NORMAL", label = L["diff_normal"]  },
-            { key = "HARD",   label = L["diff_hard"]    },
-        },
+        options,
         function()
-            return (S and S:Get("difficulty")) or "EASY"
+            local E=ArcadiaNexus.WAM_Engine
+            return E._board and E._board.difficulty or ArcadiaNexus.WAM_Logic:NormalizeDifficulty(S:Get("difficulty"))
         end,
         function(key)
-            R._lastDiff = key
-            if S then S:Set("difficulty", key) end
+            if S and S:Set("difficulty",key) then R._lastDiff=key end
         end
     )
 
@@ -287,9 +293,7 @@ function R:_CreateControls()
         if R.state == "PLAYING" then
             R:StopGame()
         else
-            local diff = R._lastDiff
-                or (ArcadiaNexus.WAM_Settings and ArcadiaNexus.WAM_Settings:Get("difficulty"))
-                or "EASY"
+            local diff = E._board and E._board.difficulty or S:Get("difficulty")
             E:StartGame(diff)
         end
     end)
@@ -305,6 +309,9 @@ function R:_CreateControls()
 end
 
 function R:ShowGameOver(board, hitBomb)
+    local engine=ArcadiaNexus.WAM_Engine
+    if engine._board~=board or engine.state~="GAMEOVER" then return end
+    local sid=engine._sessionId
     self.state = "GAMEOVER"
     self._lastDiff = board.difficulty
 
@@ -329,19 +336,23 @@ function R:ShowGameOver(board, hitBomb)
         titleColor = titleColor,
         score      = board.score,
         gameId     = "WHACKAMOLE",
-        difficulty = board.difficulty,
-        result     = "LOSS",
+        difficulty = board.difficulty:lower(),
+        result     = board.result,
+        xp         = board.resultData and board.resultData.awardedXP,
+        gold       = board.resultData and board.resultData.awardedGold,
+        newHighscore = board.resultData and board.resultData.newHighscore,
+        isCurrent = function()
+            return engine._board==board and engine.state=="GAMEOVER" and ArcadiaNexus.GameSession:IsSession(engine,sid)
+        end,
         lines      = {
+            (L["lbl_hits"] or "Hits") .. ": " .. tostring(board.hitCount or 0),
             (L["go_missed"] or "Verpasst: ") .. tostring(board.missed or 0),
         },
         L = L,
         onRetry = function()
             local E = ArcadiaNexus.WAM_Engine
             if not E then return end
-            local diff = R._lastDiff
-                or (ArcadiaNexus.WAM_Settings and ArcadiaNexus.WAM_Settings:Get("difficulty"))
-                or "EASY"
-            E:StartGame(diff)
+            E:StartGame(board.difficulty)
         end,
         onExit = function()
             R:StopGame()
@@ -501,6 +512,9 @@ end
 function R:ShowMole(r, c, icon, isBomb)
     local h = self._holes[r] and self._holes[r][c]
     if not h then return end
+    h.effectId=(h.effectId or 0)+1
+    if h.fxFS then h.fxFS:Hide() end
+    h.frame:SetBackdropColor(0.20,0.14,0.08,1)
     h.icon:SetTexture(icon)
     h.icon:Show()
     if isBomb then
@@ -520,13 +534,17 @@ end
 -- ============================================================
 -- Effekte (unverändert)
 -- ============================================================
-function R:ShowHitEffect(r, c, text)
+function R:ShowHitEffect(r, c, text, neutral)
     local h = self._holes[r] and self._holes[r][c]
     if not h then return end
     local fx = EnsureHoleFx(h)
-    fx:SetText("|cff00ff00" .. (text or "+10") .. "|r")
+    h.effectId=(h.effectId or 0)+1
+    local effectId,sid=h.effectId,ArcadiaNexus.WAM_Engine._sessionId
+    fx:SetText(neutral and (ArcadiaNexus.GetLocaleTable("WHACKAMOLE").empty_text or "...") or "|cff00ff00" .. (text or "+10") .. "|r")
     fx:Show()
-    C_Timer.After(0.5, function() if fx then fx:Hide() end end)
+    self._fxGuard:After(0.5,function()
+        if h.effectId==effectId and ArcadiaNexus.GameSession:IsSession(ArcadiaNexus.WAM_Engine,sid) then fx:Hide() end
+    end)
 end
 
 function R:ShowBoomEffect(r, c)
@@ -534,9 +552,12 @@ function R:ShowBoomEffect(r, c)
     if not h then return end
     h.frame:SetBackdropColor(0.60, 0.05, 0.05, 1)
     local fx = EnsureHoleFx(h)
+    h.effectId=(h.effectId or 0)+1
+    local effectId,sid=h.effectId,ArcadiaNexus.WAM_Engine._sessionId
     fx:SetText(ArcadiaNexus.GetLocaleTable("WHACKAMOLE")["boom_text"])
     fx:Show()
-    C_Timer.After(0.7, function()
+    self._fxGuard:After(0.7, function()
+        if h.effectId~=effectId or not ArcadiaNexus.GameSession:IsSession(ArcadiaNexus.WAM_Engine,sid) then return end
         if fx then fx:Hide() end
         if h and h.frame then h.frame:SetBackdropColor(0.20, 0.14, 0.08, 1) end
     end)
@@ -546,8 +567,10 @@ end
 -- EVENT-HANDLER
 -- ============================================================
 function R:OnGameStarted(board)
+    self:CancelEffects()
     self.state     = "PLAYING"
     self._lastDiff = board.difficulty
+    self:RefreshDifficulty()
 
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     if self._hintFS  then self._hintFS:Hide()  end
@@ -572,7 +595,9 @@ end
 -- IDLE STATE
 -- ============================================================
 function R:EnterIdleState()
+    self:CancelEffects()
     self.state = "IDLE"
+    self:RefreshDifficulty()
 
     if self._holes then
         for _, row in pairs(self._holes) do
@@ -622,6 +647,31 @@ function R:StopGame()
     local E = ArcadiaNexus.WAM_Engine
     if E then E:StopGame() end
     self:EnterIdleState()
+end
+
+function R:CancelEffects()
+    self._fxGuard:Cancel()
+    for _,row in pairs(self._holes) do
+        for _,h in pairs(row) do
+            h.effectId=(h.effectId or 0)+1
+            if h.fxFS then h.fxFS:Hide() end
+            if h.frame then h.frame:SetBackdropColor(0.20,0.14,0.08,1) end
+        end
+    end
+end
+
+function R:RefreshDifficulty()
+    self._lastDiff=nil
+    if self._difficultyDD then
+        self._difficultyDD:SetEnabled(not ArcadiaNexus.WAM_Engine._board)
+        self._difficultyDD:RefreshDisplay()
+    end
+end
+
+function R:SetRoundClosed(board)
+    if ArcadiaNexus.WAM_Engine._board~=board then return end
+    self.state="GAMEOVER"
+    if self._startBtn then self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("WHACKAMOLE").btn_start) end
 end
 
 -- ============================================================

@@ -13,7 +13,7 @@ Logic.FIXED_STEP  = 1 / 120
 Logic.MAX_SUBSTEPS = 8
 Logic.CONTACT_PASSES = 3
 Logic.HIT_COOLDOWN = 0.08
-Logic.MAX_FIXED_PER_TICK = 10
+Logic.MAX_FIXED_PER_TICK = 12
 
 local EPS = 1e-8
 local HandleDrain
@@ -520,19 +520,20 @@ function Logic:IsActivationMet(gs, condition)
     return ActivationMet(gs, condition)
 end
 
-local function DispatchLogicLinks(gs, actions)
+local function DispatchLogicLinks(gs, actions, first)
     local links = gs.def.logicLinks
     if type(links) ~= "table" then return end
     local flags = gs.logicFlags or {};gs.logicFlags = flags
     local actionCount = #actions
-    for i = 1, actionCount do
+    for i = first or 1, actionCount do
         local event = actions[i]
         for _, link in ipairs(links) do
             local trigger, effect = link.trigger or {}, link.action or {}
             if event.type == trigger.type and (not trigger.objectId or event.id == trigger.objectId) then
                 local flag = effect.flag
                 if flag and flag ~= "" and (effect.type == "set_flag" or effect.type == "toggle_flag") then
-                    local value = effect.type == "toggle_flag" and not flags[flag] or effect.value ~= false
+                    local value
+                    if effect.type=="toggle_flag" then value=not flags[flag] else value=effect.value~=false end
                     if flags[flag] ~= value then
                         flags[flag] = value
                         actions[#actions + 1] = { type = "logic_flag", id = link.id, flag = flag, value = value }
@@ -854,13 +855,29 @@ local function OnBumperMission(gs, actions, bumperId)
     if m.have >= m.need then CompleteMission(gs, actions) end
 end
 
-local function TrySensors(gs, ball, actions)
+-- Occupancy belongs to each ball, independent of activation/cooldowns.
+local function SensorEntries(def, ball)
+    ball.sensorInside=ball.sensorInside or {}
+    local entries={}
+    local function visit(key,zone)
+        if not zone then return end
+        local inside=InRect(zone,ball)
+        entries[key]=inside and not ball.sensorInside[key]
+        ball.sensorInside[key]=inside or nil
+    end
+    for _,r in ipairs(def.ramps or {}) do visit("ramp:"..r.id,r) end
+    visit("lock",def.lock); visit("jp",def.jackpot)
+    for _,lane in ipairs(def.inlanes or {}) do visit("inlane:"..lane.id,lane) end
+    return entries
+end
+
+local function TrySensors(gs, ball, actions, entries)
     if gs.tilted then return end
     local def = gs.def
     if def.ramps then
         for i = 1, #def.ramps do
             local r = def.ramps[i]
-            if ActivationMet(gs, r.activation) and InRect(r, ball) and MarkHit(gs, r.id, 0) then
+            if entries["ramp:"..r.id] and ActivationMet(gs, r.activation) then
                 AddScore(gs, (def.scoringRules and def.scoringRules.ramp) or 150, true)
                 actions[#actions + 1] = { type = "ramp_hit", id = r.id }
                 local side = r.side or ((r.id == "ramp_l") and "left" or "right")
@@ -906,7 +923,7 @@ local function TrySensors(gs, ball, actions)
             end
         end
     end
-    if def.lock and ActivationMet(gs, def.lock.activation) and InRect(def.lock, ball) and MarkHit(gs, "lock", 0) then
+    if def.lock and entries.lock and ActivationMet(gs, def.lock.activation) then
         AddScore(gs, (def.scoringRules and def.scoringRules.lock) or 200, true)
         actions[#actions + 1] = { type = "lock_hit" }
         local mid = (def.lockModule and def.lockModule.missionId) or "arcane_lock"
@@ -925,7 +942,7 @@ local function TrySensors(gs, ball, actions)
         end
     end
     local jpEvery = (def.multiballDefinitions and def.multiballDefinitions.jackpotEvery) or 3
-    if gs.multiball and def.jackpot and ActivationMet(gs, def.jackpot.activation) and InRect(def.jackpot, ball) and MarkHit(gs, "jp", 0) then
+    if gs.multiball and def.jackpot and entries.jp and ActivationMet(gs, def.jackpot.activation) then
         gs.jackpots = (gs.jackpots or 0) + 1
         local super = gs.jackpots > 0 and (gs.jackpots % jpEvery == 0)
         local pts = super and (def.superJackpotScore or 10000) or (def.jackpotScore or 2500)
@@ -968,13 +985,13 @@ local function TryOutlane(gs, ball, actions)
     return false
 end
 
-local function TryInlane(gs, ball, actions)
+local function TryInlane(gs, ball, actions, entries)
     if gs.tilted then return end
     local lanes = gs.def.inlanes
     if not lanes then return end
     for i = 1, #lanes do
         local lane = lanes[i]
-        if ActivationMet(gs, lane.activation) and InRect(lane, ball) and MarkHit(gs, lane.id, 0) then
+        if entries["inlane:"..lane.id] and ActivationMet(gs, lane.activation) then
             local side = lane.side
             gs.kickbackArmed[side] = true
             gs.kickbackT[side] = gs.def.kickbackDuration or 8
@@ -1271,8 +1288,9 @@ function Logic:PhysicsSubstep(gs, dt, actions)
                 CapSpeed(ball, def.maxSpeed)
                 ResolveWorld(gs, ball, actions)
                 AntiStall(gs, ball, dt, actions)
-                TrySensors(gs, ball, actions)
-                TryInlane(gs, ball, actions)
+                local entries=SensorEntries(def,ball)
+                TrySensors(gs, ball, actions, entries)
+                TryInlane(gs, ball, actions, entries)
                 if TryOutlane(gs, ball, actions) then
                     -- handled
                 elseif InDrain(def, ball) then
@@ -1280,19 +1298,19 @@ function Logic:PhysicsSubstep(gs, dt, actions)
                 end
             else
                 ball.stallT = 0
+                SensorEntries(def,ball)
             end
             if gs.gameOver then return end
+        else
+            SensorEntries(def,ball)
         end
     end
     RecoverPlungerIfStuck(gs, actions)
 end
 
-function Logic:Tick(gs, dt)
-    if not gs or gs.gameOver then return {} end
-    local actions = {}
+local function AdvanceClocks(gs,dt,actions)
     gs.elapsed = gs.elapsed + dt
     TickPlunger(gs, dt)
-    gs.physAcc = (gs.physAcc or 0) + dt
     if gs.comboT > 0 then
         gs.comboT = gs.comboT - dt
         if gs.comboT <= 0 then
@@ -1363,10 +1381,19 @@ function Logic:Tick(gs, dt)
         if nt <= 0 then gs.hitCool[id] = nil else gs.hitCool[id] = nt end
     end
 
+end
+
+function Logic:Tick(gs, dt)
+    if not gs or gs.gameOver then return {} end
+    local actions={}
+    gs.physAcc=(gs.physAcc or 0)+math.max(0,math.min(dt or 0,0.1))
+
     local step = self.FIXED_STEP
     local n = 0
     local maxSub = 1
-    while gs.physAcc >= step and n < self.MAX_FIXED_PER_TICK do
+    while gs.physAcc+1e-10 >= step and n < self.MAX_FIXED_PER_TICK do
+        local first=#actions+1
+        AdvanceClocks(gs,step,actions)
         local speed = 0
         for bi = 1, #gs.balls do
             local b = gs.balls[bi]
@@ -1382,12 +1409,12 @@ function Logic:Tick(gs, dt)
             self:PhysicsSubstep(gs, h, actions)
             if gs.gameOver then break end
         end
-        gs.physAcc = gs.physAcc - step
+        gs.physAcc = math.max(0,gs.physAcc - step)
+        DispatchLogicLinks(gs,actions,first)
         n = n + 1
         if gs.gameOver then break end
     end
     gs.lastSubsteps = maxSub
-    DispatchLogicLinks(gs, actions)
     return actions
 end
 
@@ -1404,3 +1431,138 @@ Logic.StartMultiball = StartMultiball
 Logic.StartMission = StartMission
 Logic.LiveCount = LiveCount
 Logic.HandleDrain = HandleDrain
+
+-- Versioned world snapshots contain values, never the mutable table definition.
+Logic.SAVE_VERSION=1
+Logic.RULE_VERSION=2
+function Logic:Copy(v)
+    if type(v)~="table" then return v end
+    local out={} for k,x in pairs(v) do out[k]=self:Copy(x) end return out
+end
+function Logic:Neutralize(gs)
+    if not gs then return end
+    gs.inputLeft,gs.inputRight=false,false
+    gs.plungerHeld,gs.plungerAuto=false,false
+    gs.pendingNudgeX,gs.pendingNudgeY=0,0
+    -- Keep visible charge; only a fresh press/release may fire it.
+    gs.justLaunched=false
+    for _,f in ipairs(gs.flippers) do f.pressed=false end
+end
+function Logic:Snapshot(gs,state)
+    if not gs or gs.gameOver or gs.devRun or not ArcadiaNexus.DMP_TableRegistry.IsPublished(gs.def) then return nil end
+    local out={}
+    for k,v in pairs(gs) do if k~="def" and k~="debug" and k~="resultData" and k~="highScore" then out[k]=self:Copy(v) end end
+    self:Neutralize(out)
+    out.flippers={}
+    for i,f in ipairs(gs.flippers) do
+        out.flippers[i]={id=f.id,angle=f.angle,omega=f.omega,enabled=f.enabled,pressed=false}
+    end
+    out.version=self.SAVE_VERSION; out.ruleVersion=self.RULE_VERSION
+    out.tableVersion=gs.def.version; out.engineState=state or "PLAYING"
+    return out
+end
+function Logic:Restore(data)
+    local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
+    local function integer(n) return finite(n) and n>=0 and n%1==0 end
+    if type(data)~="table" or data.version~=self.SAVE_VERSION or data.ruleVersion~=self.RULE_VERSION
+        or data.engineState~="PLAYING" and data.engineState~="PAUSED" or type(data.runId)~="string"
+        or data.gameOver~=false or data.terminal or data.devRun or data.phase~="ready" and data.phase~="play" then return nil end
+    local TR=ArcadiaNexus.DMP_TableRegistry
+    local def=TR._byId[data.tableId]
+    if not def or data.tableVersion~=def.version or not TR.IsPublished(def) then return nil end
+    local gs=self:NewState(data.tableId)
+    local skip={balls=true,flippers=true,hitCool=true,bumperLit=true,targetLit=true,completedMissions=true,logicFlags=true}
+    local function shape(value,model)
+        if type(value)~=type(model) then return false end
+        if type(model)=="number" then return finite(value) end
+        if type(model)~="table" then return true end
+        for k,v in pairs(model) do if not shape(value[k],v) then return false end end
+        for k in pairs(value) do if model[k]==nil then return false end end
+        return true
+    end
+    for k,model in pairs(gs) do
+        if k~="def" and k~="debug" and not skip[k] then
+            if not shape(data[k],model) then return nil end
+            gs[k]=self:Copy(data[k])
+        end
+    end
+    for _,key in ipairs({"score","combo","maxCombo","ballsRemaining","bumperHits","drains","saves","tilts","kickbacks","outlaneSaves","missionsDone","locks","multiballs","jackpots","superJackpots","extraBalls","tiltWarn"}) do
+        if not integer(data[key]) then return nil end
+    end
+    if data.ballsRemaining<1 or data.ballsRemaining>(def.ballsPerGame or 3)+(def.extraBallMax or 1)
+        or data.extraBalls>(def.extraBallMax or 1) or data.combo>data.maxCombo or data.tiltWarn>3
+        or data.tiltHeat<0 or data.tiltHeat>1 or data.plungerPull<0 or data.plungerPull>1
+        or data.physAcc<0 or data.physAcc>=self.FIXED_STEP+1e-8 then return nil end
+    for k,v in pairs(data) do
+        if type(v)=="number" and (not finite(v) or (k:match("T$") or k=="elapsed") and v<0) then return nil end
+    end
+    if data.inputLeft or data.inputRight or data.plungerHeld or data.plungerAuto or data.pendingNudgeX~=0 or data.pendingNudgeY~=0 then return nil end
+    for _,key in ipairs({"nudgeCd","kickbackT"}) do for _,v in pairs(data[key]) do if v<0 then return nil end end end
+    for _,key in ipairs({"hitCool","bumperLit","targetLit","completedMissions","logicFlags"}) do
+        if type(data[key])~="table" then return nil end
+        gs[key]={}
+        for id,v in pairs(data[key]) do
+            if type(id)~="string" or key=="hitCool" and (not finite(v) or v<0)
+                or key~="hitCool" and type(v)~="boolean" then return nil end
+            if key=="completedMissions" and not TR.Mission(def,id) then return nil end
+            gs[key][id]=v
+        end
+    end
+    if data.lastBumperId~=nil and type(data.lastBumperId)~="string" then return nil end
+    if self:DistinctMissions(gs)>gs.missionsDone then return nil end
+    gs.lastBumperId=data.lastBumperId
+    if data.mission~=nil then
+        local m=data.mission; local md=type(m)=="table" and TR.Mission(def,m.id)
+        if not md or not finite(m.t) or m.t<=0 or m.t>md.time or m.need~=md.need
+            or not integer(m.have) or m.have>=m.need or not integer(m.nextOrder) or m.nextOrder<1 then return nil end
+        gs.mission=self:Copy(m)
+    end
+    local function array(t)
+        if type(t)~="table" or #t<1 then return false end
+        for k in pairs(t) do if not integer(k) or k<1 or k>#t then return false end end
+        return true
+    end
+    if not array(data.balls) or not array(data.flippers) or #data.flippers~=#gs.flippers then return nil end
+    gs.balls={}
+    local live,locked=0,0
+    local sensorKeys={lock=true,jp=true}
+    for _,r in ipairs(def.ramps) do sensorKeys["ramp:"..r.id]=true end
+    for _,r in ipairs(def.inlanes) do sensorKeys["inlane:"..r.id]=true end
+    for i,b in ipairs(data.balls) do
+        if type(b)~="table" or type(b.active)~="boolean" or type(b.locked)~="boolean" or b.r~=def.ballRadius then return nil end
+        for _,key in ipairs({"x","y","vx","vy"}) do if not finite(b[key]) then return nil end end
+        for _,key in ipairs({"saveT","stallT"}) do if b[key]~=nil and (not finite(b[key]) or b[key]<0) then return nil end end
+        if b.launchGuide~=nil then
+            local g=b.launchGuide
+            if type(g)~="table" or not def.launchGuide then return nil end
+            for _,key in ipairs({"distance","speed","x","y","vx","vy"}) do if not finite(g[key]) then return nil end end
+            if g.distance<0 or g.speed<=0 then return nil end
+        end
+        if b.sensorInside~=nil then
+            if type(b.sensorInside)~="table" then return nil end
+            for key,v in pairs(b.sensorInside) do if not sensorKeys[key] or type(v)~="boolean" then return nil end end
+        end
+        if b.active then live=live+1; if b.locked then locked=locked+1 end end
+        gs.balls[i]=self:Copy(b)
+    end
+    if live<1 or data.phase=="ready" and (live~=1 or locked~=1 or not gs.balls[1].active or not gs.balls[1].locked)
+        or data.phase=="play" and live==locked then return nil end
+    for i,f in ipairs(data.flippers) do
+        local target=gs.flippers[i]
+        if type(f)~="table" or f.id~=target.id or not finite(f.angle) or not finite(f.omega)
+            or f.angle<math.min(target.restAngle,target.activeAngle)-1e-8 or f.angle>math.max(target.restAngle,target.activeAngle)+1e-8
+            or type(f.enabled)~="boolean" or f.pressed~=false then return nil end
+        target.angle,target.omega,target.enabled=f.angle,f.omega,f.enabled
+    end
+    gs.runId=data.runId; return gs
+end
+function Logic:DistinctMissions(gs)
+    local n=0
+    for _,md in ipairs(gs.def.missionDefinitions or {}) do if gs.completedMissions[md.id] then n=n+1 end end
+    return n
+end
+function Logic:ScoreMultiplier(gs)
+    local combo=gs.combo or 0
+    local mul=combo>=7 and 4 or combo>=4 and 3 or combo>=1 and 2 or 1
+    return mul*((gs.scoreFrenzyT or 0)>0 and (gs.scoreFrenzyMul or 2) or 1)
+end

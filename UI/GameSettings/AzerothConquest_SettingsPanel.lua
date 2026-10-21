@@ -15,10 +15,13 @@ local function BuildAzerothConquestSettingsPanel(parent)
         settings = S,
         locale   = L,
         layout   = "noTheme",
+        onReset = function()
+            local R = ArcadiaNexus.AC_Renderer
+            if R and R.RefreshConfigLock then R:RefreshConfigLock() end
+        end,
         sound = {
             masterLabel = L.sound_enabled,
             rowSpacing  = 28,
-            footer      = L.sound_hint,
             items = {
                 { key = "soundOnHit",  label = L.sound_hit  },
                 { key = "soundOnMiss", label = L.sound_miss },
@@ -32,7 +35,7 @@ local function BuildAzerothConquestSettingsPanel(parent)
             sections = {
                 GS.GuideSection(nil, L, {
                     "guide_1", "guide_2", "guide_3", "guide_4",
-                    "guide_5", "guide_6", "guide_7",
+                    "guide_5", "guide_6", "guide_7", "guide_8", "guide_9",
                 }),
                 {
                     title = L.box_difficulty,

@@ -1,15 +1,6 @@
--- ============================================================
---  Solitaire – Settings.lua
---  Persistente Einstellungen via ArcadiaNexusDB
---  Namespace: SOL_
--- ============================================================
-
-local ArcadiaNexus = _G.ArcadiaNexus
-ArcadiaNexus.SOL_Settings = {}
-local S = ArcadiaNexus.SOL_Settings
-
-S.MAX_SLOTS = 3
-
+-- Existing three saves stay in the original .saves path; no parallel persistence.
+local A=_G.ArcadiaNexus
+local S={MAX_SLOTS=3}; A.SOL_Settings=S
 S.Defaults = {
     theme        = "neutral",
     mode         = "1card",
@@ -22,157 +13,69 @@ S.Defaults = {
     soundOnUndo  = true,
 }
 
-local DB_KEY = "SOLITAIRE"
-local P = ArcadiaNexus.Persistence
-
-local function GetDB()
-    return P:GetGameSettings(DB_KEY)
-end
-
+local function DB() return A.Persistence:GetGameSettings("SOLITAIRE") end
 function S:Get(key)
-    local db = GetDB()
-    if db[key] ~= nil then return db[key] end
-    return self.Defaults[key]
+    local E=A.SOL_Engine
+    if key=="mode" and E and E.gameState then return E.gameState.mode end
+    local db=DB(); if db[key]~=nil then return db[key] end; return self.Defaults[key]
 end
-
-function S:Set(key, value) P:SetGameSetting(DB_KEY, key, value) end
-
+function S:Set(key,value)
+    if self.Defaults[key]==nil then return false end
+    if key=="mode" then return A.SOL_Engine:SetMode(value) end
+    A.Persistence:SetGameSetting("SOLITAIRE",key,value); return true
+end
+function S:_SetMode(mode) A.Persistence:SetGameSetting("SOLITAIRE","mode",mode) end
 function S:Reset()
-    local db = GetDB()
-    -- Einstellungen zurücksetzen, gespeichertes Spiel behalten
-    for k in pairs(self.Defaults) do db[k] = nil end
+    local db=DB(); for key in pairs(self.Defaults) do
+        if key~="mode" or not (A.SOL_Engine and A.SOL_Engine.gameState) then db[key]=nil end
+    end
 end
-
-function S:GetAll()
-    local r = {}
-    for k in pairs(self.Defaults) do r[k] = self:Get(k) end
-    return r
-end
-
--- ── Save-Slots ────────────────────────────────────────────────
-local function EnsureSaves(db)
-    if not db.saves then db.saves = {} end
-    if not db.activeSlot then db.activeSlot = 1 end
+function S:GetAll() local out={}; for key in pairs(self.Defaults) do out[key]=self:Get(key) end; return out end
+local function Slot(slot) return type(slot)=="number" and slot==math.floor(slot) and slot>=1 and slot<=3 end
+function S:EnsureSaves()
+    local db=DB(); db.saves=db.saves or {}; if not Slot(db.activeSlot) then db.activeSlot=1 end
     if not db.saves[1] and db.savedMode then
-        db.saves[1] = {
-            mode      = db.savedMode,
-            score     = db.savedScore or 0,
-            elapsed   = db.savedElapsed or 0,
-            midGame   = {
-                mode       = db.savedMode,
-                stock      = db.savedStock,
-                waste      = db.savedWaste,
-                foundation = db.savedFoundation,
-                tableau    = db.savedTableau,
-                score      = db.savedScore,
-                elapsed    = db.savedElapsed,
-                wastePass  = db.savedWastePass,
-                undoCount  = db.savedUndoCount,
-            },
-            timestamp = time(),
-        }
-        db.savedMode, db.savedStock, db.savedWaste = nil, nil, nil
-        db.savedFoundation, db.savedTableau = nil, nil
-        db.savedScore, db.savedElapsed, db.savedWastePass, db.savedUndoCount = nil, nil, nil, nil
+        db.saves[1]={mode=db.savedMode,score=db.savedScore,elapsed=db.savedElapsed,midGame={
+            mode=db.savedMode,stock=db.savedStock,waste=db.savedWaste,foundation=db.savedFoundation,
+            tableau=db.savedTableau,score=db.savedScore,elapsed=db.savedElapsed,wastePass=db.savedWastePass}}
+        for _,key in ipairs({"savedMode","savedStock","savedWaste","savedFoundation","savedTableau","savedScore","savedElapsed","savedWastePass","savedUndoCount"}) do db[key]=nil end
+    end
+    for slot=1,3 do
+        local save=db.saves[slot]; local mid=type(save)=="table" and save.midGame
+        if type(mid)=="table" and mid.saveVersion==nil and A.SOL_Logic:ValidateBoard(mid) and A.SOL_Logic:IsMode(mid.mode) then
+            local score,elapsed,passes=mid.score or 0,mid.elapsed or 0,mid.wastePass or 0
+            if type(score)=="number" and score>=0 and score==math.floor(score) and score<=2147483647
+                and type(elapsed)=="number" and elapsed>=0 and elapsed*1000<=2147483647
+                and type(passes)=="number" and passes>=0 and passes==math.floor(passes) then
+                local gs=A.SOL_Logic:DeepCopy(mid)
+                gs.saveVersion=2; gs.ruleVersion=2; gs.scoreVersion=1; gs.legacyScore=score
+                gs.actionScore=score; gs.undoUsed=0; gs.undoStack={}; gs.undoCount=nil; gs.selected=nil
+                gs.elapsedMs=math.floor(elapsed*1000+0.5); gs.wastePass=passes+1
+                gs.phase=A.SOL_Logic:IsWin(gs) and "WIN" or "PLAYING"
+                if gs.phase=="WIN" then gs.result="WIN"; gs.legacyCompleted=true end
+                gs.runId=A.LocalResults:NewRun("SOLITAIRE"); A.SOL_Logic:Sync(gs)
+                db.saves[slot]={mode=gs.mode,score=gs.score,elapsed=gs.elapsed,runId=gs.runId,midGame=gs,timestamp=save.timestamp or GetServerTime()}
+            end
+        end
     end
     return db.saves
 end
-
-function S:GetActiveSlot()
-    local db = GetDB()
-    EnsureSaves(db)
-    return db.activeSlot or 1
+function S:GetActiveSlot() self:EnsureSaves(); return DB().activeSlot end
+function S:SetActiveSlot(slot) if not Slot(slot) then return false end; DB().activeSlot=slot; return true end
+function S:LoadSlot(slot) slot=slot or self:GetActiveSlot(); if not Slot(slot) then return nil end; return self:EnsureSaves()[slot] end
+function S:SaveSlot(slot,data)
+    if not Slot(slot) then return false end
+    self:EnsureSaves()[slot]=data; return true
 end
-
-function S:SetActiveSlot(slot)
-    local db = GetDB()
-    EnsureSaves(db)
-    slot = tonumber(slot) or 1
-    if slot >= 1 and slot <= S.MAX_SLOTS then db.activeSlot = slot end
-end
-
-function S:LoadSlot(slot)
-    slot = tonumber(slot) or self:GetActiveSlot()
-    if slot < 1 or slot > S.MAX_SLOTS then return nil end
-    local db = GetDB()
-    EnsureSaves(db)
-    return db.saves[slot]
-end
-
-function S:SaveSlot(slot, data)
-    if not slot or slot < 1 or slot > S.MAX_SLOTS then return end
-    local db = GetDB()
-    EnsureSaves(db)[slot] = data
-    if data then data.timestamp = data.timestamp or time() end
-end
-
 function S:DeleteSlot(slot)
-    slot = tonumber(slot)
-    if not slot or slot < 1 or slot > S.MAX_SLOTS then return end
-    local db = GetDB()
-    EnsureSaves(db)
-    db.saves[slot] = nil
+    local E=A.SOL_Engine; if not Slot(slot) or E.gameState and E.activeSlot==slot then return false end
+    self:EnsureSaves()[slot]=nil; A.LocalResults:Prune(); return true
 end
-
-function S:ResetSlot(slot)
-    self:SaveSlot(slot, {
-        mode = self:Get("mode") or "1card",
-        score = 0, elapsed = 0, midGame = nil,
-    })
-end
-
--- ── Spielstand-Persistenz (SaveAndPause) ────────────────────
 function S:SaveGame(gs)
-    local slot = self:GetActiveSlot()
-    self:SaveSlot(slot, {
-        mode    = gs.mode,
-        score   = gs.score,
-        elapsed = gs.elapsed,
-        midGame = {
-            mode       = gs.mode,
-            stock      = self:_DeepCopy(gs.stock),
-            waste      = self:_DeepCopy(gs.waste),
-            foundation = self:_DeepCopy(gs.foundation),
-            tableau    = self:_DeepCopy(gs.tableau),
-            score      = gs.score,
-            elapsed    = gs.elapsed,
-            wastePass  = gs.wastePass,
-            undoCount  = gs.undoStack and #gs.undoStack or 0,
-        },
-    })
+    local slot=A.SOL_Engine.activeSlot or self:GetActiveSlot()
+    return self:SaveSlot(slot,{mode=gs.mode,score=gs.score,elapsed=gs.elapsed,runId=gs.runId,
+        midGame=A.SOL_Logic:DeepCopy(gs),timestamp=GetServerTime()})
 end
-
-function S:LoadGame(slot)
-    local save = self:LoadSlot(slot or self:GetActiveSlot())
-    local mid  = save and save.midGame
-    if not mid then return nil end
-    return {
-        mode       = mid.mode,
-        stock      = self:_DeepCopy(mid.stock or {}),
-        waste      = self:_DeepCopy(mid.waste or {}),
-        foundation = self:_DeepCopy(mid.foundation or {C={},D={},H={},S={}}),
-        tableau    = self:_DeepCopy(mid.tableau or {}),
-        score      = mid.score or 0,
-        elapsed    = mid.elapsed or 0,
-        wastePass  = mid.wastePass or 0,
-        undoCount  = mid.undoCount or 0,
-    }
-end
-
-function S:ClearSave(slot)
-    self:DeleteSlot(slot or self:GetActiveSlot())
-end
-
-function S:HasSavedGame(slot)
-    local save = self:LoadSlot(slot or self:GetActiveSlot())
-    return save and save.midGame ~= nil
-end
-
-function S:_DeepCopy(orig)
-    if type(orig) ~= "table" then return orig end
-    local copy = {}
-    for k, v in pairs(orig) do
-        copy[k] = self:_DeepCopy(v)
-    end
-    return copy
-end
+function S:LoadGame(slot) local save=self:LoadSlot(slot); return save and A.SOL_Logic:DeepCopy(save.midGame) end
+function S:HasSavedGame(slot) return A.SOL_Engine:CanContinueSave(self:LoadSlot(slot)) end
+function S:_DeepCopy(value) return A.SOL_Logic:DeepCopy(value) end

@@ -46,8 +46,17 @@ end
 --- GameRegistry.StopActiveGame beendet.
 function GS:Begin(gameId, opts)
     opts = opts or {}
+    local GR = ArcadiaNexus.GameRegistry
+    if GR and GR.HasPendingCleanup and GR.HasPendingCleanup() then
+        LogWarn("Begin('" .. tostring(gameId) .. "') abgelehnt – Renderer-Cleanup ausstehend")
+        return nil
+    end
     if self._current then
         if self._current.gameId == gameId then
+            if self:ResumeSaveBlocked(self._current.sessionId) and not opts.force then
+                LogWarn("Begin('" .. tostring(gameId) .. "') abgelehnt – ungesicherter Spielstand")
+                return nil
+            end
             LogWarn("Begin('" .. tostring(gameId) .. "') ersetzt verwaiste Session " ..
                 tostring(self._current.sessionId))
             self._current = nil
@@ -56,9 +65,17 @@ function GS:Begin(gameId, opts)
                 tostring(self._current.sessionId) .. " (" .. tostring(self._current.gameId) .. ")")
             self._current = nil
         else
+            if self:ResumeSaveBlocked(self._current.sessionId) then
+                LogWarn("Begin('" .. tostring(gameId) .. "') abgelehnt – ungesicherter Spielstand")
+                return nil
+            end
             local GR = ArcadiaNexus.GameRegistry
             if GR and GR.StopActiveGame then
-                pcall(GR.StopActiveGame)
+                GR.StopActiveGame()
+            end
+            if GR and GR.HasPendingCleanup and GR.HasPendingCleanup() then
+                LogWarn("Begin('" .. tostring(gameId) .. "') abgelehnt – Abschluss unvollständig")
+                return nil
             end
             if self._current then
                 LogWarn("Begin('" .. tostring(gameId) .. "') abgelehnt – Session " ..
@@ -67,6 +84,10 @@ function GS:Begin(gameId, opts)
                 return nil
             end
         end
+    end
+    if GR and GR.HasPendingCleanup and GR.HasPendingCleanup() then
+        LogWarn("Begin('" .. tostring(gameId) .. "') abgelehnt – Abschluss unvollständig")
+        return nil
     end
     self._nextSessionId = self._nextSessionId + 1
     self._current = {
@@ -126,12 +147,18 @@ function GS:End(gameId, sessionId)
     end
     LogDebug("End " .. tostring(self._current.gameId) ..
         " session " .. tostring(self._current.sessionId))
+    local endedGame, endedSession = self._current.gameId, self._current.sessionId
     self._current = nil
+    local GR = ArcadiaNexus.GameRegistry
+    if GR and GR.ReleaseConfirm then GR.ReleaseConfirm(endedGame, endedSession) end
     return true
 end
 
 function GS:ForceEnd()
+    local cur = self._current
     self._current = nil
+    local GR = ArcadiaNexus.GameRegistry
+    if cur and GR and GR.ReleaseConfirm then GR.ReleaseConfirm(cur.gameId, cur.sessionId) end
 end
 
 function GS:GetCurrent()
@@ -156,12 +183,65 @@ function GS:IsActiveGame(gameId)
     return true
 end
 
+--- Gescheiterter Speicherversuch dieser Session. Gilt für Hide und Leave,
+--- bis eine neue Navigation oder das Öffnen des Hubs den Versuch freigibt.
+function GS:MarkResumeFailed(sessionId)
+    if sessionId then self._resumeFailed = sessionId end
+end
+
+function GS:ResumeSaveBlocked(sessionId)
+    return sessionId ~= nil and self._resumeFailed == sessionId
+end
+
+function GS:ReleaseResumeFailure()
+    self._resumeFailed = nil
+end
+
+local function IdleLeftRenderer(gameId, sessionId)
+    local GR = ArcadiaNexus.GameRegistry
+    if not GR or not GR.IdleRenderer then return false, "blocked" end
+    return GR.IdleRenderer(gameId, sessionId)
+end
+
+local function NoteHideCleanup(gameId, sessionId, kind)
+    local GR = ArcadiaNexus.GameRegistry
+    if GR and GR.NotePendingCleanup then GR.NotePendingCleanup(gameId, sessionId, kind) end
+end
+
 --- Renderer OnHide: nur ausführen wenn Engine die aktuelle Session besitzt.
+--- Ein schon gescheiterter Speicherversuch wird nicht wiederholt.
+--- Nach erfolgreichem Speichern wird die Ansicht geleert, ohne erneut zu speichern.
+--- Rückgabe: "clear" nur nach nachgewiesenem Abschluss, sonst "blocked".
 function GS:HandleRendererHide(gameId, engine, fn)
-    if not engine or not fn then return end
-    if not engine._sessionId then return end
-    if not self:IsCurrent(gameId, engine._sessionId) then return end
-    fn(engine)
+    if not engine or not fn then return "blocked" end
+    if not engine._sessionId then
+        local GR = ArcadiaNexus.GameRegistry
+        if GR and GR.HasPendingCleanup and GR.HasPendingCleanup() then return "blocked" end
+        return "clear"
+    end
+    local sessionId = engine._sessionId
+    if self:ResumeSaveBlocked(sessionId) then return "blocked" end
+    if not self:IsCurrent(gameId, sessionId) then return "blocked" end
+    local returned
+    local ok, result = xpcall(function()
+        returned = fn(engine)
+    end, function(err) return tostring(err) end)
+    if not ok or returned == false then
+        if engine._sessionId then
+            self:MarkResumeFailed(sessionId)
+        else
+            NoteHideCleanup(gameId, sessionId, "engine")
+        end
+        if not ok and GH_LogError then GH_LogError("GameSession", "Renderer-OnHide: " .. tostring(result)) end
+        return "blocked"
+    end
+    if engine._sessionId then return "blocked" end
+    local idleOk = IdleLeftRenderer(gameId, sessionId)
+    if not idleOk then
+        NoteHideCleanup(gameId, sessionId, "renderer")
+        return "blocked"
+    end
+    return "clear"
 end
 
 --- Guard für Timer-/State-Callbacks innerhalb einer Session.

@@ -138,7 +138,7 @@ function R.Create(opts)
         _p            = nil,
     }
 
-    function node:Dispose()
+    function node:Dispose(opts)
         if self._closed then return end
         self._closed = true
         for _, name in ipairs({ "_startGuard", "_rejoinGuard", "_joinGuard", "_syncGuard", "_intentGuard" }) do
@@ -150,8 +150,12 @@ function R.Create(opts)
         if self.transport and self.transport.Unregister then
             detached = self.transport:Unregister(self.playerKey, self) ~= false
         end
-        if detached and self.matchId and self.transport and self.transport.DiscardMatch then
-            self.transport:DiscardMatch(self.matchId)
+        if detached and self.matchId and self.transport then
+            if opts and opts.keepTerminal and self.transport.RetainTerminal then
+                self.transport:RetainTerminal(self.matchId)
+            elseif self.transport.DiscardMatch then
+                self.transport:DiscardMatch(self.matchId)
+            end
         end
         local M = ArcadiaNexus.Match
         if M and M.UntrackNode then M.UntrackNode(self) end
@@ -610,12 +614,19 @@ function R.Create(opts)
         if self.processedResultId == resultId or self.seenResults[resultId] then
             return false
         end
-        self.seenResults[resultId] = true
-        self.processedResultId = resultId
+        if self._resultBusy == resultId then return false end
+        self._resultBusy = resultId
+        local ok, result = true, true
         if self.onResult then
-            self.onResult(self, resultId)
+            ok, result = pcall(self.onResult, self, resultId)
         end
-        return true
+        self._resultBusy = nil
+        if ok and result == true then
+            self.seenResults[resultId] = true
+            self.processedResultId = resultId
+            return true
+        end
+        return false
     end
 
     function node:GetState()

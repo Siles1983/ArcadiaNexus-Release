@@ -9,6 +9,13 @@ local function BuildDarkmoonPinballSettingsPanel(parent)
     local S = ArcadiaNexus.DMP_Settings
     if not S then return end
     local L = ArcadiaNexus.GetLocaleTable("DARKMOON_PINBALL")
+    local visualItems = {
+        { key = "screenFlash",   label = L.lbl_screen_flash },
+        { key = "reducedMotion", label = L.lbl_reduced_motion },
+    }
+    if ArcadiaNexus.IsDevMode and ArcadiaNexus.IsDevMode() then
+        visualItems[#visualItems + 1] = { key = "debugOverlay", label = L.lbl_debug }
+    end
 
     GS.BuildSoundVisualGuide(parent, {
         settings = S,
@@ -33,16 +40,12 @@ local function BuildDarkmoonPinballSettingsPanel(parent)
             },
         },
         visuals = {
-            items = {
-                { key = "screenFlash",   label = L.lbl_screen_flash },
-                { key = "reducedMotion", label = L.lbl_reduced_motion },
-                { key = "debugOverlay",  label = L.lbl_debug },
-            },
+            items = visualItems,
         },
         guide = {
             sections = {
                 GS.GuideSection(nil, L, {
-                    "guide_1", "guide_2", "guide_3", "guide_4", "guide_5", "guide_6", "guide_7", "guide_8", "guide_9", "guide_10",
+                    "guide_1", "guide_2", "guide_3", "guide_4", "guide_5", "guide_6", "guide_7", "guide_8", "guide_9", "guide_10", "guide_11",
                 }),
             },
         },

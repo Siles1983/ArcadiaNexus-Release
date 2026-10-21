@@ -101,7 +101,6 @@ local CB_ASSETS = {
 -- State
 R.frame           = nil
 R.state           = "IDLE"
-R.selectedDiff    = nil
 R.selectedSlot    = 1
 R.attemptRows     = {}
 R.inputSlots      = {}
@@ -110,8 +109,6 @@ R.submitButton    = nil
 R.boardHolder     = nil
 R.diffContainer   = nil
 R.diffBtns        = {}
-R.dupCheckbox     = nil
-R.codeLenDropdown = nil
 R.exitButton      = nil
 R.newGameButton   = nil
 R.statusFS        = nil
@@ -191,7 +188,7 @@ local function CreateAttemptPegPool()
         name = "Codebreaker.AttemptPegs",
         create = function(poolParent)
             poolParentRef = poolParent
-            local peg = CreateFrame("Frame", nil, poolParent, "BackdropTemplate")
+            local peg = CreateFrame("Button", nil, poolParent, "BackdropTemplate")
             peg:SetBackdrop({
                 bgFile   = "Interface\\Buttons\\WHITE8X8",
                 edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -317,16 +314,33 @@ function R:Init()
     self.frame:SetScript("OnHide", function()
         ArcadiaNexus.GameSession:HandleRendererHide("CODEBREAKER", ArcadiaNexus.CB_Engine, function(E)
             if E.activeGame then
-                E:StopGame()
+                return E:SaveAndPause()
             end
         end)
     end)
 
     local Engine = ArcadiaNexus.Engine
     Engine:On("CB_GAME_STARTED", function(s) R:OnGameStarted(s) end)
-    Engine:On("CB_GAME_WON",     function(s) R:OnGameWon(s)     end)
-    Engine:On("CB_GAME_LOST",    function(s) R:OnGameLost(s)    end)
-    Engine:On("CB_GAME_STOPPED", function()  R:EnterIdleState() end)
+    Engine:On("CB_GAME_WON",     function(s,d) R:OnGameWon(s,d) end)
+    Engine:On("CB_GAME_LOST",    function(s,d) R:OnGameLost(s,d) end)
+    Engine:On("CB_GAME_STOPPED", function() R:EnterIdleState() end)
+    Engine:On("CB_INPUT_UPDATED", function(_,action)
+        if action=="ClearGuess" then R.selectedSlot=1 end
+        R:UpdateInputRow(); R:RefreshInputs()
+    end)
+    Engine:On("CB_BOARD_UPDATED", function() R:UpdateBoard() end)
+    Engine:On("CB_INCOMPLETE", function() R:FlashIncomplete() end)
+    Engine:On("CB_RESULT_FAILED", function()
+        R.state="RESULT_PENDING"; R:RefreshInputs()
+        local L=ArcadiaNexus.GetLocaleTable("CODEBREAKER")
+        ArcadiaNexus.UI.ShowArcadeResult(R._fieldFrame, {
+            title=L.result_pending, subtitle=L.result_retry, hideHighscore=true,
+            buttons={
+                {label=L.btn_retry_result,onClick=function() ArcadiaNexus.CB_Engine:RetryResult() end},
+                {label=L.btn_pause,onClick=function() ArcadiaNexus.CB_Engine:SaveAndPause() end},
+            },
+        })
+    end)
 end
 
 -- ============================================================
@@ -660,14 +674,15 @@ function R:BuildBoard(state)
     local submitW    = CFG.submit_btn_w
     local submitGap  = 8
     local slotsRowW  = codeLen * L.slotSize + (codeLen - 1) * L.slotGap
-    local totalInputW = slotsRowW + submitGap + submitW
+    local comfortW = 96
+    local totalInputW = comfortW + slotsRowW + submitGap + submitW
     -- Startoffset so dass die gesamte Gruppe zentriert ist
     local inputGroupX = math.floor(((L.panelW - 16) - totalInputW) / 2)
     if inputGroupX < 0 then inputGroupX = 0 end
 
     -- Eingabe-Slots
     for i = 1, codeLen do
-        local sx   = inputGroupX + (i-1) * (L.slotSize + L.slotGap)
+        local sx   = inputGroupX + comfortW + (i-1) * (L.slotSize + L.slotGap)
         local slot = self:CreateInputSlot(inputFrame, i, L, sx, 2)
         self.inputSlots[i] = slot
     end
@@ -676,10 +691,23 @@ function R:BuildBoard(state)
     sub:SetParent(inputFrame)
     sub:SetLabel(ArcadiaNexus.GetLocaleTable("CODEBREAKER")["btn_submit"])
     sub:ClearAllPoints()
-    sub:SetPoint("LEFT", inputFrame, "LEFT", inputGroupX + slotsRowW + submitGap, 0)
+    sub:SetPoint("LEFT", inputFrame, "LEFT", inputGroupX + comfortW + slotsRowW + submitGap, 0)
     sub:Show()
 
+    local locale=ArcadiaNexus.GetLocaleTable("CODEBREAKER")
+    if not self.clearButton then
+        self.clearButton=ArcadiaNexus.UI.CreateArcadiaButton(inputFrame,locale.btn_clear,88,20)
+        self.copyButton=ArcadiaNexus.UI.CreateArcadiaButton(inputFrame,locale.btn_copy,88,20)
+        self.clearButton:SetScript("OnClick",function() ArcadiaNexus.CB_Engine:HandleClearGuess() end)
+        self.copyButton:SetScript("OnClick",function() ArcadiaNexus.CB_Engine:HandleCopyPrevious() end)
+    end
+    self.clearButton:ClearAllPoints()
+    self.copyButton:ClearAllPoints()
+    self.clearButton:SetPoint("LEFT",inputFrame,"LEFT",inputGroupX,11)
+    self.copyButton:SetPoint("LEFT",inputFrame,"LEFT",inputGroupX,-11)
+    self.clearButton:Show(); self.copyButton:Show()
     self:HighlightInputSlot(1)
+    self:RefreshInputs()
 end
 
 -- ============================================================
@@ -728,6 +756,16 @@ function R:CreateAttemptRow(parent, codeLen, L, offsetY)
                 if peg.maskTex then peg.maskTex:SetSize(pegPad, pegPad) end
                 peg.icon:Hide()
                 if peg.maskTex then peg.maskTex:Hide() end
+                peg._feedback=nil
+                peg:EnableMouse(true)
+                peg:SetScript("OnEnter",function(p)
+                    local locale=ArcadiaNexus.GetLocaleTable("CODEBREAKER")
+                    GameTooltip:SetOwner(p,"ANCHOR_TOP")
+                    GameTooltip:SetText(locale["feedback_"..(p._feedback or "empty")])
+                    GameTooltip:AddLine(locale.feedback_order,1,1,1,true)
+                    GameTooltip:Show()
+                end)
+                peg:SetScript("OnLeave",function() GameTooltip:Hide() end)
                 peg:Show()
                 pegs[pegIdx] = peg
             end
@@ -907,6 +945,7 @@ function R:UpdateBoard()
     self:UpdateInputRow()
     self:HighlightInputSlot(1)
     self:UpdateStatus(board)
+    self:RefreshInputs()
 end
 
 -- ============================================================
@@ -938,6 +977,7 @@ function R:RenderAttemptRow(row, attempt, themeKey, codeLen)
         pegIdx = pegIdx + 1
         local peg = row.pegs[pegIdx]
         if peg then
+            peg._feedback="exact"
             peg.icon:SetTexture(PEGS.exact.icon)
             peg.icon:SetVertexColor(1.0, 1.0, 1.0)
             peg.icon:Show()
@@ -949,6 +989,7 @@ function R:RenderAttemptRow(row, attempt, themeKey, codeLen)
         pegIdx = pegIdx + 1
         local peg = row.pegs[pegIdx]
         if peg then
+            peg._feedback="partial"
             peg.icon:SetTexture(PEGS.partial.icon)
             peg.icon:SetVertexColor(0.6, 0.6, 0.6)
             peg.icon:Show()
@@ -960,6 +1001,7 @@ function R:RenderAttemptRow(row, attempt, themeKey, codeLen)
     for j = pegIdx + 1, row.pegCount do
         local peg = row.pegs[j]
         if peg then
+            peg._feedback=nil
             peg.icon:Hide()
             peg:SetBackdropColor(0.10, 0.10, 0.13, 1)
             peg:SetBackdropBorderColor(0.22, 0.22, 0.25, 1)
@@ -1002,13 +1044,21 @@ function R:FlashIncomplete()
             slot:SetBackdropBorderColor(1, 0.1, 0.1, 1)
         end
     end
-    C_Timer.After(0.4, function() R:HighlightInputSlot(R.selectedSlot) end)
+    if not self._flashGuard then self._flashGuard=ArcadiaNexus.TimerGuard.New() end
+    self._flashGuard:Cancel()
+    local sid=ArcadiaNexus.CB_Engine._sessionId
+    self._flashGuard:After(0.4,function()
+        if ArcadiaNexus.GameSession:IsSession(ArcadiaNexus.CB_Engine,sid) then R:HighlightInputSlot(R.selectedSlot) end
+    end)
 end
 
 -- ============================================================
 -- ClearBoard
 -- ============================================================
 function R:ClearBoard()
+    if self._flashGuard then self._flashGuard:Cancel() end
+    if self.clearButton then self.clearButton:Hide() end
+    if self.copyButton then self.copyButton:Hide() end
     if self._attemptSlotPool then self._attemptSlotPool:ReleaseAll() end
     if self._attemptPegPool  then self._attemptPegPool:ReleaseAll() end
     if self._inputSlotPool   then self._inputSlotPool:ReleaseAll() end
@@ -1053,153 +1103,103 @@ function R:CreateStatusBar()
     })
 end
 
-local CB_SCORE = { easy = 50, normal = 100, hard = 200 }
+
 
 function R:UpdateStatus(board)
-    local L = ArcadiaNexus.GetLocaleTable("CODEBREAKER")
-    local diff = (ArcadiaNexus.CB_Engine and ArcadiaNexus.CB_Engine.activeConfig and ArcadiaNexus.CB_Engine.activeConfig.difficulty)
-        or self.selectedDiff or "normal"
-    local maxA = math.max(1, (board and board.maxAttempts) or 1)
-    local used = math.min(maxA, math.max(1, (board and #board.attempts) or 1))
-    local base = CB_SCORE[diff] or 100
-    local score = math.max(1, math.floor(base * (maxA - used + 1) / maxA))
-    if self.scoreFS then
-        self.scoreFS:SetText((L["hud_score"] or "Punkte") .. ": " .. tostring(score))
-    end
-    local best = 0
-    local SM = ArcadiaNexus.ScoreManager
-    if SM and SM.GetBestScore then
-        best = SM:GetBestScore("CODEBREAKER", diff) or 0
-    end
-    if self.bestFS then
-        self.bestFS:SetText((L["hud_highscore"] or "Highscore") .. ": " .. tostring(best))
-    end
+    local L=ArcadiaNexus.GetLocaleTable("CODEBREAKER")
+    if self.scoreFS then self.scoreFS:SetText((board.phase=="PLAYING" and L.hud_potential or L.hud_score)..": "..ArcadiaNexus.CB_Logic:GetScore(board)) end
+    if self.bestFS then self.bestFS:SetText(L.hud_highscore..": "..ArcadiaNexus.ScoreManager:GetBestScore("CODEBREAKER",board.difficulty)) end
     if self._scoreBox then self._scoreBox:Show() end
-    if self._bestBox  then self._bestBox:Show()  end
+    if self._bestBox then self._bestBox:Show() end
 end
 
 -- ============================================================
--- Controls – 3 Segmente (narrow): DD+DD | Start | Checkbox
+-- Controls – 3 Segmente (narrow): Schwierigkeit | Start | Weiterspielen
 -- ============================================================
-local CODE_LENGTHS = { 3, 4, 5, 6 }
+
 
 function R:_CreateControls()
-    local L  = ArcadiaNexus.GetLocaleTable("CODEBREAKER")
-    local UI = ArcadiaNexus.UI
-    local S  = ArcadiaNexus.CB_Settings
-
-    local CFG_dd_w   = 120
-    local CFG_dd_gap = 10
-    local CFG_btn_w  = 144
-    local CFG_btn_h  = 32
-
-    local bar = UI.CreateGameControlsBar(self.frame, "narrow")
-    local cf = bar.frame
-    self._controlsFrame = cf
-
-    local DIFFS = {
-        { key = "easy",   label = L["diff_easy"]   or "Einfach" },
-        { key = "normal", label = L["diff_normal"]  or "Normal"  },
-        { key = "hard",   label = L["diff_hard"]    or "Schwer"  },
-    }
-    local lenOpts = {}
-    for _, v in ipairs(CODE_LENGTHS) do
-        lenOpts[#lenOpts + 1] = { key = v, label = tostring(v) }
-    end
-
-    -- Segment 1: beide Dropdowns nebeneinander, Gruppe mittig
-    local pairW = CFG_dd_w * 2 + CFG_dd_gap
-    local pair = CreateFrame("Frame", nil, cf)
-    pair:SetSize(pairW, CFG_btn_h)
-    pair:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
-
-    local ddDiffAnchor = CreateFrame("Frame", nil, pair)
-    ddDiffAnchor:SetSize(CFG_dd_w, CFG_btn_h)
-    ddDiffAnchor:SetPoint("LEFT", pair, "LEFT", 0, 0)
-    UI.CreateSimpleDropdown(ddDiffAnchor, 0, 0, CFG_dd_w, "", DIFFS,
-        function() return S:Get("difficulty") end,
-        function(key) S:Set("difficulty", key) end
-    )
-
-    local ddLenAnchor = CreateFrame("Frame", nil, pair)
-    ddLenAnchor:SetSize(CFG_dd_w, CFG_btn_h)
-    ddLenAnchor:SetPoint("RIGHT", pair, "RIGHT", 0, 0)
-    UI.CreateSimpleDropdown(ddLenAnchor, 0, 0, CFG_dd_w, "", lenOpts,
-        function() return S:Get("codeLength") end,
-        function(key) S:Set("codeLength", key) end
-    )
-
-    -- Segment 2: Start / Beenden, mittig
-    local startBtn = UI.CreateArcadiaButton(cf, L["btn_start"] or "Spiel starten", CFG_btn_w, CFG_btn_h)
-    startBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
-    startBtn:SetScript("OnClick", function()
-        local Eng = ArcadiaNexus.CB_Engine
-        if not Eng then return end
-        if R.state == "PLAYING" then
-            Eng:StopGame()
-        else
-            R:StartNewGame()
-        end
+    local L,UI,S=ArcadiaNexus.GetLocaleTable("CODEBREAKER"),ArcadiaNexus.UI,ArcadiaNexus.CB_Settings
+    local bar=UI.CreateGameControlsBar(self.frame,"narrow")
+    local anchor=CreateFrame("Frame",nil,bar.frame)
+    anchor:SetSize(130,32)
+    anchor:SetPoint("CENTER",bar.frame,"CENTER",bar.segX[1],bar.y.dropdownOfs)
+    self._diffDropdown=UI.CreateSimpleDropdown(anchor,0,0,130,"", {
+        {key="easy",label=L.diff_easy},{key="normal",label=L.diff_normal},{key="hard",label=L.diff_hard},
+    },function()
+        local E=ArcadiaNexus.CB_Engine
+        return E.activeConfig and E.activeConfig.difficulty or S:Get("difficulty")
+    end,function(key) S:Set("difficulty",key) end)
+    self._startBtn=UI.CreateArcadiaButton(bar.frame,L.btn_start,144,32)
+    self._startBtn:SetPoint("BOTTOM",bar.frame,"BOTTOM",bar.segX[2],bar.y.button)
+    self._startBtn:SetScript("OnClick",function()
+        if ArcadiaNexus.CB_Engine.activeGame then ArcadiaNexus.CB_Engine:SaveAndPause()
+        else R:StartNewGame() end
+        R:_RefreshContinueButton()
     end)
-    self._startBtn = startBtn
+    self._continueBtn=UI.CreateArcadiaButton(bar.frame,L.btn_resume,144,32)
+    self._continueBtn:SetPoint("BOTTOM",bar.frame,"BOTTOM",bar.segX[3],bar.y.button)
+    self._continueBtn:SetScript("OnClick",function()
+        R:ContinueGame()
+    end)
+    self:_RefreshContinueButton()
+end
 
-    -- Segment 3: Duplikate, Label rechts neben der Checkbox
-    local chkHolder, chk = UI.CreateBarCheckbox(cf, L["dup_label"] or "Duplikate", { w = 130, h = 36, size = 20 })
-    chkHolder:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[3], bar.y.checkbox)
-    chk:SetScript("OnShow", function()
-        chk:SetChecked(S and S:Get("duplicates") or false)
-    end)
-    chk:SetScript("OnClick", function()
-        if S then S:Set("duplicates", chk:GetChecked()) end
-    end)
-    self.dupCheckbox = chk
+function R:_RefreshContinueButton()
+    local btn=self._continueBtn
+    if not btn then return end
+    local E=ArcadiaNexus.CB_Engine
+    local can=not E.activeGame and E:CanContinueSave(ArcadiaNexus.CB_Settings:LoadSave())
+    if can then btn:Enable() else btn:Disable() end
 end
 
 function R:StartNewGame()
-    local S = ArcadiaNexus.CB_Settings
-    ArcadiaNexus.CB_Engine:StartGame({
-        difficulty = S:Get("difficulty"),
-        theme      = S:Get("theme"),
-        codeLength = S:Get("codeLength"),
-        duplicates = self.dupCheckbox and self.dupCheckbox:GetChecked() or S:Get("duplicates"),
-    })
-end
-
-local function SecretCodeLine(state)
-    local T   = ArcadiaNexus.CB_Themes
-    local parts = {}
-    for i = 1, state.codeLength do
-        local sym = T:GetSymbol(state.theme, state.secretCode[i])
-        parts[#parts + 1] = sym and sym.name or "?"
+    local E=ArcadiaNexus.CB_Engine
+    if E.activeGame then E:SaveAndPause() end
+    if self._fieldFrame and ArcadiaNexus.UI then
+        ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     end
-    return table.concat(parts, "  ")
+    E:StartGame({overwrite=true})
+    self:_RefreshContinueButton()
 end
 
-function R:ShowOverlay(won, state)
-    if not self._fieldFrame then return end
-    local UI     = ArcadiaNexus.UI
-    local L      = ArcadiaNexus.GetLocaleTable("CODEBREAKER")
-    local parent = self._fieldFrame
+function R:ContinueGame()
+    local E=ArcadiaNexus.CB_Engine
+    if E.activeGame then return end
+    if not E:CanContinueSave(ArcadiaNexus.CB_Settings:LoadSave()) then return end
+    if self._fieldFrame and ArcadiaNexus.UI then
+        ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
+    end
+    E:StartGame({mode="continue"})
+    self:_RefreshContinueButton()
+end
 
-    local lines
+function R:ShowOverlay(won,state,data)
+    local UI,L=ArcadiaNexus.UI,ArcadiaNexus.GetLocaleTable("CODEBREAKER")
+    local symbolRow
     if not won then
-        lines = { SecretCodeLine(state) }
+        local theme=state.theme
+        local board=ArcadiaNexus.CB_Engine.activeGame and ArcadiaNexus.CB_Engine.activeGame.board
+        if board and board.theme then theme=board.theme end
+        symbolRow={}
+        for i=1,state.codeLength do
+            local sym=ArcadiaNexus.CB_Themes:GetSymbol(theme,state.secretCode[i])
+            if sym then
+                symbolRow[i]={icon=sym.icon,color=sym.color}
+            end
+        end
     end
-
-    UI.ShowArcadeResult(parent, {
-        title      = won and L["result_win_title"] or L["result_loss_title"],
-        titleColor = won and {1, 0.85, 0.1} or {1, 0.3, 0.3},
-        subtitle   = won and string.format(L["result_win_sub"], state.attemptCount, state.maxAttempts)
-                     or L["result_loss_sub"],
-        lines      = lines,
-        gameId     = "CODEBREAKER",
-        result     = won and "WIN" or "LOSS",
-        L          = L,
-        onRetry    = function() R:StartNewGame() end,
-        onExit     = function()
-            local Eng = ArcadiaNexus.CB_Engine
-            if Eng then Eng:StopGame() end
+    UI.ShowArcadeResult(self._fieldFrame,{
+        title=won and L.result_win_title or L.result_loss_title,
+        subtitle=won and string.format(L.result_win_sub,state.attemptCount,state.maxAttempts) or L.result_loss_sub,
+        symbolRow=symbolRow,gameId="CODEBREAKER",difficulty=state.difficulty,result=won and "WIN" or "LOSS",
+        score=state.score,highscore=ArcadiaNexus.ScoreManager:GetBestScore("CODEBREAKER",state.difficulty),
+        newHighscore=data and data.newHighscore,xp=data and data.awardedXP or 0,gold=data and data.awardedGold or 0,L=L,
+        onRetry=function()
+            ArcadiaNexus.CB_Engine:SaveAndPause()
+            ArcadiaNexus.CB_Engine:StartGame({overwrite=true})
         end,
+        onExit=function() ArcadiaNexus.CB_Engine:SaveAndPause() end,
     })
 end
 
@@ -1207,6 +1207,8 @@ end
 -- Idle State
 -- ============================================================
 function R:EnterIdleState()
+    if self._flashGuard then self._flashGuard:Cancel() end
+    if self._diffDropdown then self._diffDropdown:SetEnabled(true); self._diffDropdown:RefreshDisplay() end
     self.state = "IDLE"
     self:ClearBoard()
     if self._fieldFrame and ArcadiaNexus.UI then
@@ -1221,6 +1223,7 @@ function R:EnterIdleState()
     if self._startBtn then
         self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("CODEBREAKER")["btn_start"] or "Spiel starten")
     end
+    self:_RefreshContinueButton()
 
     if not self.hintFS then
         self.hintFS = self._canvas:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1235,7 +1238,8 @@ end
 -- Event Handler
 -- ============================================================
 function R:OnGameStarted(state)
-    self.state         = "PLAYING"
+    if self._diffDropdown then self._diffDropdown:SetEnabled(false); self._diffDropdown:RefreshDisplay() end
+    self.state = state.phase
     if self._fieldFrame and ArcadiaNexus.UI then
         ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     end
@@ -1243,22 +1247,27 @@ function R:OnGameStarted(state)
     if self._logoTex then self._logoTex:Hide() end
 
     if self._startBtn then
-        self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("CODEBREAKER")["btn_exit"] or "Beenden")
+        self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("CODEBREAKER").btn_pause)
     end
+    self:_RefreshContinueButton()
 
     self:BuildBoard(state)
+    self:UpdateBoard()
     self:UpdateStatus(ArcadiaNexus.CB_Engine.activeGame.board)
 end
 
-function R:OnGameWon(state)
-    self.state = "WON"
-    self:ShowOverlay(true, state)
+function R:OnGameWon(state,data)
+    self.state="WON"
+    self:UpdateBoard()
+    self:_RefreshContinueButton()
+    self:ShowOverlay(true,state,data)
 end
 
-function R:OnGameLost(state)
-    self.state = "LOST"
+function R:OnGameLost(state,data)
+    self.state="LOST"
     self:UpdateBoard()
-    self:ShowOverlay(false, state)
+    self:_RefreshContinueButton()
+    self:ShowOverlay(false,state,data)
 end
 
 -- [GAMEHUB_REGISTERED]
@@ -1272,3 +1281,16 @@ ArcadiaNexus.RegisterGame({
     logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\Codebreaker\\assets\\logo\\logo_cb",
     xp        = 10,
 })
+
+function R:RefreshInputs()
+    local E=ArcadiaNexus.CB_Engine
+    local playing=E.state=="PLAYING"
+    local function Enabled(button,on)
+        if button then if on then button:Enable() else button:Disable() end end
+    end
+    for _,button in ipairs(self.inputSlots) do Enabled(button,playing) end
+    for _,button in ipairs(self.paletteButtons) do Enabled(button,playing) end
+    Enabled(self.submitButton,playing)
+    Enabled(self.clearButton,playing)
+    Enabled(self.copyButton,playing and E.activeGame and #E.activeGame.board.attempts>0)
+end

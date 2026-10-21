@@ -2,7 +2,7 @@
     Gaming Hub
     TicTacToe Game.lua
     Version: 0.3.0 (AI as separate step)
-    Lokales Spiel ist immer Sitz 1 vs. KI. Kein 2P-Hotseat (docs/TicTacToe.md).
+    Lokales Spiel ist immer Sitz 1 vs. KI. Kein 2P-Hotseat (docs/Spiele/TicTacToe.md).
 ]]
 
 local ArcadiaNexus = _G.ArcadiaNexus

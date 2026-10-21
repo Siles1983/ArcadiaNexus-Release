@@ -15,7 +15,35 @@ local function BuildCategoryPanel(parent)
     local F = ArcadiaNexus.UI.GetGamesPanelFrameRefs()
 
     local function ActivateGame(catID)
+        local LC = ArcadiaNexus.Lifecycle
+        local activeId = LC and LC.GetActiveGame and LC:GetActiveGame()
+        if activeId and catID == activeId then
+            NexusTabState.activeCategory = catID
+            if F.catBtns then
+                for _, b in ipairs(F.catBtns) do b.Refresh() end
+            end
+            local GR = ArcadiaNexus.GameRegistry
+            if GR and GR.ShowContainer then GR.ShowContainer(catID) end
+            local rnd = GR and GR.GetRenderer and GR.GetRenderer(catID)
+            if rnd and rnd.Render then pcall(rnd.Render, rnd) end
+            if ArcadiaNexus.UI.WelcomePanel then ArcadiaNexus.UI.WelcomePanel:Hide() end
+            return
+        end
+        local Nav = ArcadiaNexus.UI and ArcadiaNexus.UI.Navigation
+        if Nav and not Nav._pass and Nav.Request({
+            kind = "game",
+            target = catID,
+            purpose = "leave",
+            run = function()
+                Nav._pass = true
+                ActivateGame(catID)
+                Nav._pass = false
+            end,
+        }) then
+            return
+        end
         local gameShown = false
+        local previousCategory = NexusTabState.activeCategory
         NexusTabState.activeCategory = catID
         if F.catBtns then
             for _, b in ipairs(F.catBtns) do b.Refresh() end
@@ -26,8 +54,15 @@ local function BuildCategoryPanel(parent)
             local eng = GR.GetEngine(catID)
             local engRunning = eng and eng.state and eng.state ~= "IDLE"
             GR.HideAllContainers()
-            if not engRunning then
-                NexusTabs.StopAllGames()
+            if not engRunning and NexusTabs.StopAllGames() == false then
+                local LC = ArcadiaNexus.Lifecycle
+                local blocked = LC and LC:GetActiveGame() or previousCategory
+                NexusTabState.activeCategory = blocked
+                if F.catBtns then
+                    for _, b in ipairs(F.catBtns) do b.Refresh() end
+                end
+                if blocked and GR.ShowContainer then GR.ShowContainer(blocked) end
+                return
             end
             local info = GR.GetById(catID)
             if info then

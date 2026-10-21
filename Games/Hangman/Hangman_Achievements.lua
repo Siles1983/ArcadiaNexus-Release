@@ -13,7 +13,7 @@ ArcadiaNexus.RegisterAchievements({
     {
         id="HGM_WINS", gameId="HANGMAN", category="WORT",
         title_de="Buchstabenjäger", title_en="Letter Hunter",
-        desc_de="Löse Wörter im Galgenmännchen.", desc_en="Solve words in Hangman.",
+        desc_de="Löse Wörter in Nether Bound.", desc_en="Solve words in Nether Bound.",
         icon="Interface\\Icons\\INV_Letter_17",
         condition = function(data, db)
             if data.gameId ~= "HANGMAN" then return 0 end

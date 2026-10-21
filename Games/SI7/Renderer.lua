@@ -1,6 +1,6 @@
 --[[
     Games/SI7/Renderer.lua
-    Azeroth Intelligence — Hotseat + Match-Adapter (kein C_ChatInfo).
+    Azeroth Intelligence — Solo-KI, Hotseat + Match-Adapter (kein C_ChatInfo).
 ]]
 
 ArcadiaNexus = ArcadiaNexus or {}
@@ -61,7 +61,7 @@ end
 function R:Init()
     if self._initialized then return end
     self._initialized = true
-    self._mode = "hotseat"
+    self._mode = "solo_ai"
     self._clueN = 1
     self:_CreateMainFrame()
     self:_CreateField()
@@ -97,7 +97,7 @@ function R:_CreateMainFrame()
             return
         end
         ArcadiaNexus.GameSession:HandleRendererHide("SI7", ArcadiaNexus.SI7_Engine, function(E)
-            if E.mode ~= "hotseat" and (E.state == "PLAYING" or E.state == "LOBBY" or E.state == "FINISHED") then
+            if E.mode ~= "hotseat" and E.mode ~= "solo_ai" and (E.state == "PLAYING" or E.state == "LOBBY" or E.state == "FINISHED") then
                 E:HideView()
             elseif E.state ~= "IDLE" then
                 E:StopGame()
@@ -270,6 +270,7 @@ function R:_CreateHud()
     self._noticeFS = ff:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     self._noticeFS:SetPoint("BOTTOM", ff, "BOTTOM", 0, 40)
     self._noticeFS:SetTextColor(1, 0.85, 0.4)
+    self._noticeFS:SetWidth(520)
     self._historyBox, self._historyFS = UI.CreateHudStatBox(ff, {
         w = CFG.history_w, h = CFG.history_h,
         point = CFG.history_point, relativePoint = CFG.history_rel,
@@ -288,7 +289,7 @@ function R:_CreateClueRow()
     local loc = L()
     local ff = self._fieldFrame
     local row = CreateFrame("Frame", nil, ff)
-    row:SetSize(430, 28)
+    row:SetSize(530, 28)
     row:SetPoint("BOTTOM", ff, "BOTTOM", 0, 8)
     row:EnableMouse(false)
     self._clueRow = row
@@ -326,11 +327,12 @@ function R:_CreateClueRow()
         nOpts[#nOpts + 1] = { key = tostring(n), label = tostring(n) }
     end
     local nAnchor = CreateFrame("Frame", nil, row)
+    self._clueNumber = nAnchor
     nAnchor:SetSize(56, 24)
     nAnchor:SetPoint("LEFT", eb, "RIGHT", 8, 0)
-    UI.CreateSimpleDropdown(nAnchor, 0, 0, 56, "", nOpts,
+    self._clueNumberPicker = UI.CreateSimpleDropdown(nAnchor, 0, 0, 56, "", nOpts,
         function() return tostring(self._clueN or 1) end,
-        function(v) self._clueN = tonumber(v) or 1 end
+        function(v) if Engine():GetView().canClue then self._clueN = tonumber(v) or 1 end end
     )
 
     local clueBtn = UI.CreateArcadiaButton(row, loc.btn_clue, 90, 24)
@@ -338,10 +340,12 @@ function R:_CreateClueRow()
     clueBtn:SetScript("OnClick", function()
         local Eng = Engine()
         if not Eng then return end
-        Eng:SubmitClue(eb:GetText(), self._clueN or 1)
-        eb:SetText("")
+        local accepted = Eng:SubmitClue(eb:GetText(), self._clueN or 1)
+        if Eng.mode ~= "solo_ai" or accepted then eb:SetText("") end
     end)
     self._clueBtn = clueBtn
+    eb:SetScript("OnEnterPressed",function() if clueBtn:IsEnabled() then clueBtn:GetScript("OnClick")() end end)
+    eb:SetScript("OnEscapePressed",function() eb:ClearFocus() end)
 
     local passBtn = UI.CreateArcadiaButton(row, loc.btn_pass, 90, 24)
     passBtn:SetPoint("LEFT", clueBtn, "RIGHT", 8, 0)
@@ -350,6 +354,38 @@ function R:_CreateClueRow()
         if Eng then Eng:Pass() end
     end)
     self._passBtn = passBtn
+    local dictionary = UI.CreateArcadiaButton(row, loc.dictionary_button, 90, 24)
+    dictionary:SetPoint("LEFT", passBtn, "RIGHT", 8, 0)
+    dictionary:SetScript("OnClick",function()
+        local view = Engine():GetView()
+        if view.mode ~= "solo_ai" or not view.canClue then return end
+        local words = ArcadiaNexus.SI7_Knowledge.Dictionary(view.locale)
+        local page, count = 1, math.max(1, math.ceil(#words / 8))
+        local function ShowPage()
+            local current = Engine():GetView()
+            if current.runId ~= view.runId or not current.canClue then UI.HideChoicePopup(self._fieldFrame) return end
+            local lines = {loc.dictionary_help,""}
+            for i=(page-1)*8+1,math.min(page*8,#words) do lines[#lines+1]=words[i] end
+            local canTurn = count > 1
+            local function Step(delta)
+                if not canTurn then return end
+                page = (page - 1 + delta) % count + 1
+                ShowPage()
+            end
+            UI.ShowChoicePopup({parent=self._fieldFrame,width=430,height=250,
+                title=loc.dictionary_title .. " (" .. page .. "/" .. count .. ")",body=table.concat(lines,"\n"),
+                buttons={
+                    {label=loc.dictionary_close,onClick=function() UI.HideChoicePopup(self._fieldFrame) end},
+                },
+                pageNav={
+                    prev={onClick=function() Step(-1) end, enabled=canTurn, tooltip=loc.dictionary_prev},
+                    next={onClick=function() Step(1) end, enabled=canTurn, tooltip=loc.dictionary_next},
+                }})
+        end
+        ShowPage()
+    end)
+    dictionary:Hide()
+    self._dictionaryBtn = dictionary
 end
 
 function R:_CreateRoles()
@@ -381,14 +417,14 @@ function R:_CreateControls()
     local bar = UI.CreateGameControlsBar(self.frame, "narrow")
     local cf = bar.frame
     self._controlsFrame = cf
-    self._mode = "hotseat"
+    self._mode = "solo_ai"
 
     local startBtn = UI.CreateArcadiaButton(cf, loc.btn_start, 144, 32)
     startBtn:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
     startBtn:SetScript("OnClick", function()
         local Eng = Engine()
         if not Eng then return end
-        if R.state == "PLAYING" and Eng.mode and Eng.mode ~= "hotseat" then
+        if R.state == "PLAYING" and Eng.mode and Eng.mode ~= "hotseat" and Eng.mode ~= "solo_ai" then
             local Shell = ArcadiaNexus.MatchShell
             if Shell and Shell.ShowEndRoundConfirm then
                 Shell.ShowEndRoundConfirm(function()
@@ -402,10 +438,43 @@ function R:_CreateControls()
             ArcadiaNexus.UI.HideResultDialog(R._fieldFrame)
             Eng:StopGame()
         else
-            Eng:StartGame({ mode = "hotseat" })
+            Eng:StartGame({ mode = self._mode, profile = self._soloProfile, team=self._soloTeam, role=self._soloRole })
         end
     end)
     self._startBtn = startBtn
+    self._soloProfile, self._soloTeam, self._soloRole = "normal", "R", "agent"
+    local function Picker(segment, xOffset, options, current, change)
+        local anchor = CreateFrame("Frame", nil, cf)
+        anchor:SetSize(130,32)
+        anchor:SetPoint("CENTER", cf, "CENTER", bar.segX[segment] + xOffset, bar.y.dropdownOfs)
+        return UI.CreateSimpleDropdown(anchor,0,0,130,"",options,current,function(value)
+            if Engine().state ~= "IDLE" then return end
+            change(value)
+            self:EnterIdleState()
+        end)
+    end
+    self._modePicker = Picker(1,-70,{
+        {key="solo_ai",label=loc.mode_solo_ai},{key="hotseat",label=loc.mode_hotseat},
+    },function() return self._mode end,function(v) self._mode=v end)
+    self._difficultyPicker = Picker(1,70,{
+        {key="easy",label=loc.solo_easy},{key="normal",label=loc.solo_normal},
+    },function() return self._soloProfile end,function(v)
+        if self._mode == "solo_ai" then self._soloProfile=v end
+    end)
+    self._factionPicker = Picker(3,-70,{
+        {key="R",label=loc.faction_horde},{key="B",label=loc.faction_alliance},
+    },function() return self._soloTeam end,function(v) self._soloTeam=v end)
+    self._rolePicker = Picker(3,70,{
+        {key="agent",label=loc.solo_role_agent},{key="spy",label=loc.solo_role_spy},
+    },function() return self._soloRole end,function(v) self._soloRole=v end)
+end
+
+function R:RefreshConfiguration(enabled)
+    for _, picker in ipairs({self._modePicker,self._difficultyPicker,self._factionPicker,self._rolePicker}) do
+        if picker then picker:SetEnabled(enabled) picker:RefreshDisplay() end
+    end
+    if self._difficultyPicker then self._difficultyPicker:SetEnabled(enabled and self._mode == "solo_ai") end
+
 end
 
 local function PaintCell(btn, word, revealed, spyColor)
@@ -439,12 +508,225 @@ local function PaintCell(btn, word, revealed, spyColor)
     end
 end
 
+local function FrameChildren(parent)
+    if not parent or not parent.GetChildren then return {} end
+    return { parent:GetChildren() }
+end
+
+local function FrameName(frame)
+    local name = frame and frame.GetName and frame:GetName()
+    return type(name) == "string" and name or ""
+end
+
+local function TopMouseLevel(frame, best)
+    if frame and frame.IsMouseEnabled and frame:IsMouseEnabled() then
+        best = math.max(best or 0, frame.GetFrameLevel and frame:GetFrameLevel() or 0)
+    end
+    local children = FrameChildren(frame)
+    for i = 1, #children do
+        best = TopMouseLevel(children[i], best)
+    end
+    return best or 1
+end
+
+--- Sichtbares Ergebnisoverlay dieses Feldes. Es liegt auf FULLSCREEN_DIALOG.
+function R:_ShownResultOverlay()
+    local children = FrameChildren(self._fieldFrame)
+    for i = 1, #children do
+        local child = children[i]
+        if child and child.IsShown and child:IsShown()
+            and FrameName(child):find("ArcadiaNexus_ResultOverlay", 1, true) == 1 then
+            return child
+        end
+    end
+end
+
+function R:_NavigationPopup()
+    local UI = ArcadiaNexus.UI
+    local refs = UI and UI.GetF and UI.GetF()
+    local main = refs and refs.main
+    local popup = main and UI._choicePopups and UI._choicePopups[main]
+    local owner = popup and popup._anOwner
+    if popup and popup.IsShown and popup:IsShown()
+        and owner and owner.kind == "navigation" and owner.gameId == "SI7" then
+        return popup
+    end
+end
+
+function R:_NavigationShield()
+    if self._navShield then return self._navShield end
+    local shield = CreateFrame("Frame", "ArcadiaNexus_SI7_NavShield", self._fieldFrame)
+    shield:EnableMouse(true)
+    if shield.EnableKeyboard then shield:EnableKeyboard(false) end
+    shield:Hide()
+    self._navShield = shield
+    return shield
+end
+
+function R:_SoloResultBlocksNavigation()
+    local Eng = Engine()
+    local UI = ArcadiaNexus.UI
+    if not Eng or Eng.mode ~= "solo_ai" or Eng.state ~= "FINISHED" then return false end
+    return self._fieldFrame and UI and UI.IsResultDialogVisible
+        and UI.IsResultDialogVisible(self._fieldFrame) and true or false
+end
+
+--- Merkt sich Strata und FrameLevel, bevor sie für das SOLO-Overlay angehoben werden.
+--- ShowChoicePopup setzt davor die kanonischen Werte; nur dieser Stand wird wiederhergestellt.
+function R:_RememberNavigationFrame(popup)
+    local children = {}
+    local raw = FrameChildren(popup)
+    for i = 1, #raw do
+        local child = raw[i]
+        if child and child.IsMouseEnabled and child:IsMouseEnabled() and child.GetFrameLevel then
+            children[#children + 1] = { frame = child, level = child:GetFrameLevel() }
+        end
+    end
+    self._navSaved = {
+        popup = popup,
+        strata = popup.GetFrameStrata and popup:GetFrameStrata() or "DIALOG",
+        level = popup.GetFrameLevel and popup:GetFrameLevel() or 1,
+        children = children,
+    }
+end
+
+--- HideChoicePopup ist nicht der Lebenszyklus des Frames: popup:Hide() umgeht ihn,
+--- und ShowChoicePopup wechselt den Owner, ohne zu verbergen. Der Hide des Frames bleibt.
+function R:_BindNavigationHide(popup)
+    if popup._si7HideWrapped then return end
+    popup._si7HideWrapped = true
+    local hide = popup.Hide
+    function popup:Hide(...)
+        hide(self, ...)
+        if self._si7NavActive and self._si7NavActive == R._navToken then
+            R:ReleaseNavigationChrome({ fromHide = true })
+        end
+    end
+end
+
+--- Die zentrale Bestätigung bleibt auf DIALOG und läge sonst unter dem
+--- mausaktiven Ergebnisoverlay. Nur dieses SOLO-Overlay wird abgedeckt.
+function R:_RaiseNavigationOverResult()
+    local popup = self:_NavigationPopup()
+    local overlay = self:_ShownResultOverlay()
+    if not popup or not overlay or not popup.SetFrameStrata then return end
+    local tracked = popup._si7NavActive and popup._si7NavActive == self._navToken and self._navSaved
+    if not tracked then
+        self._navToken = {}
+        popup._si7NavActive = self._navToken
+        self._navPopup = popup
+        local owner = popup._anOwner
+        self._navSessionId = owner and owner.sessionId
+        self:_RememberNavigationFrame(popup)
+        self:_BindNavigationHide(popup)
+    else
+        self._navPopup = popup
+    end
+    local shield = self:_NavigationShield()
+    if shield.SetParent then shield:SetParent(self._fieldFrame) end
+    if shield.SetAllPoints then shield:SetAllPoints(self._fieldFrame) end
+    shield:SetFrameStrata("FULLSCREEN_DIALOG")
+    shield:EnableMouse(true)
+    local coverLevel = TopMouseLevel(overlay) + 1
+    shield:SetFrameLevel(coverLevel)
+    shield:Show()
+    local popupLevel = coverLevel + 20
+    popup:SetFrameStrata("FULLSCREEN_DIALOG")
+    popup:SetFrameLevel(popupLevel)
+    local saved = self._navSaved
+    local children = saved and saved.children or {}
+    for i = 1, #children do
+        local child = children[i].frame
+        if child and child.SetFrameLevel then child:SetFrameLevel(popupLevel + 1) end
+    end
+    if popup.Raise then popup:Raise() end
+end
+
+--- Idempotent. Ein fremder Owner wird nicht verborgen und seine Overlay-Ebene nicht geschlossen.
+--- keepGamepad lässt die bestehende Ebene für SyncOverlay des neuen Owners stehen.
+function R:ReleaseNavigationChrome(opts)
+    opts = opts or {}
+    if self._navBusy then return end
+    local popup = self._navPopup
+    local token = self._navToken
+    if not popup or not token or popup._si7NavActive ~= token then
+        if self._navShield then self._navShield:Hide() end
+        self._navPopup, self._navToken, self._navSaved, self._navSessionId = nil, nil, nil, nil
+        return
+    end
+    self._navBusy = true
+    popup._si7NavActive = nil
+    self._navPopup, self._navToken, self._navSessionId = nil, nil, nil
+    local saved = self._navSaved
+    self._navSaved = nil
+    if self._navShield then self._navShield:Hide() end
+    if saved and saved.popup == popup then
+        if saved.strata and popup.SetFrameStrata then popup:SetFrameStrata(saved.strata) end
+        if saved.level and popup.SetFrameLevel then popup:SetFrameLevel(saved.level) end
+        for i = 1, #saved.children do
+            local item = saved.children[i]
+            if item.frame and item.frame.SetFrameLevel then item.frame:SetFrameLevel(item.level) end
+        end
+    end
+    if not opts.keepGamepad and popup._overlayLive then
+        local buttons = popup._overlayButtons
+        popup._overlayLive = nil
+        local GI = ArcadiaNexus.GameInput
+        if buttons and GI and GI.OnUiOverlayClosed then pcall(GI.OnUiOverlayClosed, buttons) end
+    end
+    self._navBusy = false
+    if not opts.keepShown and not opts.fromHide and popup.IsShown and popup:IsShown() then
+        popup:Hide()
+    end
+end
+
+function R:_EnsureNavigationAboveResult()
+    local UI = ArcadiaNexus.UI
+    if not UI or UI._si7ChoiceShowGuard or type(UI.ShowChoicePopup) ~= "function" then return end
+    UI._si7ChoiceShowGuard = true
+    local show = UI.ShowChoicePopup
+    function UI.ShowChoicePopup(config)
+        local parent = config and config.parent
+        local existing = parent and UI._choicePopups and UI._choicePopups[parent]
+        if existing and existing._si7NavActive and existing._si7NavActive == R._navToken then
+            local owner = config and config.owner
+            local same = owner and owner.kind == "navigation" and owner.gameId == "SI7"
+                and owner.sessionId == R._navSessionId
+            if owner and not same then
+                R:ReleaseNavigationChrome({ keepGamepad = true, keepShown = true })
+            end
+        end
+        local popup = show(config)
+        if popup and R:_SoloResultBlocksNavigation() then
+            local owner = popup._anOwner
+            if owner and owner.kind == "navigation" and owner.gameId == "SI7" then
+                R:_RaiseNavigationOverResult()
+            end
+        end
+        return popup
+    end
+end
+
+--- Schliesst nur den noch sichtbaren Ergebnisdialog dieses SI:7-Feldes.
+function R:HideOwnResultDialog()
+    local parent = self._fieldFrame
+    local UI = ArcadiaNexus.UI
+    if not parent or not UI or not UI.IsResultDialogVisible or not UI.HideResultDialog then return end
+    if UI.IsResultDialogVisible(parent) then
+        UI.HideResultDialog(parent)
+    end
+end
+
 function R:EnterIdleState()
     self.state = "IDLE"
     local loc = L()
+    self:RefreshConfiguration(true)
     if self._gold then self._gold:Hide() end
     if self._boardHolder then self._boardHolder:Hide() end
     if self._clueRow then self._clueRow:Hide() end
+    ArcadiaNexus.UI.HideChoicePopup(self._fieldFrame)
+    self:HideOwnResultDialog()
+    self:ReleaseNavigationChrome()
     if self._roleRow then self._roleRow:Hide() end
     if self._hudTurn then self._hudTurn:Hide() end
     if self._hudLeft then self._hudLeft:Hide() end
@@ -454,7 +736,13 @@ function R:EnterIdleState()
     if self._historyFS then self._historyFS:SetText("") end
     self._lastTurn = nil
     if self._turnFlash then self._turnFlash:SetAlpha(0) end
-    if self._logoTex then self._logoTex:Show() end
+    if self._logoTex then
+        self._logoTex:ClearAllPoints()
+        self._logoTex:SetSize(CFG.logo_w, CFG.logo_h)
+        self._logoTex:SetPoint("CENTER", self._fieldFrame, "CENTER", CFG.logo_ofs_x,
+            CFG.logo_ofs_y)
+        self._logoTex:Show()
+    end
     if self._lobbyPanel then self._lobbyPanel:Hide() end
     if self._startBtn and self._startBtn.SetLabel then
         self._startBtn:SetLabel(loc.btn_start)
@@ -467,6 +755,7 @@ function R:Render()
     local v = Eng:GetView()
     local loc = L()
     self.state = v.state
+    if v.mode == "solo_ai" and not v.canClue then ArcadiaNexus.UI.HideChoicePopup(self._fieldFrame) end
 
     if v.state == "IDLE" then
         self:EnterIdleState()
@@ -479,6 +768,8 @@ function R:Render()
     end
 
     if self._logoTex then self._logoTex:Hide() end
+    self:RefreshConfiguration(false)
+    if self._modePicker then self._modePicker:SetEnabled(false) end
 
     if v.state == "LOBBY" then
         if self._gold then self._gold:Hide() end
@@ -558,7 +849,7 @@ function R:Render()
     self._lastTurn = pub.turn
     for i = 1, 25 do
         local id = pub.ids and pub.ids[i]
-        local word = id and Logic.Word(id, pub.wordSet) or ""
+        local word = id and Logic.Word(id, pub.wordSet, v.locale) or ""
         local mask = pub.mask and pub.mask:sub(i, i) or "."
         local spyC = v.key and v.key:sub(i, i) or nil
         PaintCell(self._cells[i], word, mask, spyC)
@@ -581,7 +872,7 @@ function R:Render()
     if pub.lastKind == "C" then
         history = string.format(loc.hud_history_clue, actionTeam, pub.clue or "", pub.n or 0)
     elseif pub.lastKind == "G" and pub.lastIndex and pub.lastIndex > 0 then
-        history = string.format(loc.hud_history_guess, actionTeam, Logic.Word(pub.ids[pub.lastIndex], pub.wordSet))
+        history = string.format(loc.hud_history_guess, actionTeam, Logic.Word(pub.ids[pub.lastIndex], pub.wordSet, v.locale))
     elseif pub.lastKind == "P" then
         history = string.format(loc.hud_history_pass, actionTeam)
     end
@@ -604,7 +895,18 @@ function R:Render()
 
     local roleName = loc[(neutral and "role_neutral_" or "role_") .. tostring(v.seat or 1)] or ""
     local feedback = v.notice and loc[v.notice]
-    if feedback then
+    if v.mode == "solo_ai" and v.notice ~= "solo_blocked" then
+        local language = v.locale == "deDE" and "DE" or "EN"
+        local strength = loc["solo_" .. (v.profile or "normal")]
+        local status = v.canClue and loc.solo_your_clue or (v.canGuess and loc.solo_your_turn or loc.solo_thinking)
+        if v.state == "FINISHED" then status = loc.hud_phase_O end
+        local message = string.format(loc.solo_status, language, strength, status)
+        if pub.lastKind == "P" and v.aiReason then
+            message = message .. "\n" .. (loc["solo_" .. v.aiReason] or "")
+        end
+        if v.notice and v.notice ~= "solo_ai" then message=message .. "\n" .. (loc[v.notice] or "") end
+        self._noticeFS:SetText(message)
+    elseif feedback then
         self._noticeFS:SetText(feedback)
     elseif v.canClue then
         self._noticeFS:SetText(string.format(loc.hud_view_clue, roleName))
@@ -614,7 +916,21 @@ function R:Render()
         self._noticeFS:SetText(string.format(loc.hud_view_wait, roleName))
     end
     self._clueRow:Show()
-    if v.canClue then self._clueBtn:Enable() else self._clueBtn:Disable() end
+    if v.mode == "solo_ai" and not v.spy then
+        self._clueBox:Hide()
+        self._clueNumber:Hide()
+        self._clueBtn:Hide()
+    else
+        self._clueBox:Show()
+        self._clueNumber:Show()
+        self._clueBtn:Show()
+    end
+    if v.canClue then self._clueBtn:Enable() self._clueBox:Enable() else self._clueBtn:Disable() self._clueBox:Disable() end
+    if self._clueNumberPicker then self._clueNumberPicker:SetEnabled(v.canClue) end
+    if self._dictionaryBtn then
+        self._dictionaryBtn:SetShown(v.mode == "solo_ai" and v.spy)
+        if v.canClue then self._dictionaryBtn:Enable() else self._dictionaryBtn:Disable() end
+    end
     if v.canGuess then self._passBtn:Enable() else self._passBtn:Disable() end
     if v.mode == "hotseat" or v.duo then
         self._roleRow:Show()
@@ -641,6 +957,7 @@ function R:Render()
 end
 
 function R:ShowGameOver()
+    self:_EnsureNavigationAboveResult()
     local Eng = Engine()
     if not Eng then return end
     local v = Eng:GetView()
@@ -659,7 +976,9 @@ function R:ShowGameOver()
     end
     local won = v.team and winner == v.team
     local lines
-    if v.mode == "hotseat" then
+    if v.mode == "solo_ai" then
+        lines = { reason, loc.solo_result }
+    elseif v.mode == "hotseat" then
         lines = { reason, loc.go_hotseat }
         won = true
     else
@@ -667,15 +986,24 @@ function R:ShowGameOver()
     end
     self.state = "FINISHED"
     ArcadiaNexus.UI.ShowArcadeResult(self._fieldFrame, {
+        isCurrent = v.mode == "solo_ai" and function()
+            local current = Eng:GetView()
+            return current.runId == v.runId and current.state == "FINISHED"
+        end or nil,
         title = title,
         titleColor = (winner == "R") and { 0.9, 0.25, 0.2 } or { 0.35, 0.55, 1 },
         gameId = "SI7",
         result = won and "WIN" or "LOSS",
         lines = lines,
         L = loc,
-        hideHighscore = v.mode == "hotseat",
+        xp = v.mode == "solo_ai" and 0 or nil,
+        hideHighscore = v.mode == "hotseat" or v.mode == "solo_ai",
         onRetry = function()
-            if v.mode == "hotseat" then
+            if v.mode == "solo_ai" then
+                if not Eng:StartGame({ mode="solo_ai", locale=v.locale, profile=v.profile, team=v.team, role=v.role }) then
+                    Eng:MaybeShowResult()
+                end
+            elseif v.mode == "hotseat" then
                 Eng:StartGame({ mode = "hotseat" })
             else
                 local Shell = ArcadiaNexus.MatchShell
@@ -685,7 +1013,7 @@ function R:ShowGameOver()
         onExit = function()
             Eng:StopGame()
         end,
-        buttons = (v.mode ~= "hotseat") and {
+        buttons = (v.mode ~= "hotseat" and v.mode ~= "solo_ai") and {
             {
                 label = (ArcadiaNexus.GetLocaleTable("UI") or {}).btn_new_game or loc.btn_retry,
                 onClick = function()

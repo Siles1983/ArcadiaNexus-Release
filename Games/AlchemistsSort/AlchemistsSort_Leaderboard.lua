@@ -13,5 +13,5 @@ table.insert(stats.rows, { fromStats="totalStars", labelKey="lb_stars", valueCol
 ArcadiaNexus.RegisterLeaderboard({
     gameId = "ALCHEMISTSSORT",
     difficulties = { "normal" },
-    sections = { S.TopScores(3), stats, S.BestLevelBox() },
+    sections = { {type="top_scores",titleKey="lb_legacy_points",count=3,hideIfEmpty=true}, stats, S.BestLevelBox() },
 })

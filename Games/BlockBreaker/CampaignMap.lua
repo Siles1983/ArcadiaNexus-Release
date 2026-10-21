@@ -1,0 +1,14 @@
+-- Presentation data only; shared CampaignMap owns layout and navigation.
+local pages = {
+    {texture="Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_01_rainbow_courtyard", nodes={{0.0794,0.84},{0.2435,0.8022},{0.3863,0.7202},{0.2496,0.5485},{0.3726,0.4603},{0.4699,0.3904},{0.6112,0.3646},{0.7388,0.3403},{0.8847,0.2749},{0.9,0.16}}},
+    {texture="Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_02_blue_terraces", nodes={{0.1189,0.84},{0.2526,0.7749},{0.3453,0.6715},{0.242,0.5485},{0.3331,0.4634},{0.5337,0.4208},{0.6887,0.3874},{0.8756,0.3631},{0.7966,0.2461},{0.89,0.18}}},
+    {texture="Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_03_green_gardens", nodes={{0.0703,0.84},{0.2176,0.8052},{0.3817,0.7353},{0.2891,0.6457},{0.2541,0.5485},{0.4152,0.4603},{0.5838,0.3904},{0.7191,0.3646},{0.8528,0.3053},{0.89,0.18}}},
+    {texture="Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_04_red_foundry", nodes={{0.06,0.7749},{0.1949,0.7293},{0.327,0.67},{0.3316,0.5591},{0.4121,0.4801},{0.5489,0.4451},{0.6872,0.4254},{0.8224,0.3737},{0.9242,0.3099},{0.89,0.18}}},
+    {texture="Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_05_violet_skyworks", nodes={{0.09,0.84},{0.2192,0.8022},{0.3726,0.711},{0.4942,0.6427},{0.6416,0.5712},{0.5702,0.4694},{0.4547,0.3646},{0.5823,0.2841},{0.7479,0.2658},{0.8467,0.1838}}},
+    {texture="Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_06_amber_fortress", nodes={{0.204,0.84},{0.1949,0.6974},{0.3255,0.6518},{0.4699,0.6077},{0.637,0.5485},{0.5398,0.4375},{0.6279,0.3448},{0.7403,0.3038},{0.8391,0.2734},{0.7783,0.16}}},
+    {texture="Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_07_cyan_canals", nodes={{0.4319,0.84},{0.3225,0.7581},{0.245,0.6533},{0.3316,0.5652},{0.4471,0.4907},{0.5793,0.4527},{0.7084,0.4041},{0.833,0.3494},{0.9318,0.2461},{0.8102,0.16}}},
+    {texture="Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_08_prism_arches", nodes={{0.0794,0.84},{0.2587,0.8052},{0.362,0.7293},{0.2359,0.6518},{0.3468,0.5485},{0.4699,0.4694},{0.6279,0.4239},{0.795,0.3464},{0.8923,0.3008},{0.8665,0.1823}}},
+    {texture="Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_09_obsidian_bastion", nodes={{0.0839,0.84},{0.2435,0.8098},{0.3802,0.7232},{0.2693,0.6168},{0.3422,0.5226},{0.5079,0.4588},{0.6097,0.3631},{0.7419,0.3312},{0.8619,0.2947},{0.89,0.18}}},
+    {texture="Interface\\AddOns\\ArcadiaNexus\\Games\\BlockBreaker\\assets\\map\\page_10_rainbow_citadel", nodes={{0.248,0.84},{0.4106,0.784},{0.242,0.6563},{0.362,0.5758},{0.5079,0.5333},{0.6659,0.4983},{0.7905,0.4573},{0.6522,0.3646},{0.7768,0.2841},{0.7996,0.1671}}},
+}
+ArcadiaNexus.BB_CampaignMap = {PAGES=pages, GetPage=function(page) return pages[page] end}

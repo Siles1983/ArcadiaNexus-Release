@@ -45,6 +45,7 @@ local function BuildArcadiasEchoSettingsPanel(parent)
     GS.Build(parent, {
         settings = S,
         locale   = L,
+        refresh = function() UpdateThemePreview() end,
         layout   = "standard",
         sound = {
             masterLabel = L.sound_enabled,

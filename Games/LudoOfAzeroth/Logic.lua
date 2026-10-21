@@ -23,7 +23,7 @@ local function MakePlayer(id, colorIdx, isAI)
     for i = 1, 4 do
         pieces[i] = {
             relPos   = 0,
-            gridIdx  = baseFields[i],
+            gridIdx  = board:GetBaseIdentity(colorIdx,i),
             finished = false,
         }
     end
@@ -120,13 +120,14 @@ function L:HasPieceOnBoard(game, playerID)
     local player = game.players[playerID or game.current]
     if not player then return false end
     for _, piece in ipairs(player.pieces) do
-        if piece.relPos > 0 then return true end
+        if piece.relPos > 0 and piece.relPos<=40 then return true end
     end
     return false
 end
 
 function L:MaxRollAttempts(game)
     if self:HasPieceOnBoard(game) then return 1 end
+    if (game.dice or 0)>0 and #self:GetValidMoves(game)>0 then return 1 end
     return 3
 end
 
@@ -140,21 +141,10 @@ local function HasOwnAtRel(player, relPos, exceptIdx)
 end
 
 function L:SendToBase(player, piece)
-    local board = GetBoard()
-    local baseFields = board.BASE_FIELDS[player.colorIdx]
-    local used = {}
-    for _, pc in ipairs(player.pieces) do
-        if pc ~= piece and pc.relPos == 0 then
-            used[pc.gridIdx] = true
-        end
+    for i,pc in ipairs(player.pieces) do if pc==piece then
+        piece.relPos,piece.gridIdx,piece.finished=0,GetBoard():GetBaseIdentity(player.colorIdx,i),false
+        return true
     end
-    for _, bf in ipairs(baseFields) do
-        if not used[bf] then
-            piece.relPos   = 0
-            piece.gridIdx  = bf
-            piece.finished = false
-            return true
-        end
     end
     return false
 end
@@ -165,7 +155,7 @@ function L:OccupantAtGrid(game, gridIdx, exceptPlayerID, exceptPieceIdx)
         for i, piece in ipairs(player.pieces) do
             if not (pID == exceptPlayerID and i == exceptPieceIdx)
                     and piece.relPos > 0 and piece.relPos <= 40
-                    and piece.gridIdx == gridIdx then
+                    and GetBoard():GetGridIndex(player.colorIdx,piece.relPos) == gridIdx then
                 return player, piece, i
             end
         end
@@ -185,7 +175,7 @@ function L:HasEnemyAtGrid(game, gridIdx, movingPlayerID)
     for _, player in pairs(game.players) do
         if player.id ~= movingPlayerID then
             for _, piece in ipairs(player.pieces) do
-                if piece.relPos > 0 and piece.relPos <= 40 and piece.gridIdx == gridIdx then
+                if piece.relPos > 0 and piece.relPos <= 40 and GetBoard():GetGridIndex(player.colorIdx,piece.relPos) == gridIdx then
                     return true
                 end
             end
@@ -294,7 +284,7 @@ function L:CheckCapture(game, movingPlayer, movedPiece, movedIdx)
         if player.id ~= movingPlayer.id then
             for _, piece in ipairs(player.pieces) do
                 if piece.relPos > 0 and piece.relPos <= 40
-                        and piece.gridIdx == movedPiece.gridIdx then
+                        and GetBoard():GetGridIndex(player.colorIdx,piece.relPos)==GetBoard():GetGridIndex(movingPlayer.colorIdx,movedPiece.relPos) then
                     if self:SendToBase(player, piece) then
                         captured = true
                     end
@@ -348,7 +338,7 @@ function L:AIPickMove(game)
         local score = 0
 
         if move.action == "enter" then
-            score = 10
+            score = 10 + (self:WouldCapture(game,player,move.pieceIdx,1) and 50 or 0)
         else
             local newRel = piece.relPos + game.dice
             if newRel >= 41 then
@@ -358,6 +348,7 @@ function L:AIPickMove(game)
                     score = score + 50
                 end
                 score = score + newRel
+                if piece.relPos==1 then score=score+4 end
             end
         end
 
@@ -370,88 +361,107 @@ function L:AIPickMove(game)
     return best
 end
 
--- ============================================================
--- Save-State
--- ============================================================
-function L:Serialize(game)
-    if not game or game.phase == "gameover" or game.winner ~= 0 then return nil end
-
-    local players = {}
-    for id, p in pairs(game.players) do
-        local pieces = {}
-        for i, pc in ipairs(p.pieces) do
-            pieces[i] = {
-                relPos   = pc.relPos,
-                gridIdx  = pc.gridIdx,
-                finished = pc.finished,
-            }
-        end
-        players[id] = {
-            id       = p.id,
-            colorIdx = p.colorIdx,
-            isAI     = p.isAI,
-            pieces   = pieces,
-        }
-    end
-
-    return {
-        players      = players,
-        playerCount  = game.playerCount,
-        aiCount      = game.aiCount,
-        playerOrder  = game.playerOrder,
-        humanColor   = game.humanColor,
-        current      = game.current,
-        humanID      = game.humanID,
-        aiIDs        = game.aiIDs,
-        aiID         = game.aiID,
-        dice         = game.dice,
-        rolled       = game.rolled,
-        sixCount      = game.sixCount,
-        rollAttempts  = game.rollAttempts,
-        phase         = game.phase,
-        winner        = game.winner,
-    }
+-- Logical route: each relative waypoint, never pixel coordinates.
+function L:Route(color, from, to)
+    local out={}
+    if from==0 then out[1]=1 else for rel=from+1,to do out[#out+1]=rel end end
+    return out
 end
-
-function L:Deserialize(data)
-    if not data or not data.players then return nil end
-
-    local players = {}
-    for id, pd in pairs(data.players) do
-        local pieces = {}
-        for i, pc in ipairs(pd.pieces or {}) do
-            pieces[i] = {
-                relPos   = math.min(44, math.max(0, pc.relPos or 0)),
-                gridIdx  = pc.gridIdx,
-                finished = pc.finished and true or false,
-            }
-            if pieces[i].relPos >= 41 then
-                pieces[i].finished = true
-            end
-        end
-        players[id] = {
-            id       = pd.id or id,
-            colorIdx = pd.colorIdx,
-            isAI     = pd.isAI and true or false,
-            pieces   = pieces,
-        }
+function L:Copy(value)
+    if type(value)~="table" then return value end
+    local out={}; for k,v in pairs(value) do out[k]=self:Copy(v) end; return out
+end
+function L:Serialize(game)
+    if not game or game.winner~=0 or game.phase=="gameover" then return nil end
+    local out=self:Copy(game)
+    if out.pending then
+        out.pending.remaining=math.max(0,math.min(out.pending.remaining,(out.pending.deadline or GetTime())-GetTime()))
+        out.pending.deadline=nil
     end
-
-    return {
-        players      = players,
-        playerCount  = data.playerCount or 2,
-        aiCount      = data.aiCount or (math.max(1, (data.playerCount or 2) - 1)),
-        playerOrder  = data.playerOrder or { 1, 2 },
-        humanColor   = data.humanColor or 1,
-        current      = data.current or 1,
-        humanID      = data.humanID or 1,
-        aiIDs        = data.aiIDs or { 2 },
-        aiID         = data.aiID or 2,
-        dice         = data.dice or 0,
-        rolled       = data.rolled or false,
-        sixCount      = data.sixCount or 0,
-        rollAttempts  = data.rollAttempts or 0,
-        phase         = data.phase or "roll",
-        winner        = data.winner or 0,
-    }
+    out.resultData=nil
+    return out
+end
+local function int(n,lo,hi) return type(n)=="number" and n%1==0 and n>=lo and n<=hi end
+local function array(t,n)
+    if type(t)~="table" then return false end
+    local count=0; for k in pairs(t) do if not int(k,1,n) then return false end; count=count+1 end
+    return count==n
+end
+function L:Deserialize(data)
+    if type(data)~="table" or not int(data.aiCount,1,3) or not int(data.humanColor,1,4)
+        or data.playerCount~=data.aiCount+1 or data.humanID~=1 or data.winner~=0
+        or not int(data.current,1,data.playerCount) or not int(data.dice,0,6)
+        or type(data.rolled)~="boolean" or not int(data.sixCount,0,2) or not int(data.rollAttempts,0,3)
+        or not array(data.players,data.playerCount) then return nil end
+    local modern=data.version==2
+    if data.version~=nil and not modern then return nil end
+    if modern and (data.ruleVersion~=2 or data.layoutVersion~=2 or type(data.runId)~="string"
+        or not int(data.action,0,2147483647)) then return nil end
+    local fresh=self:NewGame({humanColor=data.humanColor,aiCount=data.aiCount})
+    if not array(data.playerOrder,data.playerCount) or not array(data.aiIDs,data.aiCount) or data.aiID~=2 then return nil end
+    for i,id in ipairs(fresh.playerOrder) do if data.playerOrder[i]~=id then return nil end end
+    for i,id in ipairs(fresh.aiIDs) do if data.aiIDs[i]~=id then return nil end end
+    local out=self:Copy(data)
+    for id,expected in ipairs(fresh.players) do
+        local p=data.players[id]
+        if type(p)~="table" or p.id~=id or p.colorIdx~=expected.colorIdx or p.isAI~=expected.isAI or not array(p.pieces,4) then return nil end
+        local home={}
+        for i,pc in ipairs(p.pieces) do
+            if type(pc)~="table" or not int(pc.relPos,0,44) then return nil end
+            local rel=pc.relPos
+            if rel>40 then if home[rel] then return nil end; home[rel]=true end
+            out.players[id].pieces[i]={relPos=rel,finished=rel>40,
+                gridIdx=rel==0 and GetBoard():GetBaseIdentity(p.colorIdx,i) or GetBoard():GetGridIndex(p.colorIdx,rel)}
+        end
+        if self:CheckWin(out,id) then return nil end
+    end
+    if out.phase~="roll" and out.phase~="move" and out.phase~="ROLLING" and out.phase~="MOVE_RESOLVING" and out.phase~="TURN_PENDING" then return nil end
+    if out.phase=="roll" and out.rolled or out.phase=="move" and (not out.rolled or out.dice==0) then return nil end
+    if not modern then
+        if out.phase~="roll" and out.phase~="move" or out.pending then return nil end
+        out.legacy=true
+        if out.phase=="move" then out.legacyChoice=#self:GetValidMoves(out)>0 end
+        return out
+    end
+    local pending=out.pending
+    if pending then
+        if type(pending)~="table" or type(pending.remaining)~="number" or pending.remaining~=pending.remaining
+            or pending.remaining<0 or pending.remaining>2 or pending.deadline~=nil then return nil end
+        local kind=pending.kind
+        if kind=="ROLL" then
+            if out.phase~="ROLLING" or out.dice==0 or out.rollAttempts<1
+                or pending.outcome~="roll" and pending.outcome~="move" then return nil end
+            local moves=#self:GetValidMoves(out)
+            local outcome=moves>0 or out.rollAttempts>=self:MaxRollAttempts(out)
+            if pending.outcome~=(outcome and "move" or "roll") or out.rolled~=outcome then return nil end
+        elseif kind=="MOVE" or kind=="TURN" then
+            if out.phase~=(kind=="MOVE" and "MOVE_RESOLVING" or "TURN_PENDING") or out.dice==0 or out.rolled then return nil end
+        elseif kind=="AI_ROLL" or kind=="AI_MOVE" then
+            if out.current==1 or out.phase~=(kind=="AI_ROLL" and "roll" or "move") then return nil end
+        else return nil end
+    elseif out.phase~="roll" and out.phase~="move" then return nil end
+    if out.motion then
+        local m=out.motion
+        if out.phase~="MOVE_RESOLVING" and out.phase~="TURN_PENDING" or type(m)~="table" or not int(m.player,1,out.playerCount) or m.player~=out.current
+            or not int(m.piece,1,4) or not int(m.from,0,43) or not int(m.to,1,44)
+            or m.to~=(m.from==0 and 1 or m.from+out.dice) or m.from==0 and out.dice~=6
+            or out.players[m.player].pieces[m.piece].relPos~=m.to or type(m.captured)~="table" then return nil end
+        local n,seen=0,{}
+        for k,c in pairs(m.captured) do
+            n=n+1
+            if not int(k,1,12) or type(c)~="table" or not int(c.player,1,out.playerCount) or c.player==m.player
+                or not int(c.piece,1,4) or not int(c.from,1,40) or out.players[c.player].pieces[c.piece].relPos~=0
+                or GetBoard():GetGridIndex(out.players[c.player].colorIdx,c.from)~=GetBoard():GetGridIndex(out.players[m.player].colorIdx,m.to) then return nil end
+            local key=c.player..":"..c.piece
+            if seen[key] then return nil end; seen[key]=true
+        end
+        if not array(m.captured,n) then return nil end
+        m.route=self:Route(out.players[m.player].colorIdx,m.from,m.to)
+        m.travel=m.from==0 and .25 or #m.route*.11
+        m.duration=m.travel+(#m.captured>0 and .25 or 0)
+        if pending and pending.kind=="MOVE" and pending.remaining>m.duration then return nil end
+    elseif out.phase=="MOVE_RESOLVING" then return nil end
+    if pending and (pending.kind=="AI_ROLL" and pending.remaining>1.2
+        or pending.kind=="AI_MOVE" and pending.remaining>.8 or pending.kind=="TURN" and pending.remaining>(out.motion and .15 or 1)) then return nil end
+    return out
 end

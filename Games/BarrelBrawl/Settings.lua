@@ -19,6 +19,7 @@ S.Defaults = {
     soundOnScore = true,
     soundOnHit   = true,
     soundOnWin   = true,
+    soundOnWarning = true,
 }
 
 local DB_KEY = "BARREL_BRAWL"
@@ -29,20 +30,27 @@ local function GetDB()
 end
 
 function S:Get(key)
+    local E=ArcadiaNexus.BRB_Engine
+    if key=="difficulty" and E and E.board and E.state~="IDLE" then return E.board.difficulty end
     local db = GetDB()
     if db[key] ~= nil then return db[key] end
     return self.Defaults[key]
 end
 
 function S:Set(key, value)
+    local E=ArcadiaNexus.BRB_Engine
+    if key=="difficulty" and (not ArcadiaNexus.BRB_Logic.DIFFICULTY[value] or E and E.board and E.state~="IDLE") then return false end
     P:SetGameSetting(DB_KEY, key, value)
+    return true
 end
 
 function S:Reset()
     local db = GetDB()
     for k in pairs(self.Defaults) do
-        db[k] = nil
+        local E=ArcadiaNexus.BRB_Engine
+        if k~="difficulty" or not (E and E.board and E.state~="IDLE") then db[k] = nil end
     end
+    local R=ArcadiaNexus.BRB_Renderer; if R and R.RefreshConfig then R:RefreshConfig() end
 end
 
 function S:GetAll()
@@ -82,8 +90,9 @@ end
 function S:SaveSlot(slot, data)
     if not slot or slot < 1 or slot > S.MAX_SLOTS then return end
     local db = GetDB()
-    EnsureSaves(db)[slot] = data
-    if data then data.timestamp = data.timestamp or time() end
+    EnsureSaves(db)[slot] = ArcadiaNexus.BRB_Logic:Copy(data)
+    data=EnsureSaves(db)[slot]
+    if data then data.timestamp = time() end
 end
 
 function S:DeleteSlot(slot)
@@ -94,26 +103,16 @@ function S:DeleteSlot(slot)
     db.saves[slot] = nil
 end
 
-function S:ResetSlot(slot)
-    self:SaveSlot(slot, {
-        level = 1, score = 0, lives = 3,
-        diff = self:Get("difficulty") or "normal",
-        time = 0,
-        stats = { jumped = 0, rescues = 0, spawned = 0 },
-    })
+function S:SaveProgress(board,slot,phase)
+    local save=ArcadiaNexus.BRB_Logic:Snapshot(board,phase)
+    if save then self:SaveSlot(slot,save) end
 end
-
-function S:SaveProgress(p)
-    self:SaveSlot(self:GetActiveSlot(), {
-        level = p.level, score = p.score, lives = p.lives,
-        diff = p.diff, time = p.time or 0,
-        stats = p.stats,
-    })
+function S:LoadProgress(slot) return ArcadiaNexus.BRB_Logic:Copy(self:LoadSlot(slot)) end
+function S:SavePending(data)
+    local db=GetDB(); db.pendingResults=db.pendingResults or {}; db.pendingResults[data.runId]=ArcadiaNexus.BRB_Logic:Copy(data)
 end
-
-function S:LoadProgress(slot)
-    return self:LoadSlot(slot or self:GetActiveSlot())
-end
+function S:ClearPending(id) local db=GetDB(); if db.pendingResults then db.pendingResults[id]=nil end end
+function S:GetPending() return GetDB().pendingResults or {} end
 
 function S:ClearProgress(slot)
     self:DeleteSlot(slot or self:GetActiveSlot())

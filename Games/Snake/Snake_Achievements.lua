@@ -13,7 +13,7 @@ ArcadiaNexus.RegisterAchievements({
     {
         id="SNK_WINS", gameId="SNAKE", category="ARCADE",
         title_de="Schlangenbeschwörer", title_en="Snake Charmer",
-        desc_de="Gewinne Snake-Spiele.", desc_en="Win Snake games.",
+        desc_de="Fülle das gesamte Snake-Feld und gewinne.", desc_en="Fill the entire Snake grid and win.",
         icon=2399269, -- INV_GiantSnake_Green
         condition = function(data, db)
             if data.gameId ~= "SNAKE" then return 0 end

@@ -45,9 +45,9 @@ ArcadiaNexus.RegisterAchievements({
             return combo
         end,
         tiers = {
-            { id="BB_COMBO_BRONZE", tierName="Bronze", target=5,  xp=20, desc_de="Erreiche Combo x5.",  desc_en="Reach combo x5."  },
-            { id="BB_COMBO_SILBER", tierName="Silber", target=10, xp=40, desc_de="Erreiche Combo x10.", desc_en="Reach combo x10." },
-            { id="BB_COMBO_GOLD",   tierName="Gold",   target=20, xp=65, desc_de="Erreiche Combo x20!", desc_en="Reach combo x20!" },
+            { id="BB_COMBO_BRONZE", tierName="Bronze", target=5,  xp=20, desc_de="Zerstöre 5 Blöcke ohne Paddlekontakt.",  desc_en="Destroy 5 blocks without paddle contact."  },
+            { id="BB_COMBO_SILBER", tierName="Silber", target=10, xp=40, desc_de="Zerstöre 10 Blöcke ohne Paddlekontakt.", desc_en="Destroy 10 blocks without paddle contact." },
+            { id="BB_COMBO_GOLD",   tierName="Gold",   target=20, xp=65, desc_de="Zerstöre 20 Blöcke ohne Paddlekontakt!", desc_en="Destroy 20 blocks without paddle contact!" },
         },
     },
 })

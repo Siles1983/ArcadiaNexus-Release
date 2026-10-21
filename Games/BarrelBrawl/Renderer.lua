@@ -50,9 +50,6 @@ local CFG = {
     logo_ofs_x   = 0,
     logo_ofs_y   = 0,
 
-    -- Hint-Text im IDLE-Screen (unterhalb des Logos)
-    hint_ofs_y   = -132,
-
     -- HUD über dem Spielfeld
     hud_lives_w     = 160,
     hud_lives_h     = 28,
@@ -65,12 +62,12 @@ local CFG = {
     hud_level_y     = 241,
     hud_level_alpha = 0.75,
     hud_time_w      = 120,
-    hud_time_h      = 28,
+    hud_time_h      = 42,
     hud_time_x      = 0,
     hud_time_y      = 241,
     hud_time_alpha  = 0.75,
     hud_bonus_w     = 140,
-    hud_bonus_h     = 28,
+    hud_bonus_h     = 42,
     hud_bonus_x     = 0,
     hud_bonus_y     = -190,
     hud_bonus_alpha = 0.75,
@@ -147,7 +144,6 @@ R._livesFS, R._levelFS, R._timeFS, R._bonusFS = nil, nil, nil, nil
 R._bannerFS      = nil
 R._pauseFS       = nil
 R._flashTex      = nil
-R._hintFS        = nil
 R._startBtn      = nil
 R._lastDiff      = nil
 
@@ -262,8 +258,8 @@ function R:_CreateMainFrame()
     -- Session-aware OnHide: nie blind StopGame()
     f:SetScript("OnHide", function()
         ArcadiaNexus.GameSession:HandleRendererHide(GAME_ID, ArcadiaNexus.BRB_Engine, function(E)
-            if E.state == "PLAYING" or E.state == "PAUSED" then
-                E:SaveAndPause()
+            if E.state == "PLAYING" or E.state == "PAUSED" or E.state == "GAMEOVER" then
+                E:StopGame()
             end
         end)
         if R.state == "MENU" or R.state == "PLAYING" then
@@ -287,6 +283,7 @@ function R:_CreateFieldFrame()
     })
     ff:SetBackdropColor(0.04, 0.03, 0.08, 1)   -- dunkle Hoehle
     ff:SetBackdropBorderColor(0.35, 0.28, 0.16, 1)
+    ff:Hide()
     self._fieldFrame = ff
 
     local holder = CreateFrame("Frame", nil, ff)
@@ -339,10 +336,17 @@ end
 
 function R:_CreateLogo()
     local UI = ArcadiaNexus.UI
+    -- Parent is the canvas, not the playfield: idle hides the field, and a
+    -- child texture would disappear with it. Offsets stay field-relative.
     self._logoTex = UI.CreateGameLogo(
-        self._fieldFrame,
+        self._canvas,
         ASSETS .. "logo\\bb_logo",
-        { w = CFG.logo_w, h = CFG.logo_h, x = CFG.logo_ofs_x, y = CFG.logo_ofs_y }
+        {
+            w = CFG.logo_w,
+            h = CFG.logo_h,
+            x = CFG.field_ofs_x + CFG.logo_ofs_x,
+            y = CFG.field_ofs_y + CFG.logo_ofs_y,
+        }
     )
 end
 
@@ -379,15 +383,15 @@ function R:_CreateKeyFrame()
     kf:SetAllPoints(self._canvas)
     kf:SetPropagateKeyboardInput(false)
     kf:EnableKeyboard(false)
-    kf:SetScript("OnKeyDown", function(_, key)
-        local k = mapped[key]
-        if k then ArcadiaNexus.BRB_Engine:HandleKeyDown(k) end
+    kf:SetScript("OnKeyDown",function(frame,key)
+        local k=mapped[key]; local E=ArcadiaNexus.BRB_Engine
+        local focus=GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+        local handled=not focus and k and (E.state=="PLAYING" or E.state=="PAUSED" and (k=="P" or k=="ESCAPE"))
+        frame:SetPropagateKeyboardInput(not handled)
+        if k and (handled or focus) then E:HandleKeyDown(k) end
     end)
-    kf:SetScript("OnKeyUp", function(_, key)
-        local k = mapped[key]
-        if k and k ~= "SPACE" and k ~= "ESCAPE" and k ~= "P" then
-            ArcadiaNexus.BRB_Engine:HandleKeyUp(k)
-        end
+    kf:SetScript("OnKeyUp",function(frame,key)
+        local k=mapped[key]; if k then ArcadiaNexus.BRB_Engine:HandleKeyUp(k) end
     end)
     self.keyFrame = kf
 end
@@ -502,14 +506,6 @@ function R:_CreateHUD()
     pauseFS:SetJustifyH("CENTER")
     pauseFS:Hide()
     self._pauseFS = pauseFS
-
-    -- Hint (IDLE)
-    local hintFS = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    hintFS:SetPoint("CENTER", self._fieldFrame, "CENTER", 0, CFG.hint_ofs_y)
-    hintFS:SetTextColor(0.80, 0.80, 0.70)
-    hintFS:SetJustifyH("CENTER")
-    hintFS:SetText("")
-    self._hintFS = hintFS
 end
 
 function R:_SetHudShown(shown)
@@ -545,11 +541,13 @@ function R:UpdateHUD(board)
             L["lbl_level"] or "Level", board.level)
     end
     if self._timeFS then
-        self._timeFS:SetText("|cffaaaaaa" .. Format.SecondsMMSS(math.floor(board.time or 0), false) .. "|r")
+        self._timeFS:SetText((L.lbl_runtime or "Run time").."\n"..Format.SecondsMMSS(math.floor(board.time or 0), false))
     end
     if self._bonusFS then
-        self._bonusFS:SetFormattedText("|cffffd700%s:|r |cff8aff42%s|r",
-            L["lbl_bonus"] or "Bonus", Format.Score(board.bonus or 0))
+        local remain=ArcadiaNexus.BRB_Logic:RemainingTime(board)
+        local warning=remain<=10 and "! " or ""
+        self._bonusFS:SetText((L.lbl_bonus or "Bonus")..": "..Format.Score(board.bonus).."\n"..
+            warning..(L.lbl_remaining or "Time left")..": "..math.ceil(remain).."s")
     end
 end
 
@@ -570,7 +568,7 @@ function R:_CreateControls()
     ddAnchor:SetSize(CFG.dd_w, CFG.btn_h)
     ddAnchor:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
 
-    UI.CreateSimpleDropdown(
+    self._diffDropdown=UI.CreateSimpleDropdown(
         ddAnchor, 0, 0, CFG.dd_w, "",
         {
             { key = "easy",   label = L["diff_easy"]   },
@@ -611,6 +609,28 @@ function R:_CreateControls()
     self._exitBtn = exitBtn
 end
 
+function R:RefreshConfig()
+    local E=ArcadiaNexus.BRB_Engine
+    if self._diffDropdown then
+        self._diffDropdown:SetEnabled(not (E.board and E.state~="IDLE"))
+        self._diffDropdown:RefreshDisplay()
+    end
+end
+function R:_HudTooltips()
+    for _,spec in ipairs({{self._bonusBox,"bonus_tip"},{self._livesBox,"protection_tip"}}) do
+        local frame,key=spec[1],spec[2]
+        frame:EnableMouse(true)
+        frame:SetScript("OnEnter",function()
+            local board=ArcadiaNexus.BRB_Engine.board
+            if not GameTooltip then return end
+            GameTooltip:SetOwner(frame,"ANCHOR_RIGHT"); GameTooltip:SetText(Loc()[key] or "")
+            if board and key=="protection_tip" then GameTooltip:AddLine(string.format(Loc().protection_left,math.max(0,board.player.invuln)),1,1,1) end
+            GameTooltip:Show()
+        end)
+        frame:SetScript("OnLeave",function() if GameTooltip then GameTooltip:Hide() end end)
+    end
+end
+
 function R:_CreateSlotMenu()
     local UI = ArcadiaNexus.UI
     local L  = Loc()
@@ -628,14 +648,17 @@ function R:_CreateSlotMenu()
         formatInfo    = function(save, loc)
             local score = (ArcadiaNexus.Format and ArcadiaNexus.Format.Score(save.score or 0))
                 or tostring(save.score or 0)
-            return string.format(loc.slot_info or "Level %d · %s", save.level or 1, score)
+            return string.format(loc.slot_info or "Level %d · %s",save.level or 1,score).." · "..
+                (loc["diff_"..(save.difficulty or save.diff or "normal")] or "Normal").." · "..
+                tostring(save.lives or 0).." "..(loc.lbl_lives or "Lives")..
+                ((save.version~=2 or save.legacyContinuation) and (" · "..(loc.legacy_save or "Legacy")) or "")
         end,
         isPaused      = function() return true end,
         onNewGame     = function(slot)
             local S2 = ArcadiaNexus.BRB_Settings
             ArcadiaNexus.BRB_Engine:StartGame({
                 slot = slot, mode = "new",
-                difficulty = R._lastDiff or (S2 and S2:Get("difficulty")) or "normal",
+                difficulty = S2:Get("difficulty"),
             })
         end,
         onContinue    = function(slot)
@@ -650,7 +673,6 @@ function R:EnterSlotMenu()
     if self._logoTex  then self._logoTex:Hide()  end
     if self._startBtn then self._startBtn:Hide() end
     if self._exitBtn  then self._exitBtn:Show()  end
-    if self._hintFS   then self._hintFS:Hide()   end
     if self._slotMenu then self._slotMenu:Show() end
 end
 
@@ -727,7 +749,7 @@ function R:_SyncSprites(board)
 
     -- Banner & Treffer-Blitz
     if board.bannerT and board.bannerT > 0 then
-        self._bannerFS:SetFormattedText(Loc()["banner_rescue"] or "Level %d", board.level)
+        self._bannerFS:SetFormattedText(Loc()["banner_rescue"] or "Level %d, bonus %d", board.level,board.lastRescueBonus or 0)
         self._bannerFS:SetAlpha(math.min(1, board.bannerT))
         self._bannerFS:Show()
     else
@@ -774,13 +796,17 @@ function R:OnGameOver(board, isNewHighscore)
     self._pauseFS:Hide()
 
     local result = (board.stats.rescues > 0) and "WIN" or "LOSS"
+    local data=board.resultData or {}
     UI.ShowArcadeResult(self._fieldFrame, {
         gameId       = GAME_ID,
         difficulty   = board.difficulty,
         result       = result,
         score        = board.score,
         newHighscore = isNewHighscore,
+        xp=data.awardedXP or 0, gold=data.awardedGold or 0,
+        isCurrent=function() return ArcadiaNexus.BRB_Engine.board==board and ArcadiaNexus.BRB_Engine.state=="GAMEOVER" end,
         lines        = {
+            L["cause_"..(board.endCause or "BARREL")] or board.endCause,
             string.format(L["result_level"]   or "Level: %d", board.level),
             string.format(L["result_rescues"] or "Rettungen: %d", board.stats.rescues),
             string.format(L["result_jumped"]  or "Fässer: %d", board.stats.jumped),
@@ -788,7 +814,7 @@ function R:OnGameOver(board, isNewHighscore)
                 ArcadiaNexus.Format.SecondsMMSS(math.floor(board.time or 0), false)),
         },
         L            = L,
-        onRetry      = function() R:_StartNewGame() end,
+        onRetry      = function() ArcadiaNexus.BRB_Engine:StartGame({slot=ArcadiaNexus.BRB_Engine.activeSlot,mode="new",difficulty=board.difficulty}) end,
         onExit       = function() ArcadiaNexus.BRB_Engine:StopGame() end,
     })
 end
@@ -798,10 +824,11 @@ end
 -- ============================================================
 function R:OnGameStarted(board)
     self.state     = "PLAYING"
+    self:RefreshConfig()
+    self:_HudTooltips()
     self._lastDiff = board.difficulty
 
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
-    if self._hintFS then self._hintFS:Hide() end
     if self._logoTex then self._logoTex:Hide() end
     if self._slotMenu then self._slotMenu:Hide() end
     self._pauseFS:Hide()
@@ -816,11 +843,13 @@ function R:OnGameStarted(board)
         self.keyFrame:Show()
     end
 
+    if self._fieldFrame then self._fieldFrame:Show() end
     self._holder:Show()
     self:_BuildLevel()
     self:_ReleaseAllBarrels()
     self:_SyncSprites(board)
     self:UpdateHUD(board)
+    if board.legacyContinuation then self._bannerFS:SetText(Loc().legacy_notice); self._bannerFS:Show() end
 end
 
 -- ============================================================
@@ -828,6 +857,7 @@ end
 -- ============================================================
 function R:EnterIdleState()
     self.state = "IDLE"
+    self:RefreshConfig()
 
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
     self:_ReleaseAllBarrels()
@@ -839,6 +869,7 @@ function R:EnterIdleState()
     if self._pauseFS     then self._pauseFS:Hide()     end
     if self._flashTex    then self._flashTex:Hide()    end
     if self._holder      then self._holder:Hide()      end
+    if self._fieldFrame  then self._fieldFrame:Hide()  end
 
     self:_SetHudShown(false)
     if self._logoTex  then self._logoTex:Show()  end
@@ -854,11 +885,6 @@ function R:EnterIdleState()
         self._startBtn:Show()
     end
     if self._exitBtn then self._exitBtn:Hide() end
-
-    if self._hintFS then
-        self._hintFS:SetText(Loc()["hint_start"] or "")
-        self._hintFS:Show()
-    end
 end
 
 -- ============================================================

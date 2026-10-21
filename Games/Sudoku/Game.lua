@@ -1,163 +1,43 @@
---[[
-    Gaming Hub
-    Games/Sudoku/Game.lua
-    Version: 1.0.0
-
-    Spielzustand:
-      phase    – "PLAYING" | "COMPLETE"
-      grid     – aktuelles 9×9-Grid (Spieler-Eingaben)
-      fixed    – welche Felder vorgegeben sind
-      solution – die vollständige Lösung
-      errors   – errors[r][c] = true wenn Konflikt
-      selected – { r, c } oder nil (aktuell ausgewählte Zelle)
-      moves    – Anzahl gesetzter Zahlen
-      mistakes – Anzahl Fehler insgesamt
-
-    API:
-      Game:Init(config)
-      Game:SelectCell(r, c)     → state (für Popup-Position)
-      Game:PlaceNumber(num)     → result ("ok"|"error"|"complete"|"invalid_fixed")
-      Game:ClearCell(r, c)      → bool
-      Game:GetBoardState()
-      Game:Reset()
-]]
-
-local ArcadiaNexus = _G.ArcadiaNexus
-
-local SudokuGame = {}
-SudokuGame.__index = SudokuGame
-ArcadiaNexus.SDK_Game = SudokuGame
-
-function SudokuGame:New()
-    return setmetatable({}, self)
+-- Durable Sudoku session. Rules and validation live in SDK_Logic.
+local A=_G.ArcadiaNexus
+local G={}; G.__index=G; A.SDK_Game=G
+local function copy(v)
+    if type(v)~="table" then return v end
+    local t={}; for k,x in pairs(v) do t[k]=copy(x) end; return t
 end
-
--- ============================================================
--- Init
--- ============================================================
-
-function SudokuGame:Init(config)
-    self.config     = config or {}
-    self.logic      = ArcadiaNexus.SDK_Logic
-    self.difficulty = self.config.difficulty or "normal"
-
-    -- Puzzle generieren
-    local puzzle       = self.logic:GeneratePuzzle(self.difficulty)
-    self.grid          = puzzle.grid
-    self.fixed         = puzzle.fixed
-    self.solution      = puzzle.solution
-    self.errors        = self.logic:ValidateAll(self.grid, self.fixed)
-
-    self.phase         = "PLAYING"
-    self.selected      = nil
-    self.moves         = 0
-    self.mistakes      = 0
-    self.highlightNum  = nil  -- aktuell hervorgehobene Zahl
-    self.startTime     = nil  -- für Zeiterfassung (optional)
+function G:New() return setmetatable({},self) end
+function G:Init(config)
+    self.logic=A.SDK_Logic
+    local p=self.logic:GeneratePuzzle(config.difficulty,config.index)
+    if not p then return false end
+    self.grid,self.fixed,self.solution=p.grid,p.fixed,p.solution
+    self.puzzleId,self.puzzleVersion=p.puzzleId,p.puzzleVersion
+    self.difficulty=config.difficulty
+    self.phase,self.moves,self.mistakes="PLAYING",0,0
+    self.notes,self.history={},{}
+    for r=1,9 do self.notes[r]={}; for c=1,9 do self.notes[r][c]={} end end
+    self.notesMode=false
+    self:Refresh(); return true
 end
-
--- ============================================================
--- SelectCell
--- Wählt eine Zelle aus (für Popup-Öffnung im Renderer)
--- Gibt false zurück wenn fixed
--- ============================================================
-
-function SudokuGame:SelectCell(r, c)
-    if self.phase ~= "PLAYING" then return false end
-    if self.fixed[r][c] then
-        -- Feste Zelle: Highlight der Zahl, aber kein Popup
-        self.highlightNum = self.grid[r][c]
-        self.selected     = nil
-        return false
-    end
-    self.selected     = { r = r, c = c }
-    self.highlightNum = self.grid[r][c] ~= 0 and self.grid[r][c] or nil
-    return true
+function G:Refresh(...) return self.logic:Refresh(self,...) end
+function G:SelectCell(...) return self.logic:SelectCell(self,...) end
+function G:Remember(...) return self.logic:Remember(self,...) end
+function G:FinishEdit(...) return self.logic:FinishEdit(self,...) end
+function G:PlaceNumber(...) return self.logic:PlaceNumber(self,...) end
+function G:ClearCell(...) return self.logic:ClearCell(self,...) end
+function G:Undo(...) return self.logic:Undo(self,...) end
+function G:Snapshot()
+    local t={version=1}
+    for _,k in ipairs({"grid","fixed","solution","puzzleId","puzzleVersion","difficulty","phase","moves","mistakes","notes","history","runId","resultPending","notesMode","selected"}) do t[k]=copy(self[k]) end
+    return t
 end
-
--- ============================================================
--- PlaceNumber
--- Setzt num in die aktuell ausgewählte Zelle.
--- ============================================================
-
-function SudokuGame:PlaceNumber(num)
-    if not self.selected then return "no_selection" end
-    if self.phase ~= "PLAYING" then return "game_over" end
-
-    local r, c = self.selected.r, self.selected.c
-    if self.fixed[r][c] then return "invalid_fixed" end
-
-    -- Zahl setzen
-    self.grid[r][c] = num
-
-    -- Validierung
-    local valid = self.logic:IsValidMove(self.grid, r, c, num)
-    if not valid then
-        self.errors[r][c] = true
-        self.mistakes      = self.mistakes + 1
-    else
-        self.errors[r][c] = false
-    end
-
-    -- Highlight aktualisieren
-    self.highlightNum = num
-
-    -- Auswahl schließen nach Setzen
-    self.selected = nil
-    self.moves    = self.moves + 1
-
-    -- Vollständig?
-    if self.logic:IsBoardComplete(self.grid, self.fixed) then
-        self.phase = "COMPLETE"
-        return "complete"
-    end
-
-    return valid and "ok" or "error"
+function G:Load(save)
+    if not A.SDK_Logic:ValidateSave(save) then return false end
+    for k,v in pairs(copy(save)) do self[k]=v end
+    self.logic=A.SDK_Logic; self:Refresh(); return true
 end
-
--- ============================================================
--- ClearCell – Rechtsklick löscht Spieler-Zahl
--- ============================================================
-
-function SudokuGame:ClearCell(r, c)
-    if self.phase ~= "PLAYING" then return false end
-    if self.fixed[r][c] then return false end
-    if self.grid[r][c] == 0 then return false end
-
-    self.grid[r][c]   = 0
-    self.errors[r][c] = false
-    self.selected     = nil
-    self.highlightNum = nil
-
-    -- Fehler neu berechnen (löschen kann andere Fehler aufheben)
-    self.errors = self.logic:ValidateAll(self.grid, self.fixed)
-
-    return true
-end
-
--- ============================================================
--- Reset
--- ============================================================
-
-function SudokuGame:Reset()
-    self:Init(self.config)
-end
-
--- ============================================================
--- GetBoardState
--- ============================================================
-
-function SudokuGame:GetBoardState()
-    return {
-        grid         = self.grid,
-        fixed        = self.fixed,
-        solution     = self.solution,
-        errors       = self.errors,
-        phase        = self.phase,
-        selected     = self.selected,
-        highlightNum = self.highlightNum,
-        moves        = self.moves,
-        mistakes     = self.mistakes,
-        difficulty   = self.difficulty,
-    }
+function G:GetBoardState()
+    return {grid=self.grid,fixed=self.fixed,errors=self.errors,notes=self.notes,notesMode=self.notesMode,
+        phase=self.phase,selected=self.selected,highlightNum=self.highlightNum,moves=self.moves,mistakes=self.mistakes,
+        difficulty=self.difficulty,score=self.logic:GetScore(self.difficulty),canUndo=#self.history>0 and self.phase=="PLAYING"}
 end

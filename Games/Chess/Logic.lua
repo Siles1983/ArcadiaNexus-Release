@@ -656,7 +656,7 @@ function Logic.MatchOpts(engine)
             if engine then engine:OnMatchState(st) end
         end,
         onResult = function(node, resultId)
-            if engine then engine:OnMatchResult(node, resultId) end
+            if engine then return engine:OnMatchResult(node, resultId) end
         end,
         onReject = function(_, f)
             if engine then engine:OnMatchReject(f) end

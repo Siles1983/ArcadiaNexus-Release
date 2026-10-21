@@ -157,6 +157,7 @@ function R.Make(group, parentFrame, W, yOff, onHeightChanged)
     local AS       = ArcadiaNexus.AchievementStore
     local unlocked = (AS and AS.GetUnlocked()) or {}
     local progress = (AS and AS.GetProgress()) or {}
+    group = H.DisplayGroup(group, unlocked)
     local tiers    = group.tiers or {}
 
     local highestIdx = 0
@@ -197,7 +198,12 @@ function R.Make(group, parentFrame, W, yOff, onHeightChanged)
     row._achTitle:SetText(titleStr)
     row._achTitle:SetTextColor(titleColorCollapsed[1], titleColorCollapsed[2], titleColorCollapsed[3])
 
-    row._achDesc:SetText(H.loc(group.desc_de, group.desc_en) or "")
+    local description=H.loc(group.desc_de,group.desc_en) or ""
+    if group.retired then
+        local L=ArcadiaNexus.GetLocaleTable("UI")
+        description=description.."\n"..L.ach_retired.." · "..(H.loc(group.retiredReason_de,group.retiredReason_en) or "")
+    end
+    row._achDesc:SetText(description)
     row._achDesc:SetTextColor(descColorCollapsed[1], descColorCollapsed[2], descColorCollapsed[3])
     H.ApplyAchievementIcon(row._achIconTex, group.icon)
     if not anyUnlocked then
@@ -209,7 +215,7 @@ function R.Make(group, parentFrame, W, yOff, onHeightChanged)
     end
 
     local nextTierIdx = highestIdx + 1
-    if nextTierIdx <= #tiers then
+    if not group.retired and nextTierIdx <= #tiers then
         local nextTier = tiers[nextTierIdx]
         local prog     = progress[group.id]
         local current  = (prog and prog.current) or 0
@@ -222,7 +228,7 @@ function R.Make(group, parentFrame, W, yOff, onHeightChanged)
     if allUnlocked then
         local lastTier = tiers[highestIdx]
         local ts = lastTier and unlocked[lastTier.id]
-        if ts and ts > 0 then
+        if type(ts)=="number" and ts > 0 then
             local d = date("*t", ts)
             dateStr = string.format("%02d.%02d.%02d", d.day, d.month, d.year % 100)
         end
@@ -292,12 +298,15 @@ function R.Make(group, parentFrame, W, yOff, onHeightChanged)
         row._achHl:Show()
         GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         GameTooltip:SetText(H.loc(group.title_de, group.title_en), 1, 0.82, 0)
+        if group.retired then
+            GameTooltip:AddLine(ArcadiaNexus.GetLocaleTable("UI").ach_retired.." · "..(H.loc(group.retiredReason_de,group.retiredReason_en) or ""),1,0.82,0,true)
+        end
         for _, tier in ipairs(tiers) do
             local isUL = unlocked[tier.id] ~= nil
             local tc   = H.TIER_COLOR[tier.tierName] or { 0.7, 0.7, 0.7 }
             local pre  = H.TierIconMarkup(tier.tierName, 14) .. " "
             GameTooltip:AddLine(
-                pre .. tier.tierName .. " – " .. (H.loc(tier.desc_de, tier.desc_en) or ""),
+                pre .. H.TierLabel(tier.tierName) .. " – " .. (H.loc(tier.desc_de, tier.desc_en) or ""),
                 tc[1], tc[2], tc[3], true)
         end
         GameTooltip:Show()

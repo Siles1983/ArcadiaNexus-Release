@@ -2,7 +2,7 @@
 ## Title: Arcadia Nexus
 ## Notes: Arcadia Nexus - Mini-Game Framework
 ## Author: Siles
-## Version: 1.1.6
+## Version: 1.2.4
 ## IconTexture: Interface\Icons\INV_Misc_Dice_01
 ## SavedVariables: ArcadiaNexusDB
 ## OptionalDeps: ConsolePort
@@ -21,6 +21,7 @@ Core/DevPlaytest.lua
 Core/DevAccess.lua
 Core/Debug.lua
 Core/Persistence.lua
+Core/RetiredContent.lua
 Core/Stores.lua
 Core/EventBus.lua
 Core/TimerGuard.lua
@@ -42,13 +43,14 @@ Core/GameLifecycle.lua
 Core/ScoreManager.lua
 Core/LeaderboardRegistry.lua
 Core/XPManager.lua
-Core/StatsTransfer.lua
 Core/AchievementManager.lua
+Core/AchievementArchive.lua
 Core/AchievementIcons.lua
 Core/StreakManager.lua
 Core/TavernGold.lua
 Core/ChallengeManager.lua
 Core/GameResultProcessor.lua
+Core/LocalResults.lua
 Core/Engine.lua
 Core/ConsolePort.lua
 Core/GameInput.lua
@@ -107,6 +109,7 @@ Games/AzerothConquest/AzerothConquest_Achievements.lua
 Games/AzerothConquest/AzerothConquest_Leaderboard.lua
 
 Games/Sudoku/Language.lua
+Games/Sudoku/Pools.lua
 Games/Sudoku/Logic.lua
 Games/Sudoku/Game.lua
 Games/Sudoku/Engine.lua
@@ -209,8 +212,12 @@ Games/Hangman/Words.lua
 Games/Hangman/Words_deDE.lua
 Games/Hangman/Words_enUS.lua
 Games/Hangman/Logic.lua
+Games/Hangman/Pets.lua
+Games/Hangman/PetCameras.lua
+Games/Hangman/PetScene.lua
 Games/Hangman/Engine.lua
 Games/Hangman/Renderer.lua
+Games/Hangman/DevLayout.lua
 Games/Hangman/Hangman_Achievements.lua
 Games/Hangman/Hangman_Leaderboard.lua
 
@@ -219,7 +226,13 @@ Games/SI7/Language.lua
 Games/SI7/Words.lua
 Games/SI7/WordSets.lua
 Games/SI7/Logic.lua
+Games/SI7/Clues.lua
+Games/SI7/Knowledge.lua
+Games/SI7/AI.lua
+Games/SI7/RestraintKnowledge.lua
+Games/SI7/RestraintAI.lua
 Games/SI7/Engine.lua
+Games/SI7/SoloEngine.lua
 Games/SI7/Renderer.lua
 Games/SI7/SI7_Achievements.lua
 Games/SI7/SI7_Leaderboard.lua
@@ -233,21 +246,13 @@ Games/Backgammon/Engine.lua
 Games/Backgammon/Renderer.lua
 Games/Backgammon/Backgammon_Leaderboard.lua
 
-Games/Match3/Language.lua
-Games/Match3/Settings.lua
-Games/Match3/Themes.lua
-Games/Match3/Logic.lua
-Games/Match3/Engine.lua
-Games/Match3/Renderer.lua
-Games/Match3/Match3_Achievements.lua
-Games/Match3/Match3_Leaderboard.lua
-
 Games/BlockBreaker/Language.lua
 Games/BlockBreaker/Settings.lua
 Games/BlockBreaker/Levels.lua
 Games/BlockBreaker/Logic.lua
 Games/BlockBreaker/Fx.lua
 Games/BlockBreaker/Engine.lua
+Games/BlockBreaker/CampaignMap.lua
 Games/BlockBreaker/Renderer.lua
 Games/BlockBreaker/BlockBreaker_Achievements.lua
 Games/BlockBreaker/BlockBreaker_Leaderboard.lua
@@ -276,9 +281,11 @@ Games/AlienDefense/AlienDefense_Leaderboard.lua
 
 Games/ShadowsConquest/Language.lua
 Games/ShadowsConquest/Levels.lua
+Games/ShadowsConquest/Catalog.lua
 Games/ShadowsConquest/Logic.lua
 Games/ShadowsConquest/Settings.lua
 Games/ShadowsConquest/Engine.lua
+Games/ShadowsConquest/CampaignMap.lua
 Games/ShadowsConquest/Renderer.lua
 Games/ShadowsConquest/ShadowsConquest_Achievements.lua
 Games/ShadowsConquest/ShadowsConquest_Leaderboard.lua
@@ -291,14 +298,6 @@ Games/ReactionStrike/Renderer.lua
 Games/ReactionStrike/ReactionStrike_Achievements.lua
 Games/ReactionStrike/ReactionStrike_Leaderboard.lua
 
-Games/AzerothWords/Language.lua
-Games/AzerothWords/WordList.lua
-Games/AzerothWords/Logic.lua
-Games/AzerothWords/Settings.lua
-Games/AzerothWords/Engine.lua
-Games/AzerothWords/Renderer.lua
-Games/AzerothWords/AzerothWords_Achievements.lua
-Games/AzerothWords/AzerothWords_Leaderboard.lua
 
 Games/Blackjack/Language.lua
 Games/Blackjack/Settings.lua
@@ -375,10 +374,14 @@ Games/BarrelBrawl/Renderer.lua
 Games/BarrelBrawl/BarrelBrawl_Achievements.lua
 Games/BarrelBrawl/BarrelBrawl_Leaderboard.lua
 
+
+
 Games/AlchemistsSort/Language.lua
 Games/AlchemistsSort/Settings.lua
 Games/AlchemistsSort/Colors.lua
 Games/AlchemistsSort/Logic.lua
+Games/AlchemistsSort/Pool.lua
+Games/AlchemistsSort/Catalog.lua
 Games/AlchemistsSort/LevelGen.lua
 Games/AlchemistsSort/Engine.lua
 Games/AlchemistsSort/Renderer.lua
@@ -414,6 +417,7 @@ Games/SlidingPuzzle/SlidingPuzzle_Leaderboard.lua
 
 Games/Nonogram/Language.lua
 Games/Nonogram/Levels.lua
+Games/Nonogram/Catalog.lua
 Games/Nonogram/Logic.lua
 Games/Nonogram/Settings.lua
 Games/Nonogram/Engine.lua
@@ -427,11 +431,29 @@ Games/AzerothJewels/Levels.lua
 Games/AzerothJewels/Logic.lua
 Games/AzerothJewels/PowerUps.lua
 Games/AzerothJewels/Engine.lua
+Games/AzerothJewels/CampaignMap.lua
 Games/AzerothJewels/Renderer.lua
 Games/AzerothJewels/AzerothJewels_Achievements.lua
 Games/AzerothJewels/AzerothJewels_Leaderboard.lua
 
+
+
+
+Games/Gallywix/Language.lua
+Games/Gallywix/Settings.lua
+Games/Gallywix/Sounds.lua
+Games/Gallywix/Logic.lua
+Games/Gallywix/Words.lua
+Games/Gallywix/GameLogic.lua
+Games/Gallywix/Engine.lua
+Games/Gallywix/Match.lua
+Games/Gallywix/MatchEngine.lua
+Games/Gallywix/Renderer.lua
+Games/Gallywix/Gallywix_Achievements.lua
+Games/Gallywix/Gallywix_Leaderboard.lua
+
 UI/Core/UIHelpers.lua
+UI/Core/NavigationGuard.lua
 UI/Core/LayoutConfig.lua
 UI/Core/GameViewport.lua
 UI/Core/GameControlsBar.lua
@@ -439,6 +461,7 @@ UI/Dialogs/GameResultDialog.lua
 UI/Dialogs/GameResultHelpers.lua
 UI/Dialogs/SaveSlotMenu.lua
 UI/Dialogs/CampaignMap.lua
+UI/Dialogs/CampaignMapDevLayout.lua
 UI/Core/TabsController.lua
 UI/HubTabs/HubTab_Games.lua
 UI/HubTabs/HubTab_Match.lua
@@ -485,8 +508,11 @@ UI/Panels/Stats_UI.lua
 UI/Settings/HubSettings_Core.lua
 UI/Settings/HubSettings_TabGeneral.lua
 UI/Settings/HubSettings_TabGames.lua
-UI/Settings/HubSettings_TabStats.lua
+UI/Settings/CompendiumData.lua
+UI/Settings/CompendiumPanel.lua
+UI/Settings/HubSettings_TabHelp.lua
 UI/Settings/HubSettings_TabDeveloper.lua
+UI/Core/GuideTour.lua
 UI/Panels/ArcadiaNexus_UI.lua
 UI/Core/HUD.lua
 UI/Core/MinimapButton.lua
@@ -511,13 +537,11 @@ UI/GameSettings/WhackAMole_SettingsPanel.lua
 UI/GameSettings/Hangman_SettingsPanel.lua
 UI/GameSettings/SI7_SettingsPanel.lua
 UI/GameSettings/Backgammon_SettingsPanel.lua
-UI/GameSettings/Match3_SettingsPanel.lua
 UI/GameSettings/BlockBreaker_SettingsPanel.lua
 UI/GameSettings/DarkmoonPinball_SettingsPanel.lua
 UI/GameSettings/AlienDefense_SettingsPanel.lua
 UI/GameSettings/ShadowsConquest_SettingsPanel.lua
 UI/GameSettings/ReactionStrike_SettingsPanel.lua
-UI/GameSettings/AzerothWords_SettingsPanel.lua
 UI/GameSettings/Nonogram_SettingsPanel.lua
 UI/GameSettings/Blackjack_SettingsPanel.lua
 UI/GameSettings/Solitaire_SettingsPanel.lua
@@ -532,3 +556,4 @@ UI/GameSettings/SlidingPuzzle_SettingsPanel.lua
 UI/GameSettings/ArgusOrbitDefense_SettingsPanel.lua
 UI/GameSettings/AzerothsTinyGuardians_SettingsPanel.lua
 UI/GameSettings/AzerothJewels_SettingsPanel.lua
+UI/GameSettings/Gallywix_SettingsPanel.lua

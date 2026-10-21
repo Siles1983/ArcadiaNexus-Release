@@ -19,12 +19,13 @@
 local ArcadiaNexus = _G.ArcadiaNexus
 ArcadiaNexus.AE_Renderer = {}
 local R = ArcadiaNexus.AE_Renderer
+local _viewGuard = ArcadiaNexus.TimerGuard.New()
 
 -- ============================================================
 -- CFG – alle Layout-Konstanten zentral (Upvalue-Limit: max 60)
 -- ============================================================
 local CFG = {
-    field_size   = 435,
+    field_size   = 400,
     field_ofs_x  = 0,
     field_ofs_y  = 15,
     bg_w         = 750,
@@ -40,10 +41,10 @@ local CFG = {
     logo_h       = 306,
     logo_ofs_x   = 0,
     logo_ofs_y   = 0,
-    hud_y        = -281,
-    hud_r_x      = 245,
+    hud_y        = 226,
+    hud_r_x      = 190,
     hud_box_w    = 180,
-    hud_box_h    = 44,
+    hud_box_h    = 38,
     hud_box_alpha = 0.75,
     dd_w         = 120,
     btn_w        = 144,
@@ -210,14 +211,57 @@ function R:_CreateMainFrame()
     self.frame = f
     self._canvas = viewport.canvas
     ArcadiaNexus._aeContainer = f
+    f:EnableKeyboard(true)
+    f:SetScript("OnKeyDown", function(frame, key)
+        local focus = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+        local handled = not focus and R:HandleKey(key)
+        frame:SetPropagateKeyboardInput(not handled)
+    end)
 
     f:SetScript("OnHide", function()
+        _viewGuard:Cancel()
         ArcadiaNexus.GameSession:HandleRendererHide("ARCADIASECHO", ArcadiaNexus.AE_Engine, function(E)
             if E.activeGame then
                 E:StopGame()
             end
         end)
     end)
+end
+
+function R:UpdateFocus()
+    local btn = self.symbolBtns[self._focusSymbol or 1]
+    if not btn or self.state ~= "PLAYING" or ArcadiaNexus.AE_Engine._inputBlock then
+        if self._focusFrame then self._focusFrame:Hide() end
+        return
+    end
+    if not self._focusFrame then
+        self._focusFrame = CreateFrame("Frame", nil, self._boardHolder, "BackdropTemplate")
+        self._focusFrame:EnableMouse(false)
+        self._focusFrame:SetBackdrop({edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",edgeSize=10})
+        self._focusFrame:SetBackdropBorderColor(1, 0.82, 0, 1)
+    end
+    self._focusFrame:ClearAllPoints()
+    self._focusFrame:SetAllPoints(btn)
+    self._focusFrame:SetFrameLevel(btn:GetFrameLevel()+5)
+    self._focusFrame:Show()
+end
+
+function R:HandleKey(key)
+    local E = ArcadiaNexus.AE_Engine
+    if self.state ~= "PLAYING" or not E.activeGame or E._inputBlock
+        or not ArcadiaNexus.GameSession:IsSession(E, E._sessionId) then return false end
+    local board = E.activeGame.board
+    local index = self._focusSymbol or 1
+    local row, col = math.floor((index-1)/board.grid), (index-1)%board.grid
+    if key == "LEFT" then col=math.max(0,col-1)
+    elseif key == "RIGHT" then col=math.min(board.grid-1,col+1)
+    elseif key == "UP" then row=math.max(0,row-1)
+    elseif key == "DOWN" then row=math.min(board.grid-1,row+1)
+    elseif key == "SPACE" or key == "ENTER" then return E:HandleInput(index)
+    else return false end
+    self._focusSymbol = row*board.grid+col+1
+    self:UpdateFocus()
+    return true
 end
 
 function R:_CreateFieldFrame()
@@ -279,7 +323,10 @@ function R:_CreateHUD()
     local L = ArcadiaNexus.GetLocaleTable("ARCADIASECHO")
 
     -- Runden-Status: Box mit dunklem Hintergrund und goldenem Rahmen (wie Blackjack)
-    local statusBox = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    local statusBox = ArcadiaNexus.UI.CreateHudStatBox(f, {
+        w=CFG.hud_box_w, h=CFG.hud_box_h, point="CENTER", relativePoint="CENTER",
+        x=CFG.hud_r_x, y=CFG.hud_y, alpha=CFG.hud_box_alpha, shown=false,
+    })
     statusBox:SetSize(CFG.hud_box_w, CFG.hud_box_h)
     statusBox:SetPoint("CENTER", f, "CENTER", CFG.hud_r_x, CFG.hud_y)
     statusBox:SetBackdrop({
@@ -304,6 +351,15 @@ function R:_CreateHUD()
     statusFS:SetText("")
     self._statusFS = statusFS
 
+    self._lengthBox, self._lengthFS = ArcadiaNexus.UI.CreateHudStatBox(f, {
+        w=CFG.hud_box_w, h=CFG.hud_box_h, point="CENTER", relativePoint="CENTER",
+        x=-CFG.hud_r_x, y=CFG.hud_y, alpha=CFG.hud_box_alpha, shown=false,
+    })
+    self._bestBox, self._bestFS = ArcadiaNexus.UI.CreateHudStatBox(f, {
+        w=CFG.hud_box_w, h=CFG.hud_box_h, point="CENTER", relativePoint="CENTER",
+        x=0, y=CFG.hud_y, alpha=CFG.hud_box_alpha, shown=false,
+    })
+
     -- Hint (IDLE)
     local hintFS = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     hintFS:SetPoint("CENTER", f, "CENTER", CFG.field_ofs_x, CFG.field_ofs_y)
@@ -326,6 +382,24 @@ function R:UpdateStatus(board)
     end
     if self._statusLbl then self._statusLbl:Show() end
     if self._statusBox then self._statusBox:Show() end
+    if self._lengthFS then self._lengthFS:SetText(string.format(L.hud_length, board.round)) end
+    if self._bestFS then self._bestFS:SetText(string.format(L.hud_best, ArcadiaNexus.AE_Logic:GetScore(board))) end
+    if self._lengthBox then self._lengthBox:Show() end
+    if self._bestBox then self._bestBox:Show() end
+    if self._statusLbl then
+        self._statusLbl:SetText(board.state == "input" and L.phase_input or L.phase_showing)
+    end
+    if self._statusFS then
+        self._statusFS:SetText(board.state == "input" and string.format(L.hud_progress, board.inputPos, board.round) or "")
+    end
+end
+
+function R:RefreshConfiguration()
+    if self._difficultyDD then
+        local E = ArcadiaNexus.AE_Engine
+        self._difficultyDD:SetEnabled(not E.activeGame or E.state == "IDLE")
+        self._difficultyDD:RefreshDisplay()
+    end
 end
 
 -- ============================================================
@@ -346,7 +420,7 @@ function R:_CreateControls()
     ddAnchor:SetSize(CFG.dd_w, CFG.btn_h)
     ddAnchor:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
 
-    UI.CreateSimpleDropdown(
+    self._difficultyDD = UI.CreateSimpleDropdown(
         ddAnchor,
         0, 0,
         CFG.dd_w,
@@ -357,10 +431,11 @@ function R:_CreateControls()
             { key = "hard",   label = L["diff_hard"]    },
         },
         function()
-            return (S and S:Get("difficulty")) or "easy"
+            local E = ArcadiaNexus.AE_Engine
+            return E.activeGame and E.activeGame.board.difficulty or (S and S:Get("difficulty")) or "easy"
         end,
         function(key)
-            R._lastDiff = key
+            if ArcadiaNexus.AE_Engine.activeGame then return end
             if S then S:Set("difficulty", key) end
         end
     )
@@ -372,7 +447,7 @@ function R:_CreateControls()
         local E = ArcadiaNexus.AE_Engine
         if not E then return end
         if R.state == "PLAYING" then
-            E:StopGame()
+            E:EndAttempt()
         else
             R:_StartNewGame()
         end
@@ -383,24 +458,37 @@ end
 function R:_StartNewGame()
     local S = ArcadiaNexus.AE_Settings
     ArcadiaNexus.AE_Engine:StartGame({
-        difficulty = R._lastDiff or (S and S:Get("difficulty")) or "easy",
+        difficulty = (S and S:Get("difficulty")) or "easy",
         theme      = (S and S:Get("theme")) or "runes",
     })
 end
 
-function R:ShowOverlay(won, board)
+function R:ShowOverlay(board)
     if not self._fieldFrame then return end
     local UI     = ArcadiaNexus.UI
     local L      = ArcadiaNexus.GetLocaleTable("ARCADIASECHO")
     local parent = self._fieldFrame
+    local E = ArcadiaNexus.AE_Engine
+    local game = E.activeGame
+    if not game or game.board ~= board then return end
+    if not game.resultCommitted and not E:FinishRun(game.resultData and game.resultData.reason or "error") then
+        self:ScheduleResult(board)
+        return
+    end
+    local score = ArcadiaNexus.AE_Logic:GetScore(board)
+    local data = game.resultData
+    local neutral = data.reason ~= "error"
 
     UI.ShowArcadeResult(parent, {
-        title      = won and L["result_win_title"] or L["result_loss_title"],
-        titleColor = won and {1, 0.84, 0} or {1, 0.3, 0.3},
-        subtitle   = string.format(
-            won and L["result_win_sub"] or L["result_loss_sub"], board.round),
+        title      = neutral and L.result_exit_title or L.result_loss_title,
+        titleColor = neutral and {0.85, 0.85, 0.85} or {1, 0.3, 0.3},
+        subtitle   = string.format(L.result_mastered, score),
         gameId     = "ARCADIASECHO",
-        result     = won and "WIN" or "LOSS",
+        result     = "LOSS",
+        difficulty = board.difficulty,
+        score = score, xp = data.awardedXP, gold = data.awardedGold,
+        newHighscore = data.newHighscore,
+        highscore = ArcadiaNexus.ScoreManager:GetBestScore("ARCADIASECHO", board.difficulty),
         L          = L,
         onRetry    = function() R:_StartNewGame() end,
         onExit     = function() ArcadiaNexus.AE_Engine:StopGame() end,
@@ -512,6 +600,7 @@ function R:BuildGrid(board)
 end
 
 function R:ClearGrid()
+    if self._focusFrame then self._focusFrame:Hide() end
     if self._symbolCellPool and self.symbolBtns then
         for _, btn in pairs(self.symbolBtns) do
             self._symbolCellPool:Release(btn)
@@ -528,6 +617,7 @@ end
 function R:FlashSymbol(symIdx, on)
     local btn = self.symbolBtns[symIdx]
     if not btn then return end
+    btn._glow = on
     local sym = btn.sym
     if on then
         btn:SetBackdropColor(sym.color[1] * 0.55, sym.color[2] * 0.55, sym.color[3] * 0.55, 1)
@@ -553,14 +643,17 @@ function R:SetButtonsEnabled(enabled)
         btn:SetEnabled(enabled)
         btn:SetAlpha(enabled and 1.0 or 0.75)
     end
+    self:UpdateFocus()
 end
 
 -- ============================================================
 -- EVENT-HANDLER
 -- ============================================================
 function R:OnGameStarted(board)
+    _viewGuard:Cancel()
     self.state     = "PLAYING"
     self._lastDiff = board.difficulty
+    self._focusSymbol = 1
 
     if self._fieldFrame and ArcadiaNexus.UI then
         ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
@@ -577,52 +670,67 @@ function R:OnGameStarted(board)
     self:BuildGrid(board)
     self:SetButtonsEnabled(false)
     self:UpdateStatus(board)
+    self:RefreshConfiguration()
 end
 
 function R:OnNewRound(board)
+    _viewGuard:Cancel()
     self:SetButtonsEnabled(false)
     self:UpdateStatus(board)
-    for _, btn in ipairs(self.symbolBtns) do
-        local sym = btn.sym
-        btn:SetBackdropBorderColor(sym.color[1] * 0.65, sym.color[2] * 0.65, sym.color[3] * 0.65, 1)
-    end
-    C_Timer.After(0.3, function()
-        for _, b in ipairs(self.symbolBtns) do
-            local s = b.sym
-            b:SetBackdropBorderColor(s.color[1] * 0.40, s.color[2] * 0.40, s.color[3] * 0.40, 1)
-        end
-    end)
+    for idx in ipairs(self.symbolBtns) do self:FlashSymbol(idx, false) end
 end
 
 function R:OnSequenceDone(board)
     self:SetButtonsEnabled(true)
-    if self._statusFS then
-        self._statusFS:SetText(ArcadiaNexus.GetLocaleTable("ARCADIASECHO")["status_your_turn"])
-    end
+    self:UpdateStatus(board)
 end
 
 function R:OnInputCorrect(board)
-    -- kein extra visuelles Feedback, FlashSymbol übernimmt es
+    self:UpdateStatus(board)
 end
 
 function R:OnRoundComplete(board)
     self:SetButtonsEnabled(false)
+    self:UpdateStatus(board)
+    for idx in ipairs(self.symbolBtns) do self:FlashSymbol(idx, false) end
+    if self._statusLbl then self._statusLbl:SetText(ArcadiaNexus.GetLocaleTable("ARCADIASECHO").phase_complete) end
     if self._statusFS then
         self._statusFS:SetText(string.format(
             ArcadiaNexus.GetLocaleTable("ARCADIASECHO")["status_round_ok"], board.round))
     end
 end
 
-function R:OnGameLost(board)
-    self.state = "LOST"
-    self:SetButtonsEnabled(false)
-    for _, btn in ipairs(self.symbolBtns) do
-        btn:SetBackdropBorderColor(1, 0.1, 0.1, 1)
-        btn:SetBackdropColor(0.3, 0.02, 0.02, 1)
-    end
-    C_Timer.After(0.8, function()
-        self:ShowOverlay(false, board)
+function R:ScheduleResult(board)
+    _viewGuard:Cancel()
+    local E = ArcadiaNexus.AE_Engine
+    local sid, game = E._sessionId, E.activeGame
+    _viewGuard:After(0.8, function()
+        if not ArcadiaNexus.GameSession:IsSession(E, sid) or E.activeGame ~= game
+            or not game or game.board ~= board or self.state ~= "FINISHED" then return end
+        self:ShowOverlay(board)
     end)
+end
+
+function R:OnGameFinished(board)
+    self.state = "FINISHED"
+    self:SetButtonsEnabled(false)
+    self:UpdateStatus(board)
+    local L = ArcadiaNexus.GetLocaleTable("ARCADIASECHO")
+    for idx in ipairs(self.symbolBtns) do self:FlashSymbol(idx, false) end
+    local game = ArcadiaNexus.AE_Engine.activeGame
+    if game and game.resultData and game.resultData.reason == "error" then
+        local chosen, expected = self.symbolBtns[board.chosenSymbol], self.symbolBtns[board.expectedSymbol]
+        if chosen then chosen:SetBackdropBorderColor(1, 0.1, 0.1, 1) end
+        if expected then expected:SetBackdropBorderColor(0.2, 1, 0.2, 1) end
+        if self._hintFS and chosen and expected then
+            self._hintFS:SetPoint("CENTER", self._canvas, "CENTER", 0, -220)
+            self._hintFS:SetWidth(560)
+            self._hintFS:SetText(string.format(L.error_symbols, chosen.sym.name, expected.sym.name))
+            self._hintFS:Show()
+        end
+    end
+    if self._statusLbl then self._statusLbl:SetText(L.result_exit_title) end
+    self:ScheduleResult(board)
     if self._startBtn then
         self._startBtn:SetLabel(ArcadiaNexus.GetLocaleTable("ARCADIASECHO")["btn_start"])
     end
@@ -632,6 +740,7 @@ end
 -- IDLE STATE
 -- ============================================================
 function R:EnterIdleState()
+    _viewGuard:Cancel()
     self.state = "IDLE"
     self:ClearGrid()
 
@@ -641,6 +750,8 @@ function R:EnterIdleState()
     if self._statusBox    then self._statusBox:Hide()    end
     if self._statusLbl    then self._statusLbl:Hide()    end
     if self._statusFS     then self._statusFS:Hide()     end
+    if self._lengthBox then self._lengthBox:Hide() end
+    if self._bestBox then self._bestBox:Hide() end
     if self._logoTex     then self._logoTex:Show()     end
     if self._borderFrame then self._borderFrame:Show() end
     if self._goldGrid    then self._goldGrid:Hide()    end
@@ -651,9 +762,9 @@ function R:EnterIdleState()
     end
 
     if self._hintFS then
-        self._hintFS:SetText(ArcadiaNexus.GetLocaleTable("ARCADIASECHO")["hint_start"] or "")
-        self._hintFS:Show()
+        self._hintFS:Hide()
     end
+    self:RefreshConfiguration()
 end
 
 -- ============================================================

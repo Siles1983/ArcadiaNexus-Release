@@ -65,9 +65,12 @@ Logic.PU_TYPES = {
 
 -- ── State ─────────────────────────────────────────────────────
 function Logic:NewState(difficulty, savedProgress)
-    local def = self.DIFFICULTY_DEFS[difficulty] or self.DIFFICULTY_DEFS.easy
+    difficulty = self.DIFFICULTY_DEFS[difficulty] and difficulty or "easy"
+    local def = self.DIFFICULTY_DEFS[difficulty]
     local s = {
         difficulty        = difficulty,
+        ruleVersion=2, layoutVersion=2, phase="PLAYING", simRemainder=0,
+        clearedLevel=0, stagesCleared=0, regularCleared=0, levelId=1, levelStartScore=0, levelStartTime=0, maxCombo=0,
         paddleW           = def.paddleW,
         paddleX           = (self.FIELD_W - def.paddleW) / 2,
         ballX             = self.FIELD_W / 2,
@@ -107,10 +110,14 @@ function Logic:NewState(difficulty, savedProgress)
         won               = false,
     }
     if savedProgress then
-        s.level      = savedProgress.level or 1
-        s.score      = savedProgress.score or 0
-        s.lives      = savedProgress.lives or def.lives
-        s.difficulty = savedProgress.diff  or difficulty
+        s.level=savedProgress.level or 1
+        s.lives=savedProgress.lives or def.lives
+        s.legacyScore=savedProgress.score or 0
+        s.legacyContinuation=true
+        s.endlessMode=s.level>100
+        s.endlessSpeedBonus=math.max(0,s.level-100)*0.20
+        s.speedMul=1+s.endlessSpeedBonus
+        s.legacyCompleted=s.endlessMode
     end
     return s
 end
@@ -216,8 +223,8 @@ function Logic:_EffectivePaddleSpeed(state)
 end
 
 -- ── Haupt-Tick ────────────────────────────────────────────────
-function Logic:Tick(state, dt)
-    if state.gameOver then return {} end
+function Logic:_Step(state, dt)
+    if state.gameOver or state.phase~="PLAYING" then return {} end
     local actions = {}
 
     -- Paddle bewegen
@@ -236,6 +243,7 @@ function Logic:Tick(state, dt)
 
     state.elapsedSecs = state.elapsedSecs + dt
     self:_TickPowerUps(state, dt, actions)
+    state.paddleX=math.max(0,math.min(self.FIELD_W-state.paddleW,state.paddleX))
 
     if state.ballDocked then
         self:_StickBallToPaddle(state)
@@ -253,23 +261,11 @@ function Logic:Tick(state, dt)
     -- Leben nur, wenn kein Ball mehr im Feld ist (Arkanoid-Regel).
     self:_PromoteOrLoseLife(state, actions)
 
-    self:_MovePowerUpDrops(state, dt, actions)
-    self:_CheckWin(state, actions)
+    if state.phase=="PLAYING" then
+        self:_MovePowerUpDrops(state, dt, actions)
+        self:_CheckWin(state, actions)
+    end
     return actions
-end
-
--- ── AABB ─────────────────────────────────────────────────────
-local function _BallAABB(bx, by, r, rx, ry, rw, rh)
-    local cx = math.max(rx, math.min(bx, rx+rw))
-    local cy = math.max(ry, math.min(by, ry+rh))
-    local dx = bx-cx; local dy = by-cy
-    return (dx*dx + dy*dy) <= (r*r)
-end
-
-local function _ResolveSide(bx, by, r, rx, ry, rw, rh)
-    local minO = math.min((bx+r)-rx, (rx+rw)-(bx-r), (by+r)-ry, (ry+rh)-(by-r))
-    if minO == (by+r)-ry or minO == (ry+rh)-(by-r) then return "v" end
-    return "h"
 end
 
 -- ── Ball-Bewegung ─────────────────────────────────────────────
@@ -285,7 +281,7 @@ function Logic:_MoveBall(state, dt, actions)
 end
 
 function Logic:_PromoteOrLoseLife(state, actions)
-    if state.ballActive then return end
+    if state.ballActive or state.phase~="PLAYING" then return end
     if #state.balls > 0 then
         local nextBall = table.remove(state.balls, 1)
         state.ballX  = nextBall.x
@@ -303,94 +299,130 @@ function Logic:_PromoteOrLoseLife(state, actions)
     state.activePUText = nil
     local def = self.DIFFICULTY_DEFS[state.difficulty] or self.DIFFICULTY_DEFS.easy
     state.paddleW = def.paddleW
+    state.paddleX=math.max(0,math.min(self.FIELD_W-state.paddleW,state.paddleX))
     actions[#actions+1] = { type="life_lost" }
     if state.lives <= 0 then
-        state.gameOver = true; state.won = false
+        state.gameOver = true; state.won = false; state.phase="GAMEOVER"
         actions[#actions+1] = { type="game_over" }
+    else
+        state.phase="RESPAWNING"; state.transitionRemaining=1
     end
 end
 
-function Logic:_MoveBallObj(state, ball, dt, actions)
-    local r   = self.BALL_RADIUS
-    local spd = self:_EffectiveSpeed(state)
-    local len = math.sqrt(ball.vx*ball.vx + ball.vy*ball.vy)
-    if len > 0 then ball.vx=(ball.vx/len)*spd; ball.vy=(ball.vy/len)*spd end
-
-    local nx = ball.x + ball.vx * dt
-    local ny = ball.y + ball.vy * dt
-
-    if nx-r < 0 then nx=r; ball.vx=math.abs(ball.vx); actions[#actions+1]={type="bounce_wall", side="left"}
-    elseif nx+r > self.FIELD_W then nx=self.FIELD_W-r; ball.vx=-math.abs(ball.vx); actions[#actions+1]={type="bounce_wall", side="right"} end
-    if ny-r < 0 then ny=r; ball.vy=math.abs(ball.vy); actions[#actions+1]={type="bounce_wall", side="top"} end
-
-    if ny+r > self.FIELD_H then
-        ball._lost = true; return
+-- Exact circle sweep: rectangle face strips plus rounded corner contacts.
+local function SweepCircle(x,y,dx,dy,r,rx,ry,rw,rh)
+    local cx=math.max(rx,math.min(x,rx+rw)); local cy=math.max(ry,math.min(y,ry+rh))
+    local ox,oy=x-cx,y-cy; local distance=math.sqrt(ox*ox+oy*oy)
+    if distance>0 and distance<r-1e-7 then return 0,ox/distance,oy/distance,r-distance end
+    if distance==0 then
+        local faces={{x-rx,-1,0},{rx+rw-x,1,0},{y-ry,0,-1},{ry+rh-y,0,1}}
+        table.sort(faces,function(a,b) return a[1]<b[1] end)
+        return 0,faces[1][2],faces[1][3],r+faces[1][1]
     end
-
-    local px,py,pw,ph = state.paddleX, self.PADDLE_Y, state.paddleW, 8
-    if _BallAABB(nx, ny, r, px, py, pw, ph) and ball.vy > 0 then
-        local hitPos = math.max(-1, math.min(1, (nx-(px+pw/2))/(pw/2)))
-        local angle  = hitPos * (math.pi * 0.4)
-        local spd2   = math.sqrt(ball.vx*ball.vx + ball.vy*ball.vy)
-        ball.vx = spd2*math.sin(angle); ball.vy = -math.abs(spd2*math.cos(angle))
-        ny = py-r; state.comboCount = 0; actions[#actions+1]={type="bounce_paddle"}
+    local best,nx,ny
+    local function accept(t,a,b)
+        if t>=-1e-9 and t<=1+1e-9 and dx*a+dy*b< -1e-9 and (not best or t<best) then
+            best,nx,ny=math.max(0,t),a,b
+        end
     end
-
-    self:_CheckBlockCollision(state, ball, nx, ny, r, actions)
-    ball.x = ball.x; ball.y = ball.y  -- bereits in _CheckBlockCollision gesetzt
-end
-
-function Logic:_CheckBlockCollision(state, ball, nx, ny, r, actions)
-    local BW, BH = self.BLOCK_W, self.BLOCK_H
-    local ox, tp = self.BLOCK_OX, self.BLOCK_TOP_PAD
-    local colMin = math.max(1, math.floor((nx-r-ox)/BW)+1)
-    local colMax = math.min(self.FIELD_COLS, math.floor((nx+r-ox)/BW)+1)
-    local rowMin = math.max(1, math.floor((ny-r-tp)/BH)+1)
-    local rowMax = math.min(state.levelRows or self.FIELD_ROWS, math.floor((ny+r-tp)/BH)+1)
-
-    local pierce = state.strengthTimer and state.strengthTimer > 0
-    local hitAny = false
-
-    for row = rowMin, rowMax do
-        if state.grid[row] then
-            for col = colMin, colMax do
-                local typ = state.grid[row][col]
-                if typ and typ > 0 then
-                    local bx = ox+(col-1)*BW; local by = tp+(row-1)*BH
-                    if _BallAABB(nx, ny, r, bx, by, BW, BH) then
-                        if pierce and typ ~= 3 then
-                            -- Pierce: Block zerstören ohne zu reflektieren
-                            self:_HitBlock(state, ball, row, col, typ, actions)
-                            hitAny = true
-                        else
-                            -- Seite bestimmen und reflektieren
-                            local side = _ResolveSide(nx, ny, r, bx, by, BW, BH)
-                            if side == "v" then
-                                ball.vy = -ball.vy
-                                -- Kugel aus Block heraussetzen (Depenetration)
-                                if ny < by + BH/2 then
-                                    ny = by - r      -- Kugel kam von oben
-                                else
-                                    ny = by + BH + r  -- Kugel kam von unten
-                                end
-                            else
-                                ball.vx = -ball.vx
-                                -- Kugel aus Block heraussetzen (Depenetration)
-                                if nx < bx + BW/2 then
-                                    nx = bx - r      -- Kugel kam von links
-                                else
-                                    nx = bx + BW + r  -- Kugel kam von rechts
-                                end
-                            end
-                            self:_HitBlock(state, ball, row, col, typ, actions)
-                            ball.x = nx; ball.y = ny; return
-                        end
-                    end
-                end
+    if dx~=0 then
+        local t=(rx-r-x)/dx; local yy=y+dy*t
+        if yy>=ry and yy<=ry+rh then accept(t,-1,0) end
+        t=(rx+rw+r-x)/dx; yy=y+dy*t
+        if yy>=ry and yy<=ry+rh then accept(t,1,0) end
+    end
+    if dy~=0 then
+        local t=(ry-r-y)/dy; local xx=x+dx*t
+        if xx>=rx and xx<=rx+rw then accept(t,0,-1) end
+        t=(ry+rh+r-y)/dy; xx=x+dx*t
+        if xx>=rx and xx<=rx+rw then accept(t,0,1) end
+    end
+    local aa=dx*dx+dy*dy
+    if aa>0 then
+        for _,corner in ipairs({{rx,ry,-1,-1},{rx+rw,ry,1,-1},{rx,ry+rh,-1,1},{rx+rw,ry+rh,1,1}}) do
+            local ox,oy=x-corner[1],y-corner[2]
+            local bb=2*(ox*dx+oy*dy); local cc=ox*ox+oy*oy-r*r
+            local discr=bb*bb-4*aa*cc
+            if discr>=0 then
+                local t=(-bb-math.sqrt(discr))/(2*aa)
+                local hx,hy=ox+dx*t,oy+dy*t
+                if hx*corner[3]>=-1e-8 and hy*corner[4]>=-1e-8 then accept(t,hx/r,hy/r) end
             end
         end
     end
-    ball.x = nx; ball.y = ny
+    return best,nx,ny
+end
+
+function Logic:_MoveBallObj(state, ball, dt, actions)
+    local r=self.BALL_RADIUS
+    if ball.y>=self.FIELD_H-r and ball.vy>0 then ball._lost=true; return end
+    if ball.x<r then
+        ball.x=r
+        if ball.vx<0 then ball.vx=-ball.vx; actions[#actions+1]={type="bounce_wall",side="left"} end
+    elseif ball.x>self.FIELD_W-r then
+        ball.x=self.FIELD_W-r
+        if ball.vx>0 then ball.vx=-ball.vx; actions[#actions+1]={type="bounce_wall",side="right"} end
+    end
+    if ball.y<r then ball.y=r; if ball.vy<0 then ball.vy=-ball.vy; actions[#actions+1]={type="bounce_wall",side="top"} end end
+    local spd=self:_EffectiveSpeed(state)
+    local len=math.sqrt(ball.vx*ball.vx+ball.vy*ball.vy)
+    if len>0 then ball.vx=ball.vx/len*spd; ball.vy=ball.vy/len*spd end
+    local remaining=dt
+    for contact=1,48 do
+        if remaining<=1e-10 then return end
+        local dx,dy=ball.vx*remaining,ball.vy*remaining
+        local best,hit,nx,ny
+        local function offer(t,kind,a,b,row,col,penetration)
+            if t and t>=-1e-9 and t<=1+1e-9 and (not best or t<best-1e-9) then
+                best,hit,nx,ny=math.max(0,t),{kind=kind,row=row,col=col,penetration=penetration},a,b
+            end
+        end
+        if dx<0 then offer((r-ball.x)/dx,"left",1,0)
+        elseif dx>0 then offer((self.FIELD_W-r-ball.x)/dx,"right",-1,0) end
+        if dy<0 then offer((r-ball.y)/dy,"top",0,1)
+        elseif dy>0 then offer((self.FIELD_H-r-ball.y)/dy,"lost",0,-1) end
+        if dy>0 then
+            local t,a,b,push=SweepCircle(ball.x,ball.y,dx,dy,r,state.paddleX,self.PADDLE_Y,state.paddleW,8)
+            offer(t,"paddle",a,b,nil,nil,push)
+        end
+        local c0=math.max(1,math.floor((math.min(ball.x,ball.x+dx)-r-self.BLOCK_OX)/self.BLOCK_W)+1)
+        local c1=math.min(self.FIELD_COLS,math.floor((math.max(ball.x,ball.x+dx)+r-self.BLOCK_OX)/self.BLOCK_W)+1)
+        local r0=math.max(1,math.floor((math.min(ball.y,ball.y+dy)-r-self.BLOCK_TOP_PAD)/self.BLOCK_H)+1)
+        local r1=math.min(state.levelRows or self.FIELD_ROWS,math.floor((math.max(ball.y,ball.y+dy)+r-self.BLOCK_TOP_PAD)/self.BLOCK_H)+1)
+        for row=r0,r1 do for col=c0,c1 do
+            local typ=state.grid[row] and state.grid[row][col]
+            if typ and typ>0 then
+                local t,a,b,push=SweepCircle(ball.x,ball.y,dx,dy,r,self.BLOCK_OX+(col-1)*self.BLOCK_W,
+                    self.BLOCK_TOP_PAD+(row-1)*self.BLOCK_H,self.BLOCK_W,self.BLOCK_H)
+                offer(t,"block",a,b,row,col,push)
+            end
+        end end
+        if not best then ball.x=ball.x+dx; ball.y=ball.y+dy; return end
+        ball.x=ball.x+dx*best; ball.y=ball.y+dy*best
+        remaining=remaining*(1-best)
+        if hit.kind=="lost" then ball._lost=true; return end
+        local pierce=false
+        if hit.kind=="block" then
+            local typ=state.grid[hit.row][hit.col]
+            pierce=state.strengthTimer and state.strengthTimer>0 and typ~=3
+            self:_HitBlock(state,ball,hit.row,hit.col,typ,actions)
+        end
+        if hit.kind=="paddle" then
+            local hitPos=math.max(-1,math.min(1,(ball.x-(state.paddleX+state.paddleW/2))/(state.paddleW/2)))
+            local angle=hitPos*(math.pi*0.4)
+            ball.vx=spd*math.sin(angle); ball.vy=-math.abs(spd*math.cos(angle))
+            ball.y=math.min(ball.y,self.PADDLE_Y-r-1e-6)
+            state.comboCount=0; actions[#actions+1]={type="bounce_paddle"}
+        elseif not pierce then
+            local dot=ball.vx*nx+ball.vy*ny
+            if dot<0 then ball.vx=ball.vx-2*dot*nx; ball.vy=ball.vy-2*dot*ny end
+            local push=(hit.penetration or 0)+1e-6
+            ball.x=ball.x+nx*push; ball.y=ball.y+ny*push
+            if hit.kind~="block" then actions[#actions+1]={type="bounce_wall",side=hit.kind} end
+        end
+        if state.blocksLeft<=0 then return end
+    end
+    state.contactLimitHits=(state.contactLimitHits or 0)+1
 end
 
 function Logic:_HitBlock(state, ball, row, col, typ, actions)
@@ -518,6 +550,7 @@ function Logic:_ActivatePowerUp(state, puType, actions)
         state.strengthTimer = 8
         state.activePUText  = "strength"
     end
+    state.paddleX=math.max(0,math.min(self.FIELD_W-state.paddleW,state.paddleX))
 end
 
 -- ── PU-Timer dekrementieren ───────────────────────────────────
@@ -544,7 +577,12 @@ end
 function Logic:_CheckWin(state, actions)
     if state.gameOver then return end
     if state.blocksLeft <= 0 then
-        state.gameOver = true; state.won = true
+        state.gameOver = true; state.won = true; state.phase="LEVEL_CLEAR"
+        state.transitionRemaining=0.45; state.clearReady=false; state.levelWon=true
+        state.clearedLevel=state.level; state.stagesCleared=state.stagesCleared+1
+        if state.level<=100 then state.regularCleared=state.regularCleared+1 end
+        state.levelPerformance={id=state.levelId,level=state.level,score=state.score-state.levelStartScore,
+            elapsedMs=math.floor((state.elapsedSecs-state.levelStartTime)*1000+0.5)}
         actions[#actions+1] = { type="level_win" }
     end
 end
@@ -553,6 +591,8 @@ function Logic:ReloadLevel(state)
     state.speedMul      = 1.0 + (state.endlessSpeedBonus or 0)
     state.accelTimer    = 0; state.comboCount = 0
     state.gameOver      = false; state.won = false
+    state.phase="PLAYING"; state.transitionRemaining=nil; state.clearReady=nil; state.levelWon=false
+    state.levelStartScore=state.score; state.levelStartTime=state.elapsedSecs; state.simRemainder=0
     state.droppedPUs    = {}
     state.bigTimer      = nil; state.fastTimer    = nil
     state.slowTimer     = nil; state.smallTimer   = nil
@@ -566,6 +606,7 @@ end
 
 function Logic:AdvanceLevel(state)
     state.level = state.level + 1
+    state.levelId=(state.levelId or 1)+1
     if state.level > 100 then
         state.endlessMode       = true
         state.endlessSpeedBonus = state.endlessSpeedBonus + 0.20
@@ -574,6 +615,7 @@ function Logic:AdvanceLevel(state)
 end
 
 function Logic:RetryLevel(state)
+    if not state.devPlaytest then return false end
     self:ReloadLevel(state)
 end
 
@@ -595,3 +637,116 @@ function Logic:DevDropPowerUp(state, puType)
 end
 
 Logic:RefreshBlockMetrics()
+
+
+function Logic:Neutralize(state)
+    if state then state.keyLeft=false; state.keyRight=false end
+end
+function Logic:Copy(v)
+    if type(v)~="table" then return v end
+    local out={} for k,x in pairs(v) do out[k]=self:Copy(x) end return out
+end
+function Logic:Tick(state,dt)
+    if not state or state.phase~="PLAYING" or state.gameOver then return {} end
+    state.simRemainder=(state.simRemainder or 0)+math.max(0,math.min(0.1,dt or 0))
+    local events={}
+    for _=1,12 do
+        if state.simRemainder+1e-10<1/120 then break end
+        state.simRemainder=math.max(0,state.simRemainder-1/120)
+        for _,event in ipairs(self:_Step(state,1/120)) do events[#events+1]=event end
+        if state.phase~="PLAYING" then state.simRemainder=0; self:Neutralize(state); break end
+    end
+    return events
+end
+function Logic:Snapshot(state,engineState)
+    if not state or state.devPlaytest or state.phase=="GAMEOVER" or state.runClosed or state.lives<=0 then return nil end
+    local save=self:Copy(state); self:Neutralize(save)
+    save.version=2; save.engineState=engineState or state.phase; save.diff=state.difficulty
+    save.resultData=nil; save.highScore=nil; save.clearPresented=nil
+    return save
+end
+function Logic:Restore(save)
+    local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
+    local function integer(n) return finite(n) and n>=0 and n%1==0 end
+    if type(save)~="table" or save.version~=2 or save.ruleVersion~=2 or save.layoutVersion~=2
+        or not self.DIFFICULTY_DEFS[save.difficulty] or type(save.runId)~="string" or save.devPlaytest or save.runClosed
+        or not ({PLAYING=true,RESPAWNING=true,LEVEL_CLEAR=true})[save.phase]
+        or save.engineState~=save.phase and save.engineState~="PAUSED" then return nil end
+    for _,key in ipairs({"score","lives","level","levelId","comboCount","maxCombo","blocksLeft","clearedLevel","stagesCleared","regularCleared"}) do
+        if not integer(save[key]) then return nil end
+    end
+    if save.lives<1 or save.lives>5 or save.level<1 or save.levelId<1 or save.regularCleared>100 or save.comboCount>save.maxCombo
+        or save.regularCleared>save.stagesCleared or save.clearedLevel>save.level then return nil end
+    for _,key in ipairs({"paddleX","paddleW","ballX","ballY","ballVX","ballVY","baseSpeed","speedMul","endlessSpeedBonus",
+        "accelTimer","elapsedSecs","levelStartScore","levelStartTime","simRemainder"}) do if not finite(save[key]) then return nil end end
+    local def=self.DIFFICULTY_DEFS[save.difficulty]
+    if save.baseSpeed~=self.BASE_SPEED*def.speedMul or save.scoreFac~=def.scoreFac or save.accelInterval~=def.accelInterval or save.accelAmt~=def.accelAmt
+        or save.speedMul<1+save.endlessSpeedBonus-1e-8 or save.endlessSpeedBonus<0 or save.elapsedSecs<0 or save.accelTimer<0
+        or math.abs(save.endlessSpeedBonus-math.max(0,save.level-100)*0.2)>1e-6
+        or save.levelStartScore<0 or save.levelStartScore%1~=0 or save.levelStartScore>save.score or save.levelStartTime<0 or save.levelStartTime>save.elapsedSecs
+        or save.paddleW<32 or save.paddleW>def.paddleW*2 or save.paddleX<0 or save.paddleX>self.FIELD_W-save.paddleW
+        or save.simRemainder<0 or save.simRemainder>=1/120+1e-8
+        or type(save.endlessMode)~="boolean" or save.endlessMode~=(save.level>100)
+        or type(save.ballActive)~="boolean" or type(save.ballDocked)~="boolean" or type(save.gameOver)~="boolean" or type(save.won)~="boolean"
+        or type(save.balls)~="table" or #save.balls>2 or type(save.droppedPUs)~="table" or #save.droppedPUs>320
+        or type(save.grid)~="table" or not integer(save.levelRows) or save.levelRows<1 or save.levelRows>16 then return nil end
+    for _,key in ipairs({"bigTimer","smallTimer","fastTimer","slowTimer","strengthTimer"}) do
+        if save[key]~=nil and (not finite(save[key]) or save[key]<0 or save[key]>(key=="bigTimer" and 10 or 8)) then return nil end
+    end
+    if save.bigTimer and save.smallTimer or save.fastTimer and save.slowTimer then return nil end
+    if self:_EffectiveSpeed(save)>=math.huge then return nil end
+    for _,b in ipairs(save.balls) do
+        if type(b)~="table" then return nil end
+        for _,key in ipairs({"x","y","vx","vy"}) do if not finite(b[key]) then return nil end end
+    end
+    local types={} for _,key in ipairs(self.PU_TYPES) do types[key]=true end
+    for _,b in ipairs(save.droppedPUs) do if type(b)~="table" or not types[b.type] then return nil end
+        for _,key in ipairs({"x","y","vy"}) do if not finite(b[key]) then return nil end end
+    end
+    local template=self:NewState(save.difficulty); self:ParseLevel(template,save.level)
+    if template.levelRows~=save.levelRows then return nil end
+    local left=0
+    for row=1,save.levelRows do
+        if type(save.grid[row])~="table" then return nil end
+        for col=1,self.FIELD_COLS do
+            local typ,original=save.grid[row][col],template.grid[row][col]
+            if not integer(typ) or typ>5 or original==3 and typ~=3 or original==0 and typ~=0
+                or original~=3 and typ==3 or typ~=0 and typ~=original and not (original==2 and typ==5) then return nil end
+            if typ~=0 and typ~=3 then left=left+1 end
+        end
+    end
+    if left~=save.blocksLeft or save.phase=="LEVEL_CLEAR" and (left~=0 or not save.won or not save.gameOver or not save.levelWon)
+        or save.phase=="PLAYING" and (save.gameOver or save.won or not save.ballActive and #save.balls==0)
+        or save.phase=="RESPAWNING" and (save.gameOver or save.ballActive or #save.balls>0) then return nil end
+    if save.phase~="PLAYING" and (not finite(save.transitionRemaining) or save.transitionRemaining<0 or save.transitionRemaining>1) then return nil end
+    if save.runResult~=nil and save.runResult~="WIN" then return nil end
+    if save.runResult=="WIN" and save.regularCleared~=100 then return nil end
+    if save.levelPerformance then
+        local p=save.levelPerformance
+        if type(p)~="table" or not integer(p.id) or p.id>save.levelId or not integer(p.level) or p.level>save.level
+            or not integer(p.score) or p.score>save.score or not integer(p.elapsedMs) then return nil end
+    end
+    local state=self:Copy(save); self:Neutralize(state); return state
+end
+
+-- Read-only projection of a resumable run. No stars or inferred legacy unlocks.
+function Logic:RunOverview(save,defaultDifficulty)
+    if type(save)~="table" then return nil end
+    local gs
+    if save.version then
+        gs=self:Restore(save)
+        if not gs then return nil end
+    else
+        local function integer(n) return type(n)=="number" and n>=0 and n<math.huge and n%1==0 end
+        local diff=save.difficulty or save.diff or defaultDifficulty or "easy"
+        if not self.DIFFICULTY_DEFS[diff] or not integer(save.level) or save.level<1
+            or not integer(save.score or 0) or not integer(save.lives) or save.lives<1 or save.lives>5
+            or save.completed~=nil and type(save.completed)~="boolean" then return nil end
+        gs={level=save.level+(save.completed and 1 or 0),difficulty=diff,lives=save.lives,
+            score=0,legacyScore=save.score or 0,legacyContinuation=true,stagesCleared=0,clearedLevel=0}
+    end
+    return {level=gs.level,currentLevel=math.min(gs.level,100),difficulty=gs.difficulty,
+        score=gs.score,lives=gs.lives,legacy=gs.legacyContinuation==true,legacyScore=gs.legacyScore or 0,
+        completedFrom=math.max(1,gs.level-gs.stagesCleared+(gs.phase=="LEVEL_CLEAR" and 1 or 0)),
+        clearedLevel=math.min(gs.clearedLevel,100),runId=gs.runId,endless=gs.level>100}
+end

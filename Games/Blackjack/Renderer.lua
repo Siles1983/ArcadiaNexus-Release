@@ -9,13 +9,13 @@
 --    Chip-gesetzt (Bet-Pos):  y=-288, x: 176/224/320/368, 48x48
 --    Beenden-Button:          TOPLEFT +8/-448,   140x30
 --    Schwierigkeit-Dropdown:  TOPLEFT +176/-448, 120x30
---    KI-Gegner-Dropdown:      TOPLEFT +304/-448, 120x30
+--    Mitspieler-Dropdown:      TOPLEFT +304/-448, 120x30
 --    Spiel-Starten-Button:    TOPLEFT +448/-448, 140x30
 --    Divider links:           x=160/-440
 --    Divider rechts:          x=434/-440
---    KI-Gegner 1 Avatar:      TOPLEFT +16/-32,   64x64
+--    Mitspieler 1 Avatar:      TOPLEFT +16/-32,   64x64
 --    Dealer Avatar:           TOPLEFT +264/-32,  64x64
---    KI-Gegner 2 Avatar:      TOPLEFT +520/-32,  64x64
+--    Mitspieler 2 Avatar:      TOPLEFT +520/-32,  64x64
 -- ============================================================
 
 local ArcadiaNexus = _G.ArcadiaNexus
@@ -178,7 +178,6 @@ R.cardFrames      = { player={}, dealer={}, player2={}, ai1={}, ai2={} }
 R._chipStackTexs  = {}   -- [slotIdx] = texture (zufällige Variante)
 R._chipBetFrames  = {}   -- [slotIdx] = frame (gesetzter Chip, anfangs hidden)
 R._activeBetSlot  = nil  -- welcher Slot gerade aktiv gesetzt ist
-R._diffDD         = nil
 R._aiDD           = nil
 R.betDisplay      = nil
 R.capitalDisplay  = nil
@@ -341,12 +340,12 @@ function R:_CreateMainFrame()
     if _G.ArcadiaNexus then _G.ArcadiaNexus._bjContainer = f end
 
     f:SetScript("OnHide", function()
-        ArcadiaNexus.GameSession:HandleRendererHide("BLACKJACK", ArcadiaNexus.BJ_Engine, function(E)
+        local outcome = ArcadiaNexus.GameSession:HandleRendererHide("BLACKJACK", ArcadiaNexus.BJ_Engine, function(E)
             if E.state ~= "IDLE" then
-                E:StopGame()
+                return E:StopGame()
             end
         end)
-        R:EnterIdleState()
+        if outcome == "clear" then R:EnterIdleState() end
     end)
 end
 
@@ -724,48 +723,13 @@ function R:_CreateBottomBar()
     local cf = bar.frame
     self._controlsFrame = cf
 
-    -- Segment 1: Difficulty + KI nebeneinander (Codebreaker-Muster)
-    local ddGap = 10
-    local pair = CreateFrame("Frame", nil, cf)
-    pair:SetSize(CFG.dd_w * 2 + ddGap, CFG.btn_h)
-    pair:SetPoint("CENTER", cf, "CENTER", bar.segX[1], bar.y.dropdownOfs)
-
-    local diffOpts = {
-        { key="easy",   label=L("diff_easy")   },
-        { key="normal", label=L("diff_normal")  },
-        { key="hard",   label=L("diff_hard")    },
-    }
-    local ddAnchor1 = CreateFrame("Frame", nil, pair)
-    ddAnchor1:SetSize(CFG.dd_w, CFG.btn_h)
-    ddAnchor1:SetPoint("LEFT", pair, "LEFT", 0, 0)
-    UI.CreateSimpleDropdown(ddAnchor1, 0, 0, CFG.dd_w, "",
-        diffOpts,
-        function() return S and S:Get("difficulty") or "easy" end,
-        function(key)
-            if S then S:Set("difficulty", key) end
-            local E = ArcadiaNexus.BJ_Engine
-            if E then E:SetDifficulty(key) end
-        end
-    )
-
-    local aiOpts = {
-        { key="0", label=L("ai_0") },
-        { key="1", label=L("ai_1") },
-        { key="2", label=L("ai_2") },
-    }
-    local ddAnchor2 = CreateFrame("Frame", nil, pair)
-    ddAnchor2:SetSize(CFG.dd_w, CFG.btn_h)
-    ddAnchor2:SetPoint("RIGHT", pair, "RIGHT", 0, 0)
-    UI.CreateSimpleDropdown(ddAnchor2, 0, 0, CFG.dd_w, "",
-        aiOpts,
-        function() return tostring(S and S:Get("aiCount") or 0) end,
-        function(key)
-            local count = tonumber(key) or 0
-            if S then S:Set("aiCount", count) end
-            local E = ArcadiaNexus.BJ_Engine
-            if E then E:SetAICount(count) end
-        end
-    )
+    local aiOpts={{key="0",label=L("ai_0")},{key="1",label=L("ai_1")},{key="2",label=L("ai_2")}}
+    local anchor=CreateFrame("Frame",nil,cf)
+    anchor:SetSize(CFG.dd_w,CFG.btn_h)
+    anchor:SetPoint("CENTER",cf,"CENTER",bar.segX[1],bar.y.dropdownOfs)
+    self._aiDD=UI.CreateSimpleDropdown(anchor,0,0,CFG.dd_w,"",aiOpts,
+        function() return tostring(S:Get("aiCount")) end,
+        function(key) ArcadiaNexus.BJ_Engine:SetAICount(tonumber(key)) end)
 
     -- Segment 2: Toggle-Button Spiel starten / Beenden
     local toggleBtn = UI.CreateArcadiaButton(cf, L("btn_start"), CFG.btn_w, CFG.btn_h)
@@ -773,33 +737,14 @@ function R:_CreateBottomBar()
     toggleBtn:SetScript("OnClick", function()
         local E = ArcadiaNexus.BJ_Engine
         if not E then return end
-        if E.state == "IDLE" then
-            E:StartGame()
+        if R.state=="SLOT_MENU" then R:EnterIdleState()
+        elseif E.state == "IDLE" then
+            R:ShowSlots()
         else
             E:StopGame()
         end
     end)
     self._toggleBtn = toggleBtn
-
-    -- Reset-Button stays on canvas (Kapital zurücksetzen, sichtbar bei Bankrott-Nähe)
-    local resetBtn = UI.CreateArcadiaButton(canvas, "100g", CFG.btn_w - 20, 24)
-    resetBtn:SetPoint("BOTTOM", canvas, "BOTTOM", CFG.cap_box_x, CFG.controls_y + 10)
-    resetBtn:SetScript("OnClick", function()
-        local E2 = ArcadiaNexus.BJ_Engine
-        local S2 = ArcadiaNexus.BJ_Settings
-        if not E2 or not S2 then return end
-        if E2.state ~= "BETTING" then return end
-        S2:ResetChips()
-        if E2.gameState then
-            E2.gameState.chips        = 100
-            E2.gameState.bet          = 0
-            E2.gameState.betConfirmed = false
-            R:_ClearBetChip()
-            R:UpdateBoard(E2.gameState)
-        end
-    end)
-    resetBtn:Hide()
-    self.actionBtns.resetChips = resetBtn
 
     -- Aktions-Buttons (Hit/Stand/Double/Split/Insurance) — initial versteckt
     local actionDefs = {
@@ -825,6 +770,20 @@ function R:_CreateBottomBar()
         end)
         btn:Hide()
         self.actionBtns[d.key] = btn
+        if btn.SetMotionScriptsWhileDisabled then btn:SetMotionScriptsWhileDisabled(true) end
+        btn:SetScript("OnEnter",function(b)
+            local E=ArcadiaNexus.BJ_Engine; local gs=E.gameState
+            GameTooltip:SetOwner(b,"ANCHOR_TOP"); GameTooltip:SetText(L("tip_"..d.key))
+            if gs then
+                if d.key=="double" or d.key=="split" or d.key=="insurance" then
+                    local cost=d.key=="insurance" and gs.bet2/2 or gs.handBets2[gs.activeHand] or gs.bet2
+                    GameTooltip:AddLine(L("lbl_bet")..": "..ArcadiaNexus.Format.HalfUnits(cost).." "..L("lbl_gold"),1,0.82,0)
+                end
+                if not E:CanAction(d.key) then GameTooltip:AddLine(L(E:ActionBlockReason(d.key)),1,0.5,0.4,true) end
+            end
+            GameTooltip:Show()
+        end)
+        btn:SetScript("OnLeave",function() GameTooltip:Hide() end)
     end
 
     -- newRound-Button (DEAL — fester State, kein Toggle)
@@ -874,7 +833,7 @@ function R:_CreateInsurancePrompt()
         if E then E:PlayerInsurance() end
     end)
 
-    local noBtn = UI.CreateArcadiaButton(ip, L("btn_stand"), 110, 26)
+    local noBtn = UI.CreateArcadiaButton(ip, L("btn_decline"), 110, 26)
     noBtn:SetPoint("BOTTOMRIGHT", ip, "BOTTOMRIGHT", -10, 8)
     noBtn:SetScript("OnClick", function()
         local E = ArcadiaNexus.BJ_Engine
@@ -883,6 +842,7 @@ function R:_CreateInsurancePrompt()
 
     ip:Hide()
     self.insurancePrompt = ip
+    self._insuranceYes=yesBtn; self._insuranceNo=noBtn; self._insuranceLabel=lbl
 end
 
 -- ── Karten-Frame erstellen ────────────────────────────────────
@@ -932,8 +892,11 @@ function R:ShowDealtCard(target, card)
             local col = (i - 1) % AI_COLS
             return pfw - CARD_W - 8 - col * AI_OVERLAP_X
         end
-        if a == "player2" then
-            return center + 10 + (i-1) * step
+        local gs=ArcadiaNexus.BJ_Engine.gameState
+        if (a=="player" or a=="player2") and gs and #gs.playerHands==2 then
+            local hi=a=="player" and 1 or 2; local n=#gs.playerHands[hi]
+            local gap=math.min(38,math.floor(210/math.max(n-1,1)))
+            return (hi==1 and 155 or 425)-CARD_W/2-(n-1)*gap/2+(i-1)*gap
         end
 
         -- Dealer / Spieler: dynamisch
@@ -1003,7 +966,7 @@ function R:UpdateBoard(gs)
 
     -- Kapital
     if self.capitalDisplay then
-        self.capitalDisplay:SetText(L("lbl_capital") .. ": " .. gs.chips .. "g")
+        self.capitalDisplay:SetText(L("lbl_capital") .. ": " .. ArcadiaNexus.Format.HalfUnits(gs.chips2) .. " " .. L("lbl_gold"))
     end
     -- Einsatz
     self:UpdateBetDisplay(gs)
@@ -1017,7 +980,7 @@ function R:UpdateBoard(gs)
             if ph and #ph > 0 then
                 local v = Logic:EvalHand(ph)
                 local bust = Logic:IsBust(ph) and " (Bust!)" or ""
-                lv.player:SetText(L("lbl_player") .. ": " .. v .. bust)
+                lv.player:SetText((gs.activeHand==1 and gs.phase=="PLAYING" and "> " or "") .. L("lbl_player") .. ": " .. v .. bust .. " · " .. ArcadiaNexus.Format.HalfUnits(gs.handBets2[1] or 0))
                 if lv._playerBox then lv._playerBox:Show() end
             else
                 lv.player:SetText("")
@@ -1028,7 +991,7 @@ function R:UpdateBoard(gs)
         local ph2 = gs.playerHands and gs.playerHands[2]
         if lv.player2 then
             if ph2 and #ph2 > 0 then
-                lv.player2:SetText(L("lbl_player") .. " 2: " .. Logic:EvalHand(ph2))
+                lv.player2:SetText((gs.activeHand==2 and gs.phase=="PLAYING" and "> " or "") .. L("lbl_player") .. " 2: " .. Logic:EvalHand(ph2) .. " · " .. ArcadiaNexus.Format.HalfUnits(gs.handBets2[2] or 0))
             else
                 lv.player2:SetText("")
             end
@@ -1051,7 +1014,7 @@ function R:UpdateBoard(gs)
                 if gs.aiCount and gs.aiCount >= i and gs.aiHands and gs.aiHands[i] and #gs.aiHands[i] > 0 then
                     local v  = Logic:EvalHand(gs.aiHands[i])
                     local st = gs.aiStates and gs.aiStates[i] or ""
-                    la:SetText("KI " .. i .. ": " .. v .. (st == "bust" and "!" or ""))
+                    la:SetText(L("lbl_ai_opponents") .. " " .. i .. ": " .. v .. (st == "bust" and "!" or ""))
                     la:Show()
                 else
                     la:SetText("")
@@ -1067,42 +1030,24 @@ end
 -- ── Action-Buttons aktualisieren ─────────────────────────────
 function R:UpdateActionButtons(gs)
     if not gs then return end
-    local E     = ArcadiaNexus.BJ_Engine
-    local Logic = ArcadiaNexus.BJ_Logic
-    local state = E and E.state or "IDLE"
-    local isPlay  = state == "PLAYING"
-    local isBet   = state == "BETTING"
-    local isResult = state == "ROUND_RESULT"
-    local hand    = gs.playerHands and gs.playerHands[gs.activeHand or 1] or {}
-    local handVal = Logic and Logic:EvalHand(hand) or 0
-
-    local function SetEnabled(key, v)
-        local btn = self.actionBtns[key]
-        if not btn then return end
-        if v then btn:Enable() else btn:Disable() end
+    local E=ArcadiaNexus.BJ_Engine
+    for _,key in ipairs({"hit","stand","double","split","insurance"}) do
+        local btn=self.actionBtns[key]
+        if btn then
+            if E:CanAction(key) then btn:Enable() else btn:Disable() end
+        end
     end
-
-    SetEnabled("hit",       isPlay and gs.playerState == "playing" and handVal < 21)
-    SetEnabled("stand",     isPlay and gs.playerState == "playing")
-    SetEnabled("double",    isPlay and gs.firstAction == true and gs.chips >= (gs.bet or 0))
-    SetEnabled("split",     isPlay and gs.firstAction == true and Logic and Logic:CanSplit(hand) and gs.chips >= (gs.bet or 0))
-    SetEnabled("insurance", isPlay and gs.insuranceOpen == true)
-    SetEnabled("newRound",  isBet or isResult)
-
-    -- Reset-Button: sichtbar wenn Kapital < 25g
-    if self.actionBtns.resetChips then
-        local stuck = isBet and gs.chips < 25
-        self.actionBtns.resetChips:SetShown(stuck)
-        if stuck then self.actionBtns.resetChips:Enable() end
-    end
+    local btn=self.actionBtns.newRound
+    if btn then if E.state=="BETTING" and gs.bet2>=50 or E.state=="ROUND_RESULT" then btn:Enable() else btn:Disable() end end
+    if self._aiDD and self._aiDD.SetEnabled then self._aiDD:SetEnabled(E.state=="BETTING" or E.state=="ROUND_RESULT") end
+    if self._insuranceYes then if E:CanAction("insurance") then self._insuranceYes:Enable() else self._insuranceYes:Disable() end end
 end
 
--- ── Bet-Anzeige ───────────────────────────────────────────────
 function R:UpdateBetDisplay(gs)
     if not self.betDisplay or not gs then return end
     local bet = gs.bet or 0
     if bet > 0 then
-        self.betDisplay:SetText(L("lbl_bet") .. ": " .. bet .. "g")
+        self.betDisplay:SetText(L("lbl_bet") .. ": " .. ArcadiaNexus.Format.HalfUnits(gs.bet2) .. " " .. L("lbl_gold"))
     else
         self.betDisplay:SetText(L("lbl_bet") .. ": --")
     end
@@ -1112,6 +1057,8 @@ end
 function R:OnStateChanged(newState)
     local stateLabels = {
         IDLE        = L("state_idle"),
+        DEALING     = L("state_dealing"),
+        RESULT_PENDING=L("state_result_pending"),
         BETTING     = L("state_betting"),
         PLAYING     = L("state_playing"),
         DEALER_TURN = L("state_dealer_turn"),
@@ -1164,17 +1111,15 @@ function R:OnGameStarted(gs)
     -- Toggle-Button auf Beenden
     if self._toggleBtn then self._toggleBtn:SetLabel(L("btn_exit")) end
     self:UpdateBoard(gs)
-    if self._diffDD then
-        local diff = gs.difficulty or "easy"
-        self._diffDD:SetText(L("diff_" .. diff))
-    end
     if self._aiDD then
         local ai = tostring(gs.aiCount or 0)
-        self._aiDD:SetText(L("ai_" .. ai))
+        if self._aiDD.RefreshDisplay then self._aiDD:RefreshDisplay() end
     end
 end
 
 function R:OnGameStopped()
+    self.state="IDLE"
+    if self._aiDD and self._aiDD.SetEnabled then self._aiDD:SetEnabled(true) end
     self:_ClearAllCards()
     self:_ClearBetChip()
     self:_ClearAIBetChips()
@@ -1194,7 +1139,7 @@ function R:OnGameStopped()
     if self._chipStackBtns then
         for _, btn in ipairs(self._chipStackBtns) do btn:Hide() end
     end
-    for _, key in ipairs({"hit","stand","double","split","insurance","newRound","resetChips"}) do
+    for _, key in ipairs({"hit","stand","double","split","insurance","newRound"}) do
         local btn = self.actionBtns[key]
         if btn then btn:Hide() end
     end
@@ -1221,105 +1166,46 @@ function R:OnSplit(gs)
 end
 
 -- ── Round Result Overlay ──────────────────────────────────────
-function R:ShowRoundResult(gs, results)
+function R:ShowRoundResult(gs,results,bankrupt)
     if not self._playfield then return end
-    local r  = results and results[1]
-    if not r then return end
-
-    local UI     = ArcadiaNexus.UI
-    local loc    = ArcadiaNexus.GetLocaleTable("BLACKJACK")
-    local parent = self._playfield
-
-    local resultText = {
-        win="result_win", blackjack="result_blackjack", lose="result_lose",
-        bust="result_bust", push="result_push",
-    }
-    local resultColors = {
-        win={0.3,0.9,0.3}, blackjack={1,0.85,0.1}, lose={0.9,0.3,0.3},
-        bust={0.9,0.3,0.3}, push={0.7,0.7,0.3},
-    }
-    local rKey = r.result or "push"
-    local clr  = resultColors[rKey] or {0.8,0.8,0.8}
-
-    local Logic = ArcadiaNexus.BJ_Logic
-    local lines = {}
-    if Logic then
-        local hands = gs.playerHands or {}
-        for hi = 1, #hands do
-            local hand = hands[hi]
-            if hand and #hand > 0 then
-                local prefix = (#hands > 1)
-                    and (L("lbl_player") .. " " .. hi)
-                    or L("lbl_player")
-                lines[#lines + 1] = prefix .. ": " .. tostring(Logic:EvalHand(hand))
-            end
-        end
-        if gs.dealerHand and #gs.dealerHand > 0 then
-            lines[#lines + 1] = L("lbl_dealer") .. ": " .. tostring(Logic:EvalHand(gs.dealerHand))
-        end
+    local UI=ArcadiaNexus.UI; local loc=ArcadiaNexus.GetLocaleTable("BLACKJACK")
+    local result=gs.net2>0 and "WIN" or gs.net2<0 and "LOSS" or "DRAW"
+    local lines={}
+    local function money(v) return ArcadiaNexus.Format.HalfUnits(v).." "..L("lbl_gold") end
+    for i,r in ipairs(results) do
+        lines[#lines+1]=L("lbl_player").." "..i..": "..L("result_"..r.result).." · "..L("lbl_bet").." "..money(r.bet2)
+            .." · "..L("lbl_return").." "..money(r.return2).." · "..L("lbl_net").." "..money(r.net2)
     end
-
-    UI.ShowResultDialog({
-        parent     = parent,
-        title      = L(resultText[rKey] or rKey),
-        titleColor = clr,
-        subtitle   = L("lbl_capital") .. ": " .. gs.chips .. "g",
-        gold       = r.payout,
-        gameId     = "BLACKJACK",
-        difficulty = gs.difficulty,
-        hideHighscore = true,
-        result     = (rKey == "win" or rKey == "blackjack") and "WIN"
-                     or rKey == "push" and "DRAW" or "LOSS",
-        lines      = lines,
-        buttons    = UI.ResultDialogButtons.Round(loc,
-            function()
-                UI.HideResultDialog(parent)
-                local E = ArcadiaNexus.BJ_Engine
-                if E then E:NewRound() end
-            end,
-            function()
-                UI.HideResultDialog(parent)
-                local E = ArcadiaNexus.BJ_Engine
-                if E then E:StopGame() end
-            end),
-    })
+    lines[#lines+1]=L("btn_insurance")..": "..L("lbl_bet").." "..money(gs.insurance2).." · "..L("lbl_return").." "..money(gs.insuranceReturn2)
+    lines[#lines+1]=L("lbl_net")..": "..money(gs.net2)
+    self._lastRoundLines=lines
+    local data=ArcadiaNexus.BJ_Engine._lastResult or {}
+    local buttons
+    if bankrupt then
+        buttons=UI.ResultDialogButtons.Bankrupt(loc,
+            function() ArcadiaNexus.BJ_Engine:SaveAndPause(); R:ShowSlots() end,
+            function() ArcadiaNexus.BJ_Engine:SaveAndPause() end)
+    else
+        buttons=UI.ResultDialogButtons.Round(loc,
+            function() UI.HideResultDialog(R._playfield); ArcadiaNexus.BJ_Engine:NewRound() end,
+            function() ArcadiaNexus.BJ_Engine:SaveAndPause() end)
+    end
+    UI.ShowResultDialog({parent=self._playfield,title=L(bankrupt and "state_gameover" or result=="WIN" and "result_win" or result=="LOSS" and "result_lose" or "result_push"),
+        titleColor=result=="WIN" and {0.3,0.9,0.3} or result=="LOSS" and {0.9,0.3,0.3} or {0.8,0.8,0.5},
+        subtitle=L("lbl_capital")..": "..money(gs.chips2)..(bankrupt and (" · "..L("below_minimum")) or ""),gameId="BLACKJACK",difficulty="table",hideHighscore=true,
+        result=result,lines=lines,xp=data.awardedXP or 0,gold=data.awardedGold or 0,
+        buttons=buttons})
 end
 
 function R:ShowGameOver(gs)
-    if not self._playfield then return end
-    local UI     = ArcadiaNexus.UI
-    local loc    = ArcadiaNexus.GetLocaleTable("BLACKJACK")
-    local parent = self._playfield
-
-    UI.ShowResultDialog({
-        parent     = parent,
-        title      = L("state_gameover"),
-        titleColor = {0.9, 0.2, 0.2},
-        subtitle   = L("lbl_capital") .. ": 0g",
-        gameId     = "BLACKJACK",
-        difficulty = gs and gs.difficulty,
-        hideHighscore = true,
-        result     = "LOSS",
-        buttons    = UI.ResultDialogButtons.Bankrupt(loc,
-            function()
-                UI.HideResultDialog(parent)
-                local E = ArcadiaNexus.BJ_Engine
-                local S = ArcadiaNexus.BJ_Settings
-                if E and S then
-                    E:StartGame({ difficulty = (gs and gs.difficulty) or S:Get("difficulty") })
-                end
-            end,
-            function()
-                UI.HideResultDialog(parent)
-                local E = ArcadiaNexus.BJ_Engine
-                if E then E:StopGame() end
-            end),
-    })
+    self:ShowRoundResult(gs,gs.results,true)
 end
 
--- ── Insurance Prompt ─────────────────────────────────────────
 function R:ShowInsurancePrompt(gs)
-    if self.insurancePrompt then self.insurancePrompt:Show() end
+    if self.insurancePrompt then
+        self._insuranceLabel:SetText(L("btn_insurance")..": "..ArcadiaNexus.Format.HalfUnits(gs.bet2/2).." "..L("lbl_gold"))
+        self.insurancePrompt:Show(); self:UpdateActionButtons(gs)
+    end
 end
 
 function R:HideInsurancePrompt()
@@ -1348,6 +1234,9 @@ function R:_ClearAllCards()
 end
 
 function R:EnterIdleState()
+    self.state="IDLE"
+    if self._aiDD and self._aiDD.SetEnabled then self._aiDD:SetEnabled(true) end
+    if self._slotMenu then self._slotMenu:Hide() end
     self:_ClearAllCards()
     self:_ClearBetChip()
     self:_ClearAIBetChips()
@@ -1365,7 +1254,7 @@ function R:EnterIdleState()
     if self._chipStackBtns   then
         for _, btn in ipairs(self._chipStackBtns) do btn:Hide() end
     end
-    for _, key in ipairs({"hit","stand","double","split","insurance","newRound","resetChips"}) do
+    for _, key in ipairs({"hit","stand","double","split","insurance","newRound"}) do
         local btn = self.actionBtns[key]
         if btn then btn:Hide() end
     end
@@ -1373,4 +1262,46 @@ function R:EnterIdleState()
     if self._logo then self._logo:Show() end
     -- Toggle-Button zurücksetzen
     if self._toggleBtn then self._toggleBtn:SetLabel(L("btn_start")) end
+end
+
+function R:ShowSlots()
+    self:EnterIdleState()
+    if self._logo then self._logo:Hide() end
+    self.state="SLOT_MENU"
+    if self._toggleBtn then self._toggleBtn:SetLabel(L("btn_exit")) end
+    local S,A=ArcadiaNexus.BJ_Settings,ArcadiaNexus
+    local loc=A.GetLocaleTable("BLACKJACK")
+    self._slotMenu= A.UI.CreateSaveSlotMenu({
+        parent=self._canvas,maxSlots=3,L=loc,
+        loadSlot=function(slot) return S:LoadSlot(slot) end,
+        deleteSlot=function(slot) S:DeleteSlot(slot) end,
+        canContinue=function(save) return A.BJ_Engine:CanContinueSave(save) end,
+        formatInfo=function(save)
+            if not A.BJ_Logic:ValidateSave(save) then return loc.slot_invalid end
+            return A.Format.HalfUnits(save.chips2).." "..loc.lbl_gold.." · "..loc["state_"..string.lower(save.phase)]
+        end,
+        isPaused=function(save) return save.phase~="GAMEOVER" end,
+        onNewGame=function(slot) A.BJ_Engine:StartGame({slot=slot,overwrite=true}) end,
+        onContinue=function(slot) A.BJ_Engine:StartGame({slot=slot,mode="continue"}) end,
+        onCancel=function() R:EnterIdleState() end,
+    })
+    self._slotMenu:Show()
+end
+function R:RestoreBoard(gs)
+    if self._slotMenu then self._slotMenu:Hide() end
+    self.state=gs.phase
+    self:_ClearAllCards()
+    for i,h in ipairs(gs.playerHands) do for _,card in ipairs(h) do self:ShowDealtCard(i==1 and "player" or "player2",card) end end
+    for _,card in ipairs(gs.dealerHand) do self:ShowDealtCard("dealer",card) end
+    for i=1,gs.aiCount do for _,card in ipairs(gs.aiHands[i]) do self:ShowDealtCard("ai"..i,card) end end
+    self:OnStateChanged(gs.phase); self:UpdateBoard(gs)
+    if gs.insuranceOpen then self:ShowInsurancePrompt(gs) else self:HideInsurancePrompt() end
+end
+function R:ShowResultPending(gs)
+    local UI=ArcadiaNexus.UI
+    UI.ShowResultDialog({parent=self._playfield,title=L("state_result_pending"),subtitle=L("result_retry"),
+        gameId="BLACKJACK",hideHighscore=true,buttons={
+            {label=L("btn_retry"),onClick=function() ArcadiaNexus.BJ_Engine:RetryResult() end},
+            {label=L("btn_exit"),onClick=function() ArcadiaNexus.BJ_Engine:SaveAndPause() end},
+        }})
 end

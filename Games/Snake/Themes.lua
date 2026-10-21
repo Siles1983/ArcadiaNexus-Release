@@ -63,6 +63,9 @@ function T:GetTheme(key)
     return self.THEMES["tiles"]  -- immer tiles zurückgeben
 end
 
+function T:NormalizeDifficulty(key)
+    return self.DIFFICULTY[key] and key or "easy"
+end
 function T:GetDiff(diffKey)
     return self.DIFFICULTY[diffKey] or self.DIFFICULTY.easy
 end

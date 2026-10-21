@@ -19,7 +19,7 @@ ArcadiaNexus.RegisterAchievements({
         desc_en  = "Remember long sequences in Arcadia's Echo.",
         icon     = "Interface\\Icons\\Spell_Shadow_ManaBurn",
         condition = function(data, db)
-            if data.gameId ~= "ARCADIASECHO" then return 0 end
+            if data.gameId ~= "ARCADIASECHO" or data.ruleVersion ~= 2 then return 0 end
             local seq = data.stats and data.stats.maxSequence or 0
             return seq
         end,

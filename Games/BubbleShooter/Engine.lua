@@ -4,7 +4,7 @@
 
     State: IDLE → AIMING ⇄ FLYING → RESOLVE → AIMING
                               ↘ LEVELWIN / GAMEOVER → IDLE
-    GameLoop während AIMING/FLYING (Zeit + Overcharge + Flug).
+    GameLoop während AIMING/FLYING/RESOLVE (Zeit + Overcharge + Flug).
     TimerGuard für Pop-/Drop-Sequenzen.
 ]]
 
@@ -33,7 +33,7 @@ end
 function E:_StartLoop()
     _gameLoop:Start(function(dt) E:_Tick(dt) end, {
         stateCheck = function()
-            return E.state == "AIMING" or E.state == "FLYING"
+            return E.state == "AIMING" or E.state == "FLYING" or E.state == "RESOLVE"
         end,
     })
 end
@@ -66,141 +66,96 @@ function E:_SaveShotProgress()
     if gs.won or gs.lost then return end
     local Logic = ArcadiaNexus.BS_Logic
     if Logic and not Logic:GridHasBubbles(gs.grid) then return end
-    if gs.shot then
-        gs.shot.active = false
-        gs.shot.landed = false
-    end
     S:SetActiveSlot(self.activeSlot)
     local previous = S:LoadSlot(self.activeSlot)
     S:SaveSlot(self.activeSlot, S:PackProgress(gs, {
         paused = true,
         stars = previous and previous.stars or {},
+        levelBests = previous and previous.levelBests,
         campaignVersion = S.CAMPAIGN_VERSION,
         clearedLevel = previous and previous.clearedLevel or 0,
     }))
 end
 
-function E:_SaveCampaignCheckpoint(levelIndex, score, difficulty)
-    local S = ArcadiaNexus.BS_Settings
-    if not S then return end
-    S:SetActiveSlot(self.activeSlot)
-    local previous = S:LoadSlot(self.activeSlot)
-    S:SaveSlot(self.activeSlot, S:PackProgress(nil, {
-        paused       = false,
-        currentLevel = levelIndex or 1,
-        score        = score or 0,
-        diff         = difficulty or "easy",
-        midGame      = nil,
-        stars        = previous and previous.stars or {},
-        campaignVersion = S.CAMPAIGN_VERSION,
-        clearedLevel = previous and previous.clearedLevel or 0,
-    }))
+-- Seal before synchronous notifications. A failed transaction remains queued
+-- outside the playable slot and can be retried without losing the result.
+function E:_BookTerminal(result, reason)
+    local gs,S = self.gameState,ArcadiaNexus.BS_Settings
+    if not gs or gs.terminal then return end
+    gs.terminal=result; gs.reason=reason
+    gs.won=result=="WIN"; gs.lost=result=="LOSS"
+    if (gs.shotsUsed or 0)>0 then
+        local payload={gameId=GAME_ID,runId=gs.runId,ruleVersion=3,
+            difficulty=self:_ScoreDifficulty(gs),aiDifficulty=gs.difficulty,playMode=gs.mode,
+            slot=self.activeSlot,levelIndex=gs.levelIndex,score=gs.score or 0,result=result,
+            stars=result=="WIN" and gs.mode=="shot" and ArcadiaNexus.BS_Logic:GradeCampaignStars(gs) or 0,
+            reason=reason,stats={levelReached=gs.levelIndex,shotsUsed=gs.shotsUsed,
+                maxCombo=gs.stats.maxCombo,maxDrop=gs.stats.maxDrop,
+                powerUsed=gs.stats.powerUsed,overchargeCount=gs.stats.overchargeCount}}
+        gs.resultPayload=payload; gs.lastStars=payload.stars
+        S:QueueResult(payload)
+        if gs.mode=="shot" then
+            -- Even failed progression commits must never leave a playable
+            -- pre-terminal projectile behind. The sealed payload is retryable.
+            local saved=S:LoadSlot(self.activeSlot)
+            if saved then saved.midGame=nil; saved.runId=nil; saved.paused=false; saved.score=0 end
+        end
+        S:FlushResults()
+        if self.gameState~=gs then return end
+        local saved=S:LoadSlot(self.activeSlot)
+        gs.bestStars=saved and saved.stars and saved.stars[gs.levelIndex] or gs.lastStars
+    end
+    _gameLoop:Stop()
 end
 
-function E:_EmitResult(result)
-    local gs = self.gameState
-    if not gs then return false end
-    if (gs.shotsUsed or 0) <= 0 and result ~= "WIN" then return false end
-    local payload = {
-        gameId     = GAME_ID,
-        difficulty = self:_ScoreDifficulty(gs),
-        score      = gs.score or 0,
-        result     = result,
-        stats      = {
-            levelReached    = gs.levelIndex or 1,
-            shotsUsed       = gs.shotsUsed or 0,
-            maxCombo        = gs.stats.maxCombo or 1,
-            maxDrop         = gs.stats.maxDrop or 0,
-            powerUsed       = gs.stats.powerUsed or 0,
-            overchargeCount = gs.stats.overchargeCount or 0,
-        },
-    }
-    ArcadiaNexus.Engine:Emit("GAME_RESULT", payload)
-    return payload.newHighscore == true
+function E:_PresentTerminal(gs)
+    if not gs or not gs.terminal or self.gameState~=gs or gs.presented then return end
+    gs.presented=true
+    local isNew=gs.resultPayload and gs.resultPayload.newHighscore==true
+    if gs.terminal=="WIN" then
+        PlayBS("win")
+        if gs.mode=="shot" and gs.levelIndex<100 then
+            self.state="LEVELWIN"; self:_Notify("ShowLevelWin",gs,isNew); return
+        end
+    else PlayBS("lose") end
+    self.state="GAMEOVER"
+    if self._sessionId then ArcadiaNexus.Lifecycle:EndGame(GAME_ID,self._sessionId); self._sessionId=nil end
+    self:_Notify(gs.terminal=="WIN" and (gs.mode=="shot" and "ShowFinalWin" or "ShowArcadeWin") or "ShowLoss",gs,isNew)
 end
 
 function E:_FinishWin()
-    local gs = self.gameState
-    if not gs then return end
-    PlayBS("win")
-    local isNew = self:_EmitResult("WIN")
-    local S = ArcadiaNexus.BS_Settings
-    if S then
-        S:AddStat("totalLevels", 1)
-        if (gs.stats.maxCombo or 0) >= 5 then S:AddStat("totalCombo5", 1) end
-        S:AddStat("totalPowerUsed", gs.stats.powerUsed or 0)
-        S:AddStat("totalOvercharge", gs.stats.overchargeCount or 0)
-        if (gs.stats.maxDrop or 0) > 0 then S:AddStat("totalDrops", 1) end
-    end
-
-    if gs.mode == "shot" then
-        local Levels = ArcadiaNexus.BS_Levels
-        local levelCount = (Levels and Levels.COUNT) or 1
-        local isFinal = gs.levelIndex >= levelCount
-        local CP = ArcadiaNexus.CampaignProgress
-        if S and CP then
-            local progress = S:LoadSlot(self.activeSlot) or {}
-            local Logic = ArcadiaNexus.BS_Logic
-            local grade = Logic and Logic:GradeCampaignStars(gs) or 1
-            local best, _, gained = CP.RecordLevel(progress, gs.levelIndex, grade, {
-                levelCount = levelCount,
-                maxStars = 3,
-            })
-            gs.lastStars = grade
-            gs.bestStars = best
-            if gained > 0 then S:AddStat("totalStars", gained) end
-        end
-        if isFinal then
-            self.state = "GAMEOVER"
-            -- Keep completed campaigns for map star display and replays.
-            self:_SaveCampaignCheckpoint(gs.levelIndex, gs.score, gs.difficulty)
-            if E._sessionId then
-                ArcadiaNexus.Lifecycle:EndGame(GAME_ID, E._sessionId)
-                E._sessionId = nil
-            end
-            self:_Notify("ShowFinalWin", gs, isNew)
-        else
-            self.state = "LEVELWIN"
-            self:_SaveCampaignCheckpoint((gs.levelIndex or 1) + 1, gs.score, gs.difficulty)
-            self:_Notify("ShowLevelWin", gs, isNew)
-        end
-    else
-        self.state = "GAMEOVER"
-        if E._sessionId then
-            ArcadiaNexus.Lifecycle:EndGame(GAME_ID, E._sessionId)
-            E._sessionId = nil
-        end
-        self:_Notify("ShowArcadeWin", gs, isNew)
-    end
+    local gs=self.gameState
+    self:_BookTerminal("WIN"); self:_PresentTerminal(gs)
+end
+function E:_FinishLoss(reason)
+    local gs=self.gameState
+    _timerGuard:Cancel()
+    self:_BookTerminal("LOSS",reason or "rules"); self:_PresentTerminal(gs)
 end
 
-function E:_FinishLoss()
-    local gs = self.gameState
-    if not gs then return end
-    PlayBS("lose")
-    local isNew = self:_EmitResult("LOSS")
-    self.state = "GAMEOVER"
-    local S = ArcadiaNexus.BS_Settings
-    if gs.mode == "shot" and S then
-        -- Level bleibt spielbar; kein Slot-Reset bei Niederlage.
-        self:_SaveCampaignCheckpoint(gs.levelIndex or 1, gs.score or 0, gs.difficulty)
-    end
-    if E._sessionId then
-        ArcadiaNexus.Lifecycle:EndGame(GAME_ID, E._sessionId)
-        E._sessionId = nil
-    end
-    self:_Notify("ShowLoss", gs, isNew)
+-- Timer deadlines use monotonic wall time, including nonterminal effects.
+-- Simulation retains bounded substeps; a stalled client cannot extend its timer.
+function E:_AdvanceClock()
+    local now=GetTime(); local elapsed=math.max(0,now-(self._clock or now)); self._clock=now
+    local gs=self.gameState
+    if gs and not gs.terminal then ArcadiaNexus.BS_Logic:TickTimers(gs,elapsed) end
+    if gs and gs.lost and not gs.terminal then self:_FinishLoss("timeout") end
+    return elapsed
 end
 
 function E:_BeginResolve(landEvent)
     local gs = self.gameState
     local Logic = ArcadiaNexus.BS_Logic
-    if not gs or not Logic then return end
+    if not gs or not Logic or gs.terminal or not gs.shot or not gs.shot.landed then return end
     self.state = "RESOLVE"
-    _gameLoop:Stop()
+    self:_AdvanceClock()
+    if self.gameState~=gs or gs.terminal then return end
 
     local result = Logic:ResolveLanding(gs)
+    if result.win or result.loss then self:_BookTerminal(result.win and "WIN" or "LOSS") end
+    if self.gameState~=gs then return end
     self:_Notify("OnShotLanded", gs, result, landEvent)
+    if self.gameState~=gs or self.state~="RESOLVE" then return end
 
     local steps = {}
     if result.placed then
@@ -250,21 +205,29 @@ function E:_BeginResolve(landEvent)
         steps[#steps + 1] = { delay = wait, fn = function() end }
     end
 
+    local sid=self._sessionId
     local function AfterResolve()
-        if not self.gameState then return end
+        if self.gameState~=gs or self._sessionId~=sid or self.state~="RESOLVE" then return end
+        self:_AdvanceClock()
+        if self.gameState~=gs or self.state~="RESOLVE" then return end
         self:_Notify("SyncBoard", self.gameState)
         self:_Notify("UpdateHUD", self.gameState)
         if result.win then
-            self:_FinishWin()
+            self:_PresentTerminal(gs)
         elseif result.loss or gs.lost then
-            self:_FinishLoss()
+            self:_PresentTerminal(gs)
         else
             self.state = "AIMING"
+            self:_SaveShotProgress()
             self:_StartLoop()
             self:_Notify("OnAiming", self.gameState)
         end
     end
 
+    for _,step in ipairs(steps) do
+        local fn=step.fn
+        step.fn=function() if self.gameState==gs and self._sessionId==sid and self.state=="RESOLVE" then fn() end end
+    end
     if #steps == 0 then
         AfterResolve()
     else
@@ -276,8 +239,11 @@ function E:_Tick(dt)
     local gs = self.gameState
     local Logic = ArcadiaNexus.BS_Logic
     if not gs or not Logic then return end
-    Logic:TickTimers(gs, dt)
+    local elapsed=self:_AdvanceClock()
+    if self.gameState~=gs or gs.terminal then return end
+    dt=math.min(elapsed,0.1)
     self:_Notify("OnFrame", gs, dt)
+    if self.gameState~=gs or gs.terminal then return end
 
     if gs.lost then
         self:_FinishLoss()
@@ -311,16 +277,8 @@ function E:StartGame(config)
     local difficulty = config.difficulty or (S and S:Get("difficulty")) or "easy"
     local slot = config.slot or (S and S:GetActiveSlot()) or 1
     local startMode = config.mode or "new"
-    if S then
-        S:Set("mode", mode)
-        S:Set("difficulty", difficulty)
-        S:SetActiveSlot(slot)
-    end
-    self.activeSlot = slot
-
-    _timerGuard:Cancel()
-    _gameLoop:Stop()
-
+    local previous=self.gameState
+    local writeNew
     local cfg = {
         mode       = mode,
         difficulty = difficulty,
@@ -333,58 +291,65 @@ function E:StartGame(config)
             cfg.mode = "shot"
             cfg.difficulty = saved.diff or difficulty
             cfg.levelIndex = saved.currentLevel or 1
-            cfg.score = saved.score or 0
+            cfg.score = 0
             local mid = saved.midGame
-            -- Levels 1–13 were regenerated for campaign version 2. A paused
-            -- snapshot from their former hand-authored layouts must not resume
-            -- into a board that no longer matches the selected level. Stars
-            -- and unlocks remain in the slot; only that stale in-progress run
-            -- is discarded.
-            if (saved.campaignVersion or 1) < S.CAMPAIGN_VERSION
-                and (cfg.levelIndex or 1) <= 13 then
-                mid = nil
-                saved.midGame = nil
-                saved.paused = false
-                saved.campaignVersion = S.CAMPAIGN_VERSION
-                S:SaveSlot(slot, saved)
+            if mid and not ArcadiaNexus.LocalResults:GetSerial(GAME_ID,mid.runId) then mid=nil end
+            if saved.layoutVersion~=S.CAMPAIGN_VERSION or mid and mid.snapshotVersion~=Logic.SNAPSHOT_VERSION then
+                mid=nil
             end
             if mid and Logic:GridHasBubbles(mid.grid) then
                 cfg.midGame = mid
             else
-                -- Leeres Win-Snapshot (älterer Bug): nächstes Level frisch laden.
-                if mid and not Logic:GridHasBubbles(mid.grid) then
-                    local Levels = ArcadiaNexus.BS_Levels
-                    local count = (Levels and Levels.COUNT) or 1
-                    if (cfg.levelIndex or 1) < count then
-                        cfg.levelIndex = (cfg.levelIndex or 1) + 1
-                    end
-                    cfg.midGame = nil
-                end
+                cfg.midGame=nil
             end
         end
     elseif mode == "shot" and startMode == "new" then
         cfg.levelIndex = config.levelIndex or 1
         if S then
-            local previous = config.preserveProgress and S:LoadSlot(slot)
-            S:SaveSlot(slot, S:PackProgress(nil, {
+            local kept = config.preserveProgress and S:LoadSlot(slot)
+            writeNew = S:PackProgress(nil, {
                 paused = false,
                 currentLevel = cfg.levelIndex,
                 score = 0,
                 diff = difficulty,
                 midGame = nil,
-                stars = previous and previous.stars or {},
+                stars = kept and kept.stars or {},
+                levelBests = kept and kept.levelBests,
                 campaignVersion = S.CAMPAIGN_VERSION,
-                clearedLevel = previous and previous.clearedLevel or 0,
-            }))
+                clearedLevel = kept and kept.clearedLevel or 0,
+            })
         end
     end
 
     local gs = Logic:NewState(cfg)
     if not gs then return end
 
-    E._sessionId = ArcadiaNexus.Lifecycle:RestartGame(GAME_ID, E._sessionId)
+    local sid = ArcadiaNexus.Lifecycle:ClaimRestart(GAME_ID, E._sessionId)
+    if not sid then return false end
+    if previous and not previous.terminal and previous.mode~="shot" then
+        self:_BookTerminal("LOSS","restart")
+        if self.gameState~=previous then return end
+    end
+    if S and writeNew then S:SaveSlot(slot, writeNew) end
+    if S then
+        S:FlushResults()
+        if self.gameState and self.gameState~=previous then return end
+        S:Set("mode", mode)
+        S:Set("difficulty", difficulty)
+        S:SetActiveSlot(slot)
+    end
+    self.activeSlot = slot
+    _timerGuard:Cancel()
+    _gameLoop:Stop()
+    E._sessionId = sid
+    gs.runId=gs.runId or ArcadiaNexus.LocalResults:NewRun(GAME_ID)
+    local receipt=ArcadiaNexus.LocalResults:GetReceipt(gs.runId)
+    if receipt then cfg.midGame=nil; gs=Logic:NewState(cfg); gs.runId=ArcadiaNexus.LocalResults:NewRun(GAME_ID) end
+    if S then S:Set("mode",gs.mode); S:Set("difficulty",gs.difficulty) end
     self.gameState = gs
-    self.state = "AIMING"
+    self.state = gs.shot and gs.shot.active and "FLYING" or "AIMING"
+    self._clock=GetTime()
+    self:_SaveShotProgress()
     PlayBS("start")
     self:_Notify("OnGameStarted", gs)
     self:_StartLoop()
@@ -425,6 +390,11 @@ function E:OpenCampaignMap(slot, focusLevel)
     local CP = ArcadiaNexus.CampaignProgress
     if not S or not Levels or not CP then return end
     slot = tonumber(slot) or self.activeSlot or 1
+    local previous=self.gameState
+    if previous and not previous.terminal then
+        if self.gameState.mode=="shot" then self:_SaveShotProgress() else self:_BookTerminal("LOSS","exit") end
+        if self.gameState~=previous then return end
+    end
     self:_StopLoop()
     if E._sessionId then
         ArcadiaNexus.Lifecycle:EndGame(GAME_ID, E._sessionId)
@@ -467,14 +437,18 @@ function E:Fire()
     local Logic = ArcadiaNexus.BS_Logic
     local R = ArcadiaNexus.BS_Renderer
     if not gs or not Logic then return end
+    self:_AdvanceClock()
+    if gs.terminal or self.gameState~=gs or self.state~="AIMING" then return end
     if gs.pendingPower == "joker" then
         self:_Notify("OnJokerHint", gs)
         return
     end
     local angle = (R and R.GetAimAngle and R:GetAimAngle()) or (-math.pi / 2)
+    gs.aimAngle=angle
     if not Logic:Fire(gs, angle, gs.pendingPower) then return end
     PlayBS("shoot")
     self.state = "FLYING"
+    self:_SaveShotProgress()
     self:_Notify("OnShotFired", gs)
 end
 
@@ -482,13 +456,38 @@ function E:UseJoker(color)
     if self.state ~= "AIMING" then return end
     local gs = self.gameState
     local Logic = ArcadiaNexus.BS_Logic
-    if gs and Logic and Logic:SetJokerColor(gs, color) then
+    self:_AdvanceClock()
+    if gs and not gs.terminal and Logic and Logic:SetJokerColor(gs, color) then
         self:_Notify("OnJokerUsed", gs, color)
         self:_Notify("UpdateHUD", gs)
     end
 end
 
-function E:SaveAndPause()
+function E:CycleJokerColor()
+    local gs=self.gameState
+    if self.state~="AIMING" or not gs or gs.pendingPower~="joker" then return false end
+    local colors=ArcadiaNexus.BS_Logic:ColorsOnBoard(gs)
+    self._jokerIndex=((self._jokerIndex or 0)%math.max(1,#colors))+1
+    gs.jokerChoice=colors[self._jokerIndex]
+    self:_Notify("OnJokerChoice",gs,gs.jokerChoice)
+    return true
+end
+function E:ConfirmJokerColor()
+    local gs=self.gameState
+    if not gs or not gs.jokerChoice then return end
+    self:UseJoker(gs.jokerChoice)
+end
+
+function E:SaveAndPause(reason)
+    if reason=="exit" and self.gameState and self.gameState.mode~="shot" then self:StopGame(); return end
+    local previous=self.gameState
+    self:_AdvanceClock()
+    if self.gameState~=previous then return end
+    local gs=self.gameState
+    if gs and gs.mode~="shot" and not gs.terminal then
+        self:_BookTerminal("LOSS","hide")
+        if self.gameState~=gs then return end
+    end
     if self.state == "AIMING" or self.state == "FLYING" or self.state == "RESOLVE" then
         self:_SaveShotProgress()
     end
@@ -502,9 +501,15 @@ function E:SaveAndPause()
     end
     self.state = "IDLE"
     self.gameState = nil
+    self:_Notify("EnterIdleState")
 end
 
 function E:StopGame()
+    local ended=self.gameState
+    self:_AdvanceClock()
+    if self.gameState~=ended then return end
+    if ended and ended.mode~="shot" and not ended.terminal then self:_BookTerminal("LOSS","exit") end
+    if self.gameState~=ended then return end
     if self.state == "AIMING" or self.state == "FLYING" or self.state == "RESOLVE" then
         self:_SaveShotProgress()
     end
@@ -518,4 +523,5 @@ function E:StopGame()
     local Sound = ArcadiaNexus.BS_Sound
     if Sound and Sound.Stop then Sound.Stop() end
     self:_Notify("EnterIdleState")
+    if ended and ended.reason=="exit" and ended.resultPayload then self:_Notify("ShowLoss",ended,false) end
 end

@@ -6,7 +6,7 @@
 --  Layout:
 --    - Border als eigener Frame (FrameLevel +10 über _fieldFrame)
 --    - Logo via UI.CreateGameLogo (nur IDLE, voll sichtbar)
---    - Controls-Leiste am BOTTOM (Blueprint Match-3):
+--    - Gemeinsame Controls-Leiste am BOTTOM:
 --      Dropdown Schwierigkeit + Spiel starten / Beenden + Zeitmodus-Checkbox
 --    - Alle Positionen/Größen in der CFG-Tabelle justierbar
 --
@@ -497,7 +497,7 @@ function R:_CreateMainFrame()
     f:SetScript("OnHide", function()
         ArcadiaNexus.GameSession:HandleRendererHide("AZEROTHJEWELS", ArcadiaNexus.AJ_Engine, function(E)
             if E.state ~= "IDLE" then
-                E:SaveAndPause()
+                return E:SaveAndPause()
             end
         end)
         if R.state == "MENU" or R.state == "MAP" then
@@ -1459,16 +1459,11 @@ function R:_CreateSlotMenu()
     })
 end
 
-local function StarGlyphs(n)
-    n = math.max(0, math.min(3, tonumber(n) or 0))
-    if n <= 0 then return "—" end
-    return string.rep("*", n)
-end
-
 function R:_CreateLevelMap()
     if self._campaignMap or not self._canvas then return end
     self._campaignMap = ArcadiaNexus.UI.CreateCampaignMap({
         parent = self._canvas,
+        getPage = ArcadiaNexus.AJ_CampaignMap.GetPage,
         getView = function()
             local S = ArcadiaNexus.AJ_Settings
             local count = ArcadiaNexus.AJ_Levels.COUNT
@@ -1484,13 +1479,14 @@ function R:_CreateLevelMap()
                 getLevel = function(level)
                     return {
                         unlocked = S:IsLevelUnlocked(save, level, count),
-                        text = StarGlyphs(S:GetStar(save, level)),
+                        stars = S:GetStar(save, level),
                     }
                 end,
             }
         end,
         onSelect = function(level) ArcadiaNexus.AJ_Engine:SelectMapLevel(level) end,
         onAction = function() ArcadiaNexus.AJ_Engine:SelectEndless() end,
+        onCancel = function() ArcadiaNexus.AJ_Engine:StopGame() end,
     })
 end
 
@@ -1520,7 +1516,7 @@ function R:ShowLevelMap(save, focusLevel)
 end
 
 -- ============================================================
--- CONTROLS (untere Leiste, Blueprint Match-3)
+-- CONTROLS (untere gemeinsame Leiste)
 -- Links: Schwierigkeits-Dropdown · Mitte: Spiel starten / Beenden ·
 -- Rechts: Zeitmodus-Checkbox. Dropdown/Checkbox gelten für
 -- NEUE Spielstände (Schwierigkeit ist pro Slot fixiert).
@@ -1735,7 +1731,16 @@ local function ResultLines(gs, totalScore)
     return lines
 end
 
---- Level 1–49 geschafft: Weiter / Level neu starten / Beenden
+local function CampaignButtons(L, onNext, nextLabel)
+    local E = ArcadiaNexus.AJ_Engine
+    return ArcadiaNexus.UI.ResultDialogButtons.Campaign(L, onNext,
+        function() E:OpenMap(E.activeSlot) end,
+        function() E:RestartLevel() end,
+        function() E:StopGame() end,
+        nextLabel)
+end
+
+--- Level 1–99 geschafft
 function R:ShowLevelWin(gs, totalScore)
     local L  = Loc()
     local UI = ArcadiaNexus.UI
@@ -1750,38 +1755,15 @@ function R:ShowLevelWin(gs, totalScore)
         result     = "WIN",
         lines      = ResultLines(gs, totalScore),
         L          = L,
-        buttons    = UI.ResultDialogButtons.Level(L,
-            function() ArcadiaNexus.AJ_Engine:ContinueToNextLevel() end,
-            function() ArcadiaNexus.AJ_Engine:RestartLevel() end,
-            function() ArcadiaNexus.AJ_Engine:StopGame() end
-        ),
+        buttons    = CampaignButtons(L, function() ArcadiaNexus.AJ_Engine:ContinueToNextLevel() end),
     })
 end
 
---- Level 50 geschafft: Neu / Beenden
+--- Letztes Kampagnenlevel: Endlos ersetzt Nächstes Level
 function R:ShowFinalWin(gs, totalScore)
     local L  = Loc()
     local UI = ArcadiaNexus.UI
     self.state = "WON"
-
-    local buttons = UI.ResultDialogButtons.Arcade(L,
-        function() ArcadiaNexus.AJ_Engine:RestartLevel() end,
-        function() ArcadiaNexus.AJ_Engine:StopGame() end
-    )
-    local Levels = ArcadiaNexus.AJ_Levels
-    if Levels and gs.level >= Levels.COUNT then
-        table.insert(buttons, 1, {
-            label = L["btn_endless"] or "Endlos",
-            onClick = function()
-                ArcadiaNexus.AJ_Engine:StartEndless({ skipMid = true, resetRun = true })
-            end,
-        })
-    elseif Levels and gs.level < Levels.COUNT then
-        table.insert(buttons, 1, {
-            label = L["btn_continue_campaign"] or L["btn_next_level"],
-            onClick = function() ArcadiaNexus.AJ_Engine:ContinueCampaign() end,
-        })
-    end
 
     UI.ShowArcadeResult(self._fieldFrame, {
         title      = L["result_final_win_title"],
@@ -1792,11 +1774,13 @@ function R:ShowFinalWin(gs, totalScore)
         result     = "WIN",
         lines      = ResultLines(gs, totalScore),
         L          = L,
-        buttons    = buttons,
+        buttons    = CampaignButtons(L, function()
+            ArcadiaNexus.AJ_Engine:StartEndless({ skipMid = true, resetRun = true })
+        end, L["btn_endless"] or "Endlos"),
     })
 end
 
---- Endlos-Welle geschafft: nächste Welle / Welle neu / Beenden
+--- Endlos-Welle geschafft
 function R:ShowEndlessWaveWin(gs, totalScore)
     local L  = Loc()
     local UI = ArcadiaNexus.UI
@@ -1811,15 +1795,11 @@ function R:ShowEndlessWaveWin(gs, totalScore)
         result     = "WIN",
         lines      = ResultLines(gs, totalScore),
         L          = L,
-        buttons    = UI.ResultDialogButtons.Level(L,
-            function() ArcadiaNexus.AJ_Engine:ContinueToNextLevel() end,
-            function() ArcadiaNexus.AJ_Engine:RestartLevel() end,
-            function() ArcadiaNexus.AJ_Engine:StopGame() end
-        ),
+        buttons    = CampaignButtons(L, function() ArcadiaNexus.AJ_Engine:ContinueToNextLevel() end),
     })
 end
 
---- Game Over: Retry / Exit (Standard-Arcade-Flow)
+--- Niederlage: Levelauswahl, Level wiederholen, Beenden
 function R:ShowGameOver(gs)
     local L  = Loc()
     local UI = ArcadiaNexus.UI
@@ -1833,12 +1813,7 @@ function R:ShowGameOver(gs)
         score      = gs.score,
         lines      = ResultLines(gs, (E and E.totalScore or 0)),
         L          = L,
-        onRetry    = function()
-            ArcadiaNexus.AJ_Engine:RestartLevel()
-        end,
-        onExit     = function()
-            ArcadiaNexus.AJ_Engine:StopGame()
-        end,
+        buttons    = CampaignButtons(L, nil),
     }
     if gs.timedOut then
         opts.title      = L["state_timeout"]

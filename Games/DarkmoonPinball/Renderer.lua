@@ -85,6 +85,7 @@ function R:Init()
     self:_CreateHUD()
     self:_CreateKeyFrame()
     self:_CreateControls()
+    self:_CreateSlotMenu()
     self:_CreatePauseOverlay()
     self:_CreateFlash()
     self:_CreateFx()
@@ -108,9 +109,11 @@ function R:_CreateMainFrame()
         if ArcadiaNexus.MatchShell and ArcadiaNexus.MatchShell._reparenting then return end
         ArcadiaNexus.GameSession:HandleRendererHide(GAME_ID, ArcadiaNexus.DMP_Engine, function(E)
             if E.state ~= "IDLE" then
-                E:StopGame()
+                E:SaveAndPause()
             end
         end)
+        local E=ArcadiaNexus.DMP_Engine
+        if E and E.state=="IDLE" then R:EnterIdleState() end
     end)
 end
 
@@ -252,6 +255,33 @@ function R:_CreateHUD()
         shown = false,
         font = "GameFontNormalSmall",
     })
+    self._statusBox,self._statusFS=UI.CreateHudStatBox(canvas,{w=148,h=50,point="CENTER",relativePoint="CENTER",
+        x=CFG.hud_right_x,y=25,alpha=.75,shown=false,font="GameFontNormalSmall"})
+    local function tooltip(box,key)
+        if not box then return end
+        box:EnableMouse(true)
+        box:SetScript("OnEnter",function()
+            GameTooltip:SetOwner(box,"ANCHOR_RIGHT"); GameTooltip:SetText(Loc()[key],1,.82,.3,1,true); GameTooltip:Show()
+        end)
+        box:SetScript("OnLeave",function() GameTooltip:Hide() end)
+    end
+    tooltip(self._comboBox,"guide_5"); tooltip(self._ballsBox,"guide_4")
+    tooltip(self._statusBox,"guide_6")
+    if self._missionBox then
+        self._missionBox:EnableMouse(true)
+        self._missionBox:SetScript("OnEnter",function()
+            local gs=ArcadiaNexus.DMP_Engine.gameState; if not gs then return end
+            local L=Loc(); GameTooltip:SetOwner(self._missionBox,"ANCHOR_RIGHT")
+            GameTooltip:SetText(L.lbl_mission,1,.82,.3)
+            for _,m in ipairs(gs.def.missionDefinitions or {}) do
+                GameTooltip:AddLine((L["dmp_"..m.id] or m.id)..": "..m.need.." / "..m.time.."s",1,1,1,true)
+                GameTooltip:AddLine((L["dmp_power_"..(m.reward or "")] or m.reward or "").." / "..FormatScore(m.score or 0),.8,.8,.8,true)
+            end
+            GameTooltip:Show()
+        end)
+        self._missionBox:SetScript("OnLeave",function() GameTooltip:Hide() end)
+    end
+
 end
 
 function R:_CreateKeyFrame()
@@ -260,27 +290,19 @@ function R:_CreateKeyFrame()
     local kf = CreateFrame("Frame", nil, field)
     kf:SetAllPoints(field)
     kf:EnableKeyboard(false)
-    kf:SetPropagateKeyboardInput(false)
-    kf:SetScript("OnKeyDown", function(_, key)
-        local E = ArcadiaNexus.DMP_Engine
-        if not E then return end
-        if key == "A" or key == "LEFT" then E:HandleKey("LEFT_DOWN")
-        elseif key == "D" or key == "RIGHT" then E:HandleKey("RIGHT_DOWN")
-        elseif key == "SPACE" then E:HandleKey("LAUNCH")
-        elseif key == "Q" then E:HandleKey("NUDGE_LEFT")
-        elseif key == "E" then E:HandleKey("NUDGE_RIGHT")
-        elseif key == "W" then E:HandleKey("NUDGE_UP")
-        elseif key == "P" then E:HandleKey("PAUSE")
-        elseif key == "F8" then E:HandleKey("DEBUG")
-        end
+    kf:SetPropagateKeyboardInput(true)
+    local keys={A="LEFT_DOWN",LEFT="LEFT_DOWN",D="RIGHT_DOWN",RIGHT="RIGHT_DOWN",SPACE="LAUNCH",
+        Q="NUDGE_LEFT",E="NUDGE_RIGHT",W="NUDGE_UP",P="PAUSE",F8="DEBUG",ESCAPE="EXIT"}
+    kf:SetScript("OnKeyDown",function(frame,key)
+        local E=ArcadiaNexus.DMP_Engine
+        local command=keys[key]
+        if key=="F8" and not (ArcadiaNexus.IsDevMode and ArcadiaNexus.IsDevMode()) then command=nil end
+        local focused=GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+        frame:SetPropagateKeyboardInput(not (command and not focused and E and (E.state=="PLAYING" or E.state=="PAUSED")))
+        if command and E then E:HandleKey(command,key) end
     end)
-    kf:SetScript("OnKeyUp", function(_, key)
-        local E = ArcadiaNexus.DMP_Engine
-        if not E then return end
-        if key == "A" or key == "LEFT" then E:HandleKey("LEFT_UP")
-        elseif key == "D" or key == "RIGHT" then E:HandleKey("RIGHT_UP")
-        elseif key == "SPACE" then E:HandleKey("LAUNCH_UP")
-        end
+    kf:SetScript("OnKeyUp",function(_,key)
+        local E=ArcadiaNexus.DMP_Engine; if keys[key] and E then E:HandleKey("RELEASE",key) end
     end)
     self._keyFrame = kf
 end
@@ -314,16 +336,14 @@ function R:_CreateControls()
         tableOpts,
         function()
             local S = ArcadiaNexus.DMP_Settings
-            return (S and S:Get("tableId")) or "darkmoon_midway"
+            local E=ArcadiaNexus.DMP_Engine
+            return E and E.gameState and (E.state=="PLAYING" or E.state=="PAUSED") and E.gameState.tableId
+                or (S and S:Get("tableId")) or "darkmoon_midway"
         end,
         function(key)
             local S = ArcadiaNexus.DMP_Settings
             if S then S:Set("tableId", key) end
-            local Logic = ArcadiaNexus.DMP_Logic
-            local def = Logic and Logic.GetTable and Logic:GetTable(key)
-            if R.state == "PLAYING" or R.state == "GAMEOVER" then
-                R:_ApplyPlayfield(def and def.theme)
-            end
+
         end
     )
     self._tableDdAnchor = ddAnchor
@@ -336,7 +356,7 @@ function R:_CreateControls()
         if R.state == "PLAYING" or (E.state == "PLAYING" or E.state == "PAUSED") then
             E:StopGame()
         elseif R.state == "IDLE" or R.state == "GAMEOVER" then
-            E:StartGame()
+            R:EnterSlotMenu()
         end
     end)
     self._startBtn = startBtn
@@ -463,6 +483,9 @@ function R:EnterIdleState()
     end
     if self._pauseBtn then self._pauseBtn:Hide() end
     if self._tableDdAnchor then self._tableDdAnchor:Show() end
+    self:_SyncTableControl()
+    if self._slotMenu then self._slotMenu:Hide() end
+    if self._statusBox then self._statusBox:Hide() end
     if self._logoTex then self._logoTex:Show() end
     self:_HideEye()
     self._trail = {}
@@ -484,6 +507,7 @@ function R:OnGameStarted(gs)
     self.state = "PLAYING"
     local L = Loc()
     ArcadiaNexus.UI.HideResultDialog(self._fieldFrame)
+    if self._slotMenu then self._slotMenu:Hide() end
     if self._logoTex then self._logoTex:Hide() end
     self:_SetHudShown(true)
     self:_SetTableArtShown(true)
@@ -499,7 +523,8 @@ function R:OnGameStarted(gs)
         self._pauseBtn:SetLabel(L.btn_pause or "Pause")
         self._pauseBtn:Show()
     end
-    if self._tableDdAnchor then self._tableDdAnchor:Hide() end
+    if self._tableDdAnchor then self._tableDdAnchor:Show() end
+    self:_SyncTableControl()
     if self._pauseOv then self._pauseOv:Hide() end
     if self._tiltOv then self._tiltOv:Hide() end
     -- A result-dialog retry starts a fresh session before the old flash timer
@@ -516,6 +541,7 @@ function R:OnGameStarted(gs)
 end
 
 function R:ShowPause()
+    self.state="PAUSED"
     local L = Loc()
     if self._pauseFS then self._pauseFS:SetText(L.state_paused or "Pause") end
     if self._pauseOv then self._pauseOv:Show() end
@@ -536,6 +562,7 @@ function R:OnTilt(gs)
 end
 
 function R:HidePause()
+    self.state="PLAYING"
     local L = Loc()
     if self._pauseOv then self._pauseOv:Hide() end
     if self._pauseBtn then self._pauseBtn:SetLabel(L.btn_pause or "Pause") end
@@ -554,13 +581,19 @@ function R:ShowGameOver(gs)
     local L = Loc()
     local UI = ArcadiaNexus.UI
     if not UI or not UI.ShowArcadeResult or not self._fieldFrame then return end
-    local isNew = gs and gs.score and gs.highScore and gs.score >= gs.highScore and gs.score > 0
+    local data=gs.resultData or {}
+    local E=ArcadiaNexus.DMP_Engine
+    self:_SyncTableControl()
     UI.ShowArcadeResult(self._fieldFrame, {
-        gameId       = GAME_ID,
+        gameId       = not gs.devRun and GAME_ID or nil,
+        hideHighscore=gs.devRun==true,
+        subtitle=gs.devRun and L.dev_run or nil,
+        xp=data.awardedXP or 0, gold=data.awardedGold or 0,
+        isCurrent=function() return E.gameState==gs and E.state=="GAMEOVER" end,
         difficulty   = gs and gs.tableId or "darkmoon_midway",
         result       = "LOSS",
         score        = gs and gs.score or 0,
-        newHighscore = isNew,
+        newHighscore = data.newHighscore==true,
         title        = L.state_gameover,
         L            = L,
         lines = {
@@ -571,7 +604,7 @@ function R:ShowGameOver(gs)
         },
         onRetry = function()
             local E = ArcadiaNexus.DMP_Engine
-            if E then E:StartGame() end
+            if E then E:StartGame({mode="new",slot=E.activeSlot,tableId=gs.tableId}) end
         end,
         onExit = function()
             local E = ArcadiaNexus.DMP_Engine
@@ -581,6 +614,7 @@ function R:ShowGameOver(gs)
 end
 
 function R:UpdateHUD(gs)
+    if not gs then return end
     local L = Loc()
     local hud = (gs and gs.def and gs.def.hud) or {}
     if self._scoreBox then self._scoreBox:SetShown(hud.score ~= false) end
@@ -591,13 +625,24 @@ function R:UpdateHUD(gs)
         self._scoreFS:SetTextColor(1.0, 0.84, 0.36)
     end
     if self._ballsFS then
-        self._ballsFS:SetText((L.lbl_balls or "Balls") .. ": " .. tostring(gs and gs.ballsRemaining or 0))
+        self._ballsFS:SetText(L.lbl_budget..": "..tostring(gs.ballsRemaining).." / "..L.lbl_active..": "..tostring(ArcadiaNexus.DMP_Logic.LiveCount(gs)))
         self._ballsFS:SetTextColor(0.93, 0.86, 0.70)
     end
     if self._comboFS then
         local hot = gs and ((gs.combo or 0) >= 3 or gs.multiball)
-        self._comboFS:SetText((L.lbl_combo or "Combo") .. ": x" .. tostring(gs and gs.combo or 0))
+        self._comboFS:SetText((L.lbl_combo or "Combo")..": "..tostring(gs.combo or 0).." / x"..ArcadiaNexus.DMP_Logic:ScoreMultiplier(gs))
         self._comboFS:SetTextColor(hot and 0.88 or 0.72, hot and 0.62 or 0.54, 1.0)
+    end
+    if self._statusFS then
+        local warn=gs.tilted and L.state_tilt or gs.tiltWarn>0 and (L.lbl_tilt.." "..gs.tiltWarn) or ""
+        if gs.devRun then warn=L.dev_run..(warn~="" and " / "..warn or "") end
+        local save=gs.ballSaveT>0 and L.lbl_ball_save.." "..math.ceil(gs.ballSaveT).."s" or gs.outlaneSaveT>0 and L.lbl_outlane_save.." "..math.ceil(gs.outlaneSaveT).."s" or ""
+        if gs.shield then save=save..(save~="" and " / " or "")..L.dmp_power_shield end
+        local sides=(gs.kickbackArmed.left and L.side_left or "")..(gs.kickbackArmed.right and L.side_right or "")
+        local kick=sides~="" and L.lbl_kickback.." "..sides or ""
+        self._statusFS:SetText(warn.."\n"..save.."\n"..kick)
+        self._statusFS:SetTextColor(1,gs.tiltWarn>0 and .4 or .82,.3)
+        self._statusBox:Show()
     end
     if self._missionFS then
         local text = ""
@@ -1393,3 +1438,36 @@ ArcadiaNexus.RegisterGame({
     logo      = "Interface\\AddOns\\ArcadiaNexus\\Games\\DarkmoonPinball\\assets\\logo\\logo_dp",
     xp        = 10,
 })
+
+function R:_SyncTableControl()
+    local E=ArcadiaNexus.DMP_Engine
+    if self._tableDropdown then
+        self._tableDropdown:RefreshDisplay()
+        self._tableDropdown:SetEnabled(not E or E.state~="PLAYING" and E.state~="PAUSED")
+    end
+end
+function R:_CreateSlotMenu()
+    local A=ArcadiaNexus; local S=A.DMP_Settings; local L=Loc()
+    self._slotMenu=A.UI.CreateSaveSlotMenu({parent=self._canvas,maxSlots=3,L=L,title=L.menu_title,
+        loadSlot=function(slot) return S:LoadSlot(slot) end,deleteSlot=function(slot) S:DeleteSlot(slot) end,
+        formatInfo=function(save)
+            local def=A.DMP_TableRegistry._byId[save.tableId]
+            return (def and L[def.labelKey] or save.tableId or "?").." / "..FormatScore(save.score or 0)
+        end,
+        isPaused=function(save) return type(save)=="table" end,
+        onNewGame=function(slot) A.DMP_Engine:StartGame({mode="new",slot=slot}) end,
+        onContinue=function(slot) A.DMP_Engine:StartGame({mode="continue",slot=slot}) end,
+        onCancel=function() R:EnterIdleState() end})
+end
+function R:EnterSlotMenu()
+    self:EnterIdleState(); self.state="MENU"
+    if self._logoTex then self._logoTex:Hide() end
+    if self._startBtn then self._startBtn:Hide() end
+    if self._tableDdAnchor then self._tableDdAnchor:Hide() end
+    if self._slotMenu then self._slotMenu:Show() end
+end
+function R:ShowInvalidSave()
+    local L=Loc(); local UI=ArcadiaNexus.UI
+    UI.ShowChoicePopup({parent=self.frame,title=L.invalid_save,body=L.invalid_save_body,
+        buttons={{label=L.btn_continue,onClick=function() UI.HideChoicePopup(self.frame) end}}})
+end

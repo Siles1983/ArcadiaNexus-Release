@@ -54,23 +54,26 @@ local function PlayAODSound(key, soundPath)
     end
 end
 
-local function CheckEndlessWaveAchievements(gs)
-    local AM = ArcadiaNexus.AchievementManager
-    if not gs or not AM or not AM.HandleGameResult then return end
-    local Settings = ArcadiaNexus.AOD_Settings
-    pcall(AM.HandleGameResult, AM, {
-        gameId      = "ARGUSORBDEFENSE",
-        difficulty  = gs.difficulty,
-        score       = gs.score or 0,
-        result      = "STATS",
-        recordPlayed = false,
-        stats       = {
-            waveReached   = gs.wave or 1,
-            meteorsKilled = Settings and Settings:GetStat("totalMeteors") or 0,
-            huntersKilled = Settings and Settings:GetStat("totalHunters") or 0,
-            usedBomb      = gs.usedBomb or false,
-        },
-    })
+function E:_Book(result)
+    local gs=self.gameState; if not gs then return end
+    local S=ArcadiaNexus.AOD_Settings
+    local data={gameId="ARGUSORBDEFENSE",difficulty=gs.gameMode.."_"..gs.difficulty,
+        aiDifficulty=gs.difficulty,gameMode=gs.gameMode,ruleVersion=2,runId=gs.runId,
+        score=gs.score,result=result or "STATS",closed=result=="WIN" or result=="LOSS",
+        stats={meteorsKilled=gs.meteorsKilled,huntersKilled=gs.huntersKilled,
+            clearedWave=gs.clearedWave,clearedLevel=gs.clearedLevel,stagesCleared=gs.stagesCleared,
+            hardLevelsCleared=gs.hardLevelsCleared,bombLevelsCleared=gs.bombLevelsCleared}}
+    S:SavePending(data)
+    ArcadiaNexus.Engine:Emit("GAME_RESULT",data)
+    if data.processed then S:ClearPending(gs.runId) end
+    if self.gameState==gs then self.resultData=data end
+end
+function E:RetryPending()
+    local S=ArcadiaNexus.AOD_Settings
+    for id,data in pairs(ArcadiaNexus.AOD_Logic:Copy(S:GetPending())) do
+        ArcadiaNexus.Engine:Emit("GAME_RESULT",data)
+        if data.processed then S:ClearPending(id) end
+    end
 end
 
 -- ── Loop-Frame ────────────────────────────────────────────────
@@ -91,9 +94,24 @@ function E:_Tick(dt)
     local Logic    = ArcadiaNexus.AOD_Logic
     local Renderer = ArcadiaNexus.AOD_Renderer
     local gs       = self.gameState
-    if not Logic or not Renderer or not gs then return end
+    if self.state~="PLAYING" or not Logic or not Renderer or not gs then return end
 
+    if GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() then self:_NeutralizeInput() end
     local actions = Logic:Tick(gs, dt)
+    local sid=self._sessionId
+    local stageClear=false
+    for _,act in ipairs(actions) do if act.type=="wave_clear" then stageClear=true end end
+    -- Freeze before callbacks and synchronous progression events.
+    if gs.gameOver or gs.win then self.state="GAMEOVER"; self:_StopLoop(); self:_NeutralizeInput()
+    elseif stageClear and gs.gameMode=="levels" then self.state="WAVE_CLEAR"; self:_StopLoop(); self:_NeutralizeInput() end
+    local old=ArcadiaNexus.LocalResults:GetReceipt(gs.runId)
+    if gs.gameOver or gs.win or stageClear or not old
+        or gs.meteorsKilled~=(old.personalStats and old.personalStats.meteorsKilled)
+        or gs.huntersKilled~=(old.personalStats and old.personalStats.huntersKilled) then
+        if gs.gameOver or gs.win then ArcadiaNexus.AOD_Settings:ClearProgress(self.activeSlot) end
+        self:_Book(gs.win and "WIN" or gs.gameOver and "LOSS" or "STATS")
+    end
+    if self.gameState~=gs or self._sessionId~=sid then return end
 
     -- Engine-Sound: Ticker läuft solange Spieler oder Hunter thrust
     -- "thrusting" = echter Schub (keyThrust), nicht nur Rotation
@@ -107,7 +125,7 @@ function E:_Tick(dt)
             if h.thrusting then anyThrusting = true; break end
         end
     end
-    if anyThrusting then
+    if anyThrusting and self.state=="PLAYING" then
         if not E._engineSoundOn then
             -- Sofort einmal spielen, dann alle 0.1s wiederholen
             PlayAODSound("soundOnEngine", SND_ENGINE)
@@ -130,7 +148,9 @@ function E:_Tick(dt)
 
     -- Renderer immer aktualisieren (bevor Overlays erscheinen)
     Renderer:UpdatePhysics(gs)
+    if self.gameState~=gs or self._sessionId~=sid then return end
     Renderer:UpdateHUD(gs)
+    if self.gameState~=gs or self._sessionId~=sid then return end
 
     -- Nachgelagerte Auswertung der Actions
     local doGameOver = false
@@ -138,6 +158,7 @@ function E:_Tick(dt)
     local doWin = false
 
     for _, act in ipairs(actions) do
+        if self.gameState~=gs or self._sessionId~=sid then return end
         if act.type == "shoot" then
             PlayAODSound("soundOnShoot", SND_SHOOT)
             Renderer:OnShoot(gs)
@@ -192,12 +213,10 @@ function E:_Tick(dt)
             Renderer:UpdateHUD(gs)
 
         elseif act.type == "stat_meteor" then
-            local Settings = ArcadiaNexus.AOD_Settings
-            if Settings then Settings:IncrementStat("totalMeteors") end
+            -- Monotone run totals are committed by LocalResults.
 
         elseif act.type == "stat_hunter" then
-            local Settings = ArcadiaNexus.AOD_Settings
-            if Settings then Settings:IncrementStat("totalHunters") end
+            -- Monotone run totals are committed by LocalResults.
 
         elseif act.type == "wave_started" then
             Renderer:ShowWaveBanner(self.gameState)
@@ -209,7 +228,7 @@ function E:_Tick(dt)
                 doWaveClear = true
             else
                 -- Endless: Fortschritt sofort auswerten und kurz im HUD anzeigen.
-                CheckEndlessWaveAchievements(self.gameState)
+                -- Stage progress was committed before presentation.
                 local Settings = ArcadiaNexus.AOD_Settings
                 if Settings and Settings:Get("screenFlash") then
                     Renderer:FlashScreen(0.3, 0.6, 1, 0.2)
@@ -237,6 +256,7 @@ end
 -- ── Key-Input ─────────────────────────────────────────────────
 function E:HandleKey(action, pressed)
     local gs = self.gameState
+    if action~="PAUSE" and self.state~="PLAYING" then return end
     if action == "ROTATE_LEFT"  then if gs then gs.keyLeft   = pressed end
     elseif action == "ROTATE_RIGHT" then if gs then gs.keyRight  = pressed end
     elseif action == "THRUST"       then if gs then gs.keyThrust = pressed end
@@ -251,67 +271,58 @@ function E:HandleKey(action, pressed)
 end
 
 -- ── StartGame ────────────────────────────────────────────────
-function E:StartGame(difficulty, gameMode, resumeSaved)
-    local Logic    = ArcadiaNexus.AOD_Logic
-    local Renderer = ArcadiaNexus.AOD_Renderer
-    local Settings = ArcadiaNexus.AOD_Settings
-    if not Logic or not Renderer then return end
-
-    local config = difficulty
-    if type(difficulty) ~= "table" then
-        config = {
-            slot       = Settings and Settings:GetActiveSlot() or 1,
-            mode       = resumeSaved and "continue" or "new",
-            difficulty = difficulty,
-            gameMode   = gameMode,
-        }
+function E:StartGame(difficulty,gameMode,resumeSaved)
+    local L,R,S=ArcadiaNexus.AOD_Logic,ArcadiaNexus.AOD_Renderer,ArcadiaNexus.AOD_Settings
+    if not L or not R or not S then return end
+    local config=type(difficulty)=="table" and difficulty or {difficulty=difficulty,gameMode=gameMode,mode=resumeSaved and "continue" or "new"}
+    local slot=tonumber(config.slot or S:GetActiveSlot())
+    if not slot or slot%1~=0 or slot<1 or slot>S.MAX_SLOTS then return end
+    local saved=config.mode=="continue" and S:LoadProgress(slot) or nil
+    if config.mode=="continue" and not saved then return end
+    if saved and saved.version and saved.version~=2 then return end
+    local diff=saved and (saved.difficulty or saved.diff) or config.difficulty or S:Get("difficulty")
+    local mode=saved and (saved.gameMode or saved.mode) or config.gameMode or S:Get("gameMode")
+    if not L.DIFFICULTY_DEFS[diff] or mode~="levels" and mode~="endless" then return end
+    local gs=L:NewState(diff,mode,saved)
+    if not gs then return end
+    if type(gs.level)~="number" or gs.level%1~=0 or gs.level<1 or gs.level>30
+        or type(gs.lives)~="number" or gs.lives%1~=0 or gs.lives<1 or gs.lives>L.MAX_LIVES then return end
+    if saved and saved.version==2 then
+        local receipt=ArcadiaNexus.LocalResults:GetReceipt(gs.runId)
+        if not ArcadiaNexus.LocalResults:GetSerial("ARGUSORBDEFENSE",gs.runId) or receipt and receipt.closed then return end
     end
-    local slot = config.slot or (Settings and Settings:GetActiveSlot()) or 1
-    if Settings and (slot < 1 or slot > Settings.MAX_SLOTS) then return end
-    local startMode = config.mode or "new"
-    if Settings then Settings:SetActiveSlot(slot) end
-    self.activeSlot = slot
-
-    E._sessionId = ArcadiaNexus.Lifecycle:RestartGame("ARGUSORBDEFENSE", E._sessionId)
-
-    self:_StopLoop()
-    self:_ClearKeys()
-
-    local diff    = config.difficulty or (Settings and Settings:Get("difficulty")) or "normal"
-    local mode    = config.gameMode   or (Settings and Settings:Get("gameMode"))   or "endless"
-
-    local savedProgress = nil
-    if startMode == "continue" and Settings then
-        savedProgress = Settings:LoadProgress(slot)
-        if savedProgress then
-            diff = savedProgress.diff or diff
-            mode = savedProgress.mode or mode
-        end
-    elseif startMode == "new" and Settings then
-        Settings:ClearProgress(slot)
-        Settings:ResetSlot(slot)
-        local save = Settings:LoadSlot(slot)
-        if save then save.mode = mode; save.diff = diff end
+    self:RetryPending()
+    if saved and saved.version==2 then
+        local receipt=ArcadiaNexus.LocalResults:GetReceipt(gs.runId)
+        if receipt and receipt.closed then return end
     end
-
-    local gs = Logic:NewState(diff, mode, savedProgress)
-
-    self.gameState = gs
-    E.state = "PLAYING"
-
-    Logic:SpawnWave(gs)
-    Renderer:OnGameStarted(gs)
-    self:_StartLoop()
+    if self.gameState and self.state~="IDLE" and self.state~="GAMEOVER" then S:SaveProgress(self.gameState,self.activeSlot,self.state) end
+    local sid=ArcadiaNexus.Lifecycle:ClaimRestart("ARGUSORBDEFENSE",self._sessionId)
+    if not sid then return false end
+    self:_StopLoop(); self:_NeutralizeInput()
+    self._sessionId=sid
+    self.activeSlot=slot; S:SetActiveSlot(slot)
+    if not saved or saved.version~=2 then
+        gs.runId=ArcadiaNexus.LocalResults:NewRun("ARGUSORBDEFENSE")
+        L:SpawnWave(gs)
+    end
+    self.gameState=gs; self.state=saved and saved.version==2 and saved.phase or "PLAYING"
+    if config.mode~="continue" then S:ClearProgress(slot) end
+    R:OnGameStarted(gs); R:UpdatePhysics(gs)
+    if self.state=="WAVE_CLEAR" then R:ShowWaveClear(gs)
+    elseif self.state=="PAUSED" then R:ShowPause()
+    else self:_StartLoop() end
 end
 
 -- ── StopGame ─────────────────────────────────────────────────
 function E:StopGame()
+    if self.gameState and self.state~="IDLE" and self.state~="GAMEOVER" then self:SaveAndPause() end
     if E._sessionId then
         ArcadiaNexus.Lifecycle:EndGame("ARGUSORBDEFENSE", E._sessionId)
         E._sessionId = nil
     end
     self:_StopLoop()
-    self:_ClearKeys()
+    self:_NeutralizeInput()
     E.state               = "IDLE"
     E._wasThrusting       = false
     E._hunterWasThrusting = {}
@@ -326,13 +337,14 @@ function E:Pause()
     if E.state ~= "PLAYING" then return end
     E.state = "PAUSED"
     self:_StopLoop()
-    self:_ClearKeys()
+    self:_NeutralizeInput()
     local R = ArcadiaNexus.AOD_Renderer
     if R then R:ShowPause() end
 end
 
 function E:Resume()
     if E.state ~= "PAUSED" then return end
+    self:_NeutralizeInput()
     E.state = "PLAYING"
     local R = ArcadiaNexus.AOD_Renderer
     if R then R:HidePause() end
@@ -346,11 +358,11 @@ function E:SaveAndPause()
     end
     local gs       = self.gameState
     local Settings = ArcadiaNexus.AOD_Settings
-    if gs and Settings then
-        Settings:SaveProgress(gs.level or gs.wave or 1, gs.score, gs.lives, gs.difficulty, gs.gameMode)
+    if gs and Settings and (self.state=="PLAYING" or self.state=="PAUSED" or self.state=="WAVE_CLEAR") then
+        Settings:SaveProgress(gs,self.activeSlot,self.state)
     end
     self:_StopLoop()
-    self:_ClearKeys()
+    self:_NeutralizeInput()
     if E._sessionId then
         ArcadiaNexus.Lifecycle:EndGame("ARGUSORBDEFENSE", E._sessionId)
         E._sessionId = nil
@@ -374,32 +386,17 @@ function E:_HandleWaveClear()
         Renderer:FlashScreen(0.4, 0.6, 1, 0.25)  -- blauer Flash
     end
 
-    if Settings then
-        Settings:IncrementStat("wins")
-    end
-
-    ArcadiaNexus.Engine:Emit("GAME_RESULT", {
-        gameId     = "ARGUSORBDEFENSE",
-        difficulty = gs.difficulty,
-        score      = gs.score,
-        result     = "WIN",
-        stats      = {
-            levelReached  = gs.level,
-            meteorsKilled = Settings and Settings:GetStat("totalMeteors") or 0,
-            huntersKilled = Settings and Settings:GetStat("totalHunters") or 0,
-            usedBomb      = gs.usedBomb or false,
-        },
-    })
-
     if Renderer then Renderer:ShowWaveClear(gs) end
 end
 
 -- ── Nächstes Level (Level-Modus, aufgerufen vom Renderer) ────
-function E:ContinueToNextLevel()
+function E:ContinueToNextLevel(expectedStageId)
     local Logic    = ArcadiaNexus.AOD_Logic
     local Renderer = ArcadiaNexus.AOD_Renderer
     local gs       = self.gameState
-    if not Logic or not Renderer or not gs then return end
+    if self.state~="WAVE_CLEAR" or not Logic or not Renderer or not gs or not gs.allClear or gs.gameMode~="levels" or gs.level>=30 then return end
+    if expectedStageId and expectedStageId~=gs.stageId then return end
+    self:_NeutralizeInput()
 
     gs.level    = gs.level + 1
     gs.allClear = false
@@ -422,24 +419,6 @@ function E:_HandleWin()
     if not gs then return end
 
     PlayAODSound("soundOnWin", SND_WIN)
-    if Settings then
-        Settings:IncrementStat("wins")
-        Settings:ClearProgress()
-    end
-
-    ArcadiaNexus.Engine:Emit("GAME_RESULT", {
-        gameId     = "ARGUSORBDEFENSE",
-        difficulty = gs.difficulty,
-        score      = gs.score,
-        result     = "WIN",
-        stats      = {
-            levelReached  = gs.level,
-            meteorsKilled = Settings and Settings:GetStat("totalMeteors") or 0,
-            huntersKilled = Settings and Settings:GetStat("totalHunters") or 0,
-            usedBomb      = gs.usedBomb or false,
-        },
-    })
-
     if Renderer then Renderer:ShowVictory(gs) end
 end
 
@@ -453,26 +432,6 @@ function E:_HandleGameOver()
     if not gs then return end
 
     PlayAODSound("soundOnLose", SND_LOSE)
-    if Settings then
-        Settings:IncrementStat("losses")
-        Settings:IncrementStat("played")
-        Settings:ClearProgress()
-    end
-
-    ArcadiaNexus.Engine:Emit("GAME_RESULT", {
-        gameId     = "ARGUSORBDEFENSE",
-        difficulty = gs.difficulty,
-        score      = gs.score,
-        result     = "LOSS",
-        stats      = {
-            levelReached  = gs.level,
-            waveReached   = gs.wave,
-            meteorsKilled = Settings and Settings:GetStat("totalMeteors") or 0,
-            huntersKilled = Settings and Settings:GetStat("totalHunters") or 0,
-            usedBomb      = gs.usedBomb or false,
-        },
-    })
-
     if Renderer then Renderer:ShowGameOver(gs) end
 end
 
@@ -485,4 +444,30 @@ function E:_ClearKeys()
         gs.keyThrust = false
         gs.keyFire   = false
     end
+end
+
+function E:_NeutralizeInput()
+    self:_ClearKeys()
+    self._padBlocked=self._padBlocked or {}
+    for key,down in pairs(self._padHeld or {}) do if down then self._padBlocked[key]=true end end
+    if math.abs(self._padX or 0)>0.35 or math.abs(self._padY or 0)>0.35 then self._padAxisBlocked=true end
+    local R=ArcadiaNexus.AOD_Renderer
+    if R and R.NeutralizeInput then R:NeutralizeInput() end
+end
+
+function E:HandlePadButton(button,pressed)
+    self._padHeld,self._padBlocked=self._padHeld or {},self._padBlocked or {}
+    self._padHeld[button]=pressed or nil
+    if not pressed then self._padBlocked[button]=nil end
+    if self._padBlocked[button] then return end
+    if GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() then self:_NeutralizeInput(); return end
+    local action=({PADLEFT="ROTATE_LEFT",PADRIGHT="ROTATE_RIGHT",PADUP="THRUST",PADLSHOULDER="THRUST",PAD1="FIRE",PADFORWARD="PAUSE",PAD4="PAUSE"})[button]
+    if action then self:HandleKey(action,pressed) end
+end
+function E:HandlePadAxis(x,y,deadzone)
+    local dz=deadzone or 0.35; self._padX,self._padY=x,y
+    if math.abs(x)<=dz and math.abs(y)<=dz then self._padAxisBlocked=nil end
+    if self._padAxisBlocked or self.state~="PLAYING" then return end
+    if GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() then self:_NeutralizeInput(); return end
+    self:HandleKey("ROTATE_LEFT",x < -dz); self:HandleKey("ROTATE_RIGHT",x > dz); self:HandleKey("THRUST",y > dz)
 end

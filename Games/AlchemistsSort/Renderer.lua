@@ -89,6 +89,11 @@ local CFG = {
     loading_dots_y  = -14,
 
     -- Controls-Widgets
+    hud_alpha = 0.75,
+    help_size = 32, help_icon = 24, help_y = -389, help_left = 92, help_right = 436,
+    anim_left = 16, anim_right = 584, anim_top = 50, anim_bottom = 368,
+    anim_duration = 0.7, anim_angle = 1.05,
+    pour_drop_w = 16, pour_drop_h = 32, pour_drop_reach = 28,
     btn_w        = 96,
     btn_h        = 32,
 
@@ -109,6 +114,7 @@ local CFG = {
 -- ============================================================
 local ASSETS = {
     bottle = "Interface\\AddOns\\ArcadiaNexus\\Games\\AlchemistsSort\\Assets\\tiles\\bottle",
+    drop   = "Interface\\AddOns\\ArcadiaNexus\\Games\\AlchemistsSort\\Assets\\tiles\\pour_drop",
     bg     = "Interface\\AddOns\\ArcadiaNexus\\Games\\AlchemistsSort\\assets\\background\\bg_as",
     border = "Interface\\AddOns\\ArcadiaNexus\\Games\\AlchemistsSort\\assets\\border\\border_as",
     logo   = "Interface\\AddOns\\ArcadiaNexus\\Games\\AlchemistsSort\\assets\\logo\\logo_as",
@@ -165,6 +171,23 @@ function R:Init()
 end
 
 -- ── Hauptframe ────────────────────────────────────────────────
+function R:HandleViewHide()
+    -- Terminal runs already released their session; cancel their presentation explicitly.
+    local E=ArcadiaNexus.ALS_Engine
+    if not E._sessionId and E._result and (E.state=="WIN" or E.state=="RESULT_PENDING") then
+        E:StopGame()
+    end
+    if ArcadiaNexus.ALS_Engine.state == "LEVEL_SELECT" then
+        ArcadiaNexus.ALS_Engine:SaveAndStop()
+    end
+    ArcadiaNexus.GameSession:HandleRendererHide("ALCHEMISTSSORT", ArcadiaNexus.ALS_Engine, function(E)
+        if E.state ~= "IDLE" then
+            E:SaveAndStop()
+        end
+    end)
+    if R._slotMenu and R._slotMenu:IsShown() then R:EnterIdle() end
+end
+
 function R:_CreateMainFrame()
     if self._container then return end
     local gamesPanel = _G.ArcadiaNexusUI and _G.ArcadiaNexusUI.GetGamesPanel
@@ -182,19 +205,8 @@ function R:_CreateMainFrame()
     self._canvas = viewport.canvas
     _G.ArcadiaNexus._alsContainer = f
 
-    f:SetScript("OnHide", function()
-        if ArcadiaNexus.ALS_Engine.state == "LEVEL_SELECT" then
-            ArcadiaNexus.ALS_Engine:SaveAndStop()
-        end
-        ArcadiaNexus.GameSession:HandleRendererHide("ALCHEMISTSSORT", ArcadiaNexus.ALS_Engine, function(E)
-            if E.state ~= "IDLE" then
-                E:SaveAndStop()
-            end
-        end)
-        if R._slotMenu and R._slotMenu:IsShown() then
-            R:EnterIdle()
-        end
-    end)
+    f:SetScript("OnHide", function() R:HandleViewHide() end)
+
 
     -- Spielfeld-Subframe (alle Flaschen hängen hier)
     local pf = CreateFrame("Frame", nil, self._canvas)
@@ -249,141 +261,66 @@ end
 
 -- ── HUD (Timer, Züge, Level) ──────────────────────────────────
 function R:_CreateHUD()
-    local canvas = self._canvas
-    local L = ArcadiaNexus.GetLocaleTable("ALCHEMISTSSORT")
-
-    -- Level-Box (identisches Styling wie Timer- und Counter-Box)
-    local lvlBox = CreateFrame("Button", nil, canvas, "BackdropTemplate")
-    lvlBox:SetSize(CFG.hud_level_w, CFG.hud_level_h)
-    lvlBox:SetPoint("TOPLEFT", canvas, "TOPLEFT", CFG.hud_level_x, CFG.hud_level_y)
-    lvlBox:SetBackdrop({ bgFile="Interface\\Buttons\\WHITE8X8", edgeFile="Interface\\Buttons\\WHITE8X8", edgeSize=1 })
-    lvlBox:SetBackdropColor(0.05, 0.05, 0.05, 0.8)
-    lvlBox:SetBackdropBorderColor(0.3, 0.25, 0.1, 1)
-    lvlBox:RegisterForClicks("LeftButtonUp")
-    lvlBox:SetScript("OnClick", function()
-        ArcadiaNexus.ALS_Engine:OpenLevelSelect()
-    end)
-
-    local lvlLbl = lvlBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    lvlLbl:SetPoint("TOP", lvlBox, "TOP", 0, -4)
-    lvlLbl:SetText(L and L.lbl_choose_level or "Level ▼")
-    lvlLbl:SetTextColor(0.7, 0.65, 0.5)
-    local lvlVal = lvlBox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    lvlVal:SetPoint("BOTTOM", lvlBox, "BOTTOM", 0, 4)
-    lvlVal:SetText("1")
-    self._hud.level    = lvlVal
-    self._hud.levelBox = lvlBox
-
-    -- Timer-Box
-    local timerBox = CreateFrame("Frame", nil, canvas, "BackdropTemplate")
-    timerBox:SetSize(CFG.hud_timer_w, CFG.hud_timer_h)
-    timerBox:SetPoint("TOPLEFT", canvas, "TOPLEFT", CFG.hud_timer_x, CFG.hud_timer_y)
-    timerBox:SetBackdrop({ bgFile="Interface\\Buttons\\WHITE8X8", edgeFile="Interface\\Buttons\\WHITE8X8", edgeSize=1 })
-    timerBox:SetBackdropColor(0.05, 0.05, 0.05, 0.8)
-    timerBox:SetBackdropBorderColor(0.3, 0.25, 0.1, 1)
-
-    local timerLbl = timerBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    timerLbl:SetPoint("TOP", timerBox, "TOP", 0, -4)
-    timerLbl:SetText(L and L.lbl_time or "Zeit")
-    timerLbl:SetTextColor(0.7, 0.65, 0.5)
-    local timerVal = timerBox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    timerVal:SetPoint("BOTTOM", timerBox, "BOTTOM", 0, 4)
-    timerVal:SetText("0:00")
-    self._hud.timer    = timerVal
-    self._hud.timerBox = timerBox
-
-    -- Counter-Box (Züge)
-    local cntBox = CreateFrame("Frame", nil, canvas, "BackdropTemplate")
-    cntBox:SetSize(CFG.hud_cnt_w, CFG.hud_cnt_h)
-    cntBox:SetPoint("TOPRIGHT", canvas, "TOPRIGHT", CFG.hud_cnt_x, CFG.hud_cnt_y)
-    cntBox:SetBackdrop({ bgFile="Interface\\Buttons\\WHITE8X8", edgeFile="Interface\\Buttons\\WHITE8X8", edgeSize=1 })
-    cntBox:SetBackdropColor(0.05, 0.05, 0.05, 0.8)
-    cntBox:SetBackdropBorderColor(0.3, 0.25, 0.1, 1)
-
-    local cntLbl = cntBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    cntLbl:SetPoint("TOP", cntBox, "TOP", 0, -4)
-    cntLbl:SetText(L and L.lbl_moves or "Züge")
-    cntLbl:SetTextColor(0.7, 0.65, 0.5)
-    local cntVal = cntBox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    cntVal:SetPoint("BOTTOM", cntBox, "BOTTOM", 0, 4)
-    cntVal:SetText("0")
-    self._hud.moves  = cntVal
-    self._hud.cntBox = cntBox
-
-    -- Feedback-FontString (temporäre Meldungen)
-    local fbFS = canvas:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    fbFS:SetPoint("TOP", self._playfield, "TOP", 0, -8)
-    fbFS:SetTextColor(1, 0.3, 0.3)
-    fbFS:Hide()
-    self._feedbackFS = fbFS
+    local UI,L=ArcadiaNexus.UI,ArcadiaNexus.GetLocaleTable("ALCHEMISTSSORT")
+    local function box(key,label,x)
+        local frame,value=UI.CreateHudStatBox(self._canvas,{w=80,h=40,x=x,y=-385,alpha=CFG.hud_alpha,shown=false})
+        value:ClearAllPoints(); value:SetPoint("BOTTOM",frame,"BOTTOM",0,4)
+        local title=frame:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+        title:SetPoint("TOP",frame,"TOP",0,-4); title:SetText(label)
+        self._hud[key]=value; return frame
+    end
+    self._hud.timerBox=box("timer",L.lbl_time,180)
+    self._hud.cntBox=box("moves",L.lbl_moves,340)
+    local lvl=CreateFrame("Button",nil,self._canvas,"BackdropTemplate")
+    lvl:SetSize(80,40); lvl:SetPoint("TOPLEFT",self._canvas,"TOPLEFT",260,-385)
+    UI.StyleHudStatFrame(lvl,CFG.hud_alpha); lvl:SetFrameLevel(self._hud.timerBox:GetFrameLevel())
+    lvl:RegisterForClicks("LeftButtonUp"); lvl:SetScript("OnClick",function() ArcadiaNexus.ALS_Engine:OpenLevelSelect() end)
+    local title=lvl:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); title:SetPoint("TOP",lvl,"TOP",0,-4); title:SetText(L.lbl_choose_level)
+    local value=lvl:CreateFontString(nil,"OVERLAY","GameFontNormal"); value:SetPoint("BOTTOM",lvl,"BOTTOM",0,4)
+    self._hud.level,self._hud.levelBox=value,lvl
+    local fb=self._canvas:CreateFontString(nil,"OVERLAY","GameFontNormal")
+    fb:SetPoint("TOP",self._playfield,"TOP",0,-8); fb:SetWidth(560); fb:SetTextColor(1,0.7,0.3); fb:Hide()
+    self._feedbackFS=fb
 end
 
 -- ── Controls (wide5) ─────────────────────────────────────────
 function R:_CreateControls()
     if self._controlsFrame then return end
-
-    local UI = ArcadiaNexus.UI
-    local L  = ArcadiaNexus.GetLocaleTable("ALCHEMISTSSORT")
-
-    local btn_w = CFG.btn_w
-    local btn_h = CFG.btn_h
-
-    local bar = UI.CreateGameControlsBar(self._container, "wide5")
-    local cf = bar.frame
-    self._controlsFrame = cf
-
-    -- Segment 1: Reset (nur während des Spiels)
-    local btnReset = UI.CreateArcadiaButton(cf, L and L.btn_reset or "Reset", btn_w, btn_h)
-    btnReset:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[1], bar.y.button)
-    btnReset:SetScript("OnClick", function()
-        ArcadiaNexus.ALS_Engine:ResetLevel()
-    end)
-    self._btnReset = btnReset
-
-    -- Segment 2: Undo
-    local btnUndo = UI.CreateArcadiaButton(cf, L and L.lbl_undo_left:format(3) or "Undo(3)", btn_w, btn_h)
-    btnUndo:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[2], bar.y.button)
-    btnUndo:SetScript("OnClick", function()
-        ArcadiaNexus.ALS_Engine:Undo()
-    end)
-    self._btnUndo = btnUndo
-
-    -- Segment 3: Start (IDLE) / Beenden (Menü + Spiel)
-    local btnStart = UI.CreateArcadiaButton(cf, L and L.btn_start or "Spiel starten", 144, btn_h)
-    btnStart:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[3], bar.y.button)
-    btnStart:SetScript("OnClick", function()
-        R:EnterSlotMenu()
-    end)
-    self._btnStart = btnStart
-
-    local btnExit = UI.CreateArcadiaButton(cf, L and L.btn_exit or "Beenden", 144, btn_h)
-    btnExit:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[3], bar.y.button)
-    btnExit:SetScript("OnClick", function()
-        if R._slotMenu and R._slotMenu:IsShown() then
-            R:EnterIdle()
-            return
+    local A=ArcadiaNexus; local UI,L=A.UI,A.GetLocaleTable("ALCHEMISTSSORT")
+    local bar=UI.CreateGameControlsBar(self._container,"wide5"); local cf=bar.frame; self._controlsFrame=cf
+    local function symbol(key,icon,x,action,tip)
+        local b=CreateFrame("Button",nil,self._canvas,"BackdropTemplate")
+        b:SetSize(CFG.help_size,CFG.help_size); b:SetPoint("TOPLEFT",self._canvas,"TOPLEFT",x,CFG.help_y)
+        UI.StyleHudStatFrame(b,CFG.hud_alpha); b:SetFrameLevel(self._hud.levelBox:GetFrameLevel()+1)
+        local tex=b:CreateTexture(nil,"ARTWORK"); tex:SetSize(CFG.help_icon,CFG.help_icon); tex:SetPoint("CENTER")
+        tex:SetTexture("Interface\\AddOns\\ArcadiaNexus\\Games\\AlchemistsSort\\Assets\\icons\\"..icon)
+        b._icon=tex; b._count=b:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); b._count:SetPoint("BOTTOMRIGHT",b,"BOTTOMRIGHT",-1,0)
+        b:SetScript("OnClick",function() if b._available then action(A.ALS_Engine) end end)
+        -- Keep the button focusable even when exhausted: guards and dimming disable the action,
+        -- while ConsolePort's cursor and mouse can still explain it through OnEnter.
+        b:SetScript("OnEnter",function()
+            local L=A.GetLocaleTable("ALCHEMISTSSORT")
+            if not GameTooltip then return end
+            GameTooltip:SetOwner(b,"ANCHOR_TOP"); GameTooltip:SetText(L[key])
+            GameTooltip:AddLine(string.format(L[tip],b._remaining or 0),1,1,1,true); GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave",function() if GameTooltip then GameTooltip:Hide() end end)
+        function b:SetAvailable(yes,count)
+            self._available=yes; self._remaining=count
+            self._icon:SetAlpha(yes and 1 or 0.35); self._count:SetText(count and tostring(count) or "")
         end
-        local E = ArcadiaNexus.ALS_Engine
-        if E then E:SaveAndStop() end
-    end)
-    btnExit:Hide()
-    self._exitBtn = btnExit
-
-    -- Segment 4: Tipp
-    local btnHint = UI.CreateArcadiaButton(cf, L and L.lbl_hint_left:format(3) or "Tipp(3)", btn_w, btn_h)
-    btnHint:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[4], bar.y.button)
-    btnHint:SetScript("OnClick", function()
-        ArcadiaNexus.ALS_Engine:RequestHint()
-    end)
-    self._btnHint = btnHint
-
-    -- Segment 5: + Röhre
-    local btnAdd = UI.CreateArcadiaButton(cf, L and L.btn_add_tube or "+ Röhre", btn_w, btn_h)
-    btnAdd:SetPoint("BOTTOM", cf, "BOTTOM", bar.segX[5], bar.y.button)
-    btnAdd:SetScript("OnClick", function()
-        ArcadiaNexus.ALS_Engine:AddEmptyTube()
-    end)
-    self._btnAdd = btnAdd
+        b:Hide(); return b
+    end
+    self._btnReset=symbol("btn_reset","reset",CFG.help_left,function(E) E:ResetLevel() end,"tip_reset")
+    self._btnUndo=symbol("btn_undo","undo",CFG.help_left+40,function(E) E:Undo() end,"tip_undo")
+    self._btnHint=symbol("btn_hint","hint",CFG.help_right,function(E) E:RequestHint() end,"tip_hint")
+    self._btnAdd=symbol("btn_add_tube","bottle_plus",CFG.help_right+40,function(E) E:AddEmptyTube() end,"tip_add")
+    local start=UI.CreateArcadiaButton(cf,L.btn_start,144,32)
+    start:SetPoint("BOTTOM",cf,"BOTTOM",bar.segX[3],bar.y.button); start:SetScript("OnClick",function() R:EnterSlotMenu() end); self._btnStart=start
+    local exit=UI.CreateArcadiaButton(cf,L.btn_exit,144,32)
+    exit:SetPoint("BOTTOM",cf,"BOTTOM",bar.segX[3],bar.y.button)
+    exit:SetScript("OnClick",function() if R._slotMenu and R._slotMenu:IsShown() then R:EnterIdle() else A.ALS_Engine:SaveAndStop() end end)
+    exit:Hide(); self._exitBtn=exit
 end
 
 -- ── Overlays ──────────────────────────────────────────────────
@@ -428,8 +365,11 @@ function R:_CreateOverlays()
 
     local confText = co:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     confText:SetPoint("TOP", co, "TOP", 0, -12)
+    confText:SetWidth(230)
+    confText:SetWordWrap(true)
     confText:SetText(L and L.confirm_reset or "Level neu starten?")
     confText:SetTextColor(0.9, 0.85, 0.65)
+    self._confirmText = confText
 
     local btnYes = UI.CreateArcadiaButton(co, L and L.confirm_yes or "Ja", 80, 28)
     btnYes:SetPoint("BOTTOMLEFT", co, "BOTTOMLEFT", 20, 10)
@@ -512,6 +452,7 @@ function R:BuildGrid(tubes, numTubes)
         end
 
         tf:ClearAllPoints()
+        tf._layoutX,tf._layoutY=posX,posY
         tf:SetPoint("TOPLEFT", self._playfield, "TOPLEFT", posX, -posY)
         tf:SetSize(BOTTLE_W, BOTTLE_H)
         tf:Show()
@@ -532,18 +473,14 @@ function R:_CreateTubeFrame(idx)
         ArcadiaNexus.ALS_Engine:OnTubeClicked(idx)
     end)
 
-    local fillHeight = FILL_MAX_Y - LAYER_PAD
-    local layerH     = math.floor(fillHeight / TUBE_CAPACITY)
     tf._layers = {}
-    for i = 1, TUBE_CAPACITY do
-        local layer = tf:CreateTexture(nil, "BACKGROUND")
-        layer:SetTexture("Interface\\Buttons\\WHITE8X8")
-        layer:SetHeight(layerH)
-        local yOff = LAYER_PAD + (i - 1) * layerH
-        layer:SetPoint("BOTTOMLEFT",  tf, "BOTTOMLEFT",  LAYER_PAD,  yOff)
-        layer:SetPoint("BOTTOMRIGHT", tf, "BOTTOMRIGHT", -LAYER_PAD, yOff)
-        layer:Hide()
-        tf._layers[i] = layer
+    tf._mask=tf:CreateMaskTexture(nil,"ARTWORK")
+    tf._mask:SetTexture("Interface\\AddOns\\ArcadiaNexus\\Games\\AlchemistsSort\\Assets\\tiles\\fill_mask","CLAMPTOBLACKADDITIVE","CLAMPTOBLACKADDITIVE")
+    tf._mask:SetAllPoints(tf)
+    for i=1,5 do
+        local layer=tf:CreateTexture(nil,"BACKGROUND")
+        layer:SetTexture("Interface\\AddOns\\ArcadiaNexus\\Games\\AlchemistsSort\\Assets\\tiles\\fill_"..i)
+        layer:SetAllPoints(tf); layer:AddMaskTexture(tf._mask); layer:Hide(); tf._layers[i]=layer
     end
 
     local bottleTex = tf:CreateTexture(nil, "OVERLAY")
@@ -573,6 +510,11 @@ function R:RefreshTube(tubeIdx)
     local tube = ArcadiaNexus.ALS_Engine._tubes and ArcadiaNexus.ALS_Engine._tubes[tubeIdx]
     if not tf or not tube then return end
 
+    self:_DrawTube(tf,tube)
+end
+
+function R:_DrawTube(tf,tube)
+    for _,layer in ipairs(tf._layers) do layer:SetAlpha(1) end
     local Colors = ArcadiaNexus.ALS_Colors
     local filled = #tube
 
@@ -621,72 +563,109 @@ end
 
 -- ── Animation Phase 1 (Füllstand) ────────────────────────────
 
-function R:AnimatePour(srcIdx, dstIdx, topColor, layers, onDone)
-    local srcTF = self._tubeFrames[srcIdx]
-    local dstTF = self._tubeFrames[dstIdx]
-    if not srcTF or not dstTF then
-        if onDone then onDone() end
-        return
+function R:AnimatePour(srcIdx,dstIdx,color,count,onDone,before,after)
+    self:CancelPour()
+    local src,dst=self._tubeFrames[srcIdx],self._tubeFrames[dstIdx]
+    if not src or not dst or not before or not after then if onDone then onDone() end; return end
+    local p=self._pourProxy
+    if not p then
+        p=self:_CreateTubeFrame(0); p:EnableMouse(false); self._pourProxy=p
+        local drop=self._playfield:CreateTexture(nil,"OVERLAY")
+        drop:SetTexture(ASSETS.drop); drop:SetSize(CFG.pour_drop_w,CFG.pour_drop_h); drop:Hide()
+        self._pourDrop=drop
+        self._pourLoop=ArcadiaNexus.GameLoop.Create("ArcadiaNexus_ALS_Pour")
     end
-
-    local E      = ArcadiaNexus.ALS_Engine
-    local srcTube = E._tubes[srcIdx]
-    local dstTube = E._tubes[dstIdx]
-
-    local srcStart = #srcTube
-    local dstStart = #dstTube
-
-    local Colors = ArcadiaNexus.ALS_Colors
-    local c      = Colors:Get(topColor)
-    local gen    = E._timerGuard:Generation()
-
-    local STEP_TIME = 0.08
-
-    local function DoneAll()
-        for _, lyr in ipairs(srcTF._layers) do lyr:SetAlpha(1) end
-        for _, lyr in ipairs(dstTF._layers) do lyr:SetAlpha(1) end
-        if onDone then onDone() end
+    p:SetFrameLevel(self._playfield:GetFrameLevel()+15)
+    self:_DrawTube(p,before[srcIdx]); self:_PoseBottle(p,0)
+    p:ClearAllPoints(); p:SetPoint("CENTER",self._playfield,"TOPLEFT",src._layoutX+24,-src._layoutY-64)
+    p:Show(); src:SetAlpha(0)
+    self._pourSource=src; self._pourToken=(self._pourToken or 0)+1; local token=self._pourToken
+    local c=ArcadiaNexus.ALS_Colors:Get(color); self._pourDrop:SetVertexColor(c[1],c[2],c[3],0.95)
+    local sx,sy=src._layoutX+24,src._layoutY+64
+    local tx,ty=dst._layoutX+24,dst._layoutY+12
+    -- Screen-left tilt uses a positive angle (SetVertexOffset, y-up). Left half
+    -- pours left, right half pours right. A centre destination still receives the
+    -- source, which then tilts inward (left source to the right, right source to the left).
+    local mid=CFG.field_w/2
+    local function half(x) return x<mid and 1 or x>mid and -1 or 0 end
+    local destHalf=half(tx)
+    local sign
+    if destHalf==0 then
+        local srcHalf=half(sx)
+        sign=srcHalf~=0 and -srcHalf or (tx<sx and 1 or -1)
+    else
+        sign=destHalf
     end
-
-    local function FillDst(step)
-        if gen ~= E._timerGuard:Generation() then return end
-        local layerI = dstStart + step
-        local layer  = dstTF._layers[layerI]
-        if layer then
-            layer:SetTexture("Interface\\Buttons\\WHITE8X8")
-            layer:SetVertexColor(c[1], c[2], c[3], 1)
-            layer:Show()
-            layer:SetAlpha(1)
-        end
-        if step < layers then
-            E._timerGuard:After(STEP_TIME, function() FillDst(step + 1) end)
-        else
-            DoneAll()
-        end
+    local pourX=destHalf==0 and tx or (sign>0 and math.min(sx,tx) or math.max(sx,tx))
+    local elapsed=0
+    local S=ArcadiaNexus.ALS_Settings
+    if S:Get("soundEnabled") and S:Get("soundOnPour") then PlaySoundFile("Interface\\AddOns\\ArcadiaNexus\\Games\\AlchemistsSort\\Assets\\sounds\\flow.wav","SFX") end
+    self._pourLoop:Start(function(dt)
+        if self._pourToken~=token then return end
+        elapsed=elapsed+dt; local t=math.min(1,elapsed/CFG.anim_duration)
+        local blend=t<0.28 and t/0.28 or t>0.75 and (1-t)/0.25 or 1
+        local angle=sign*CFG.anim_angle*blend
+        local halfW=math.abs(24*math.cos(angle))+math.abs(64*math.sin(angle))
+        local halfH=math.abs(64*math.cos(angle))+math.abs(24*math.sin(angle))
+        local x=sx+(pourX-sx)*0.72*blend; local y=sy+(ty+halfH-sy-12)*blend
+        x=math.max(CFG.anim_left+halfW,math.min(CFG.anim_right-halfW,x))
+        y=math.max(CFG.anim_top+halfH,math.min(CFG.anim_bottom-halfH,y))
+        self._lastPourBounds={left=x-halfW,right=x+halfW,top=y-halfH,bottom=y+halfH}
+        p:ClearAllPoints(); p:SetPoint("CENTER",self._playfield,"TOPLEFT",x,-y)
+        self:_PoseBottle(p,angle)
+        local filling=t>0.28 and t<0.75
+        if filling then
+            local poured=math.min(count,math.floor((t-0.28)/0.47*count)+1)
+            local remaining={}; for i=poured+1,#before[srcIdx] do remaining[#remaining+1]=before[srcIdx][i] end
+            self:_DrawTube(p,remaining)
+            local target=ArcadiaNexus.ALS_Logic:DeepCopy({before[dstIdx]})[1]
+            for _=1,poured do table.insert(target,1,color) end
+            self:_DrawTube(dst,target)
+            local mouthX=x-52*math.sin(angle); local mouthY=y-52*math.cos(angle)
+            self:_PoseDrop(self._pourDrop,mouthX,mouthY,angle)
+            self._pourDrop:Show()
+        else self._pourDrop:Hide(); if t>0.75 then self:_DrawTube(p,after[srcIdx]); self:_DrawTube(dst,after[dstIdx]) end end
+        if t>=1 then self:CancelPour(); if onDone then onDone() end end
+    end)
+end
+-- Rotate the actual quad rather than its UVs: the tall bottle cannot be clipped
+-- inside an unchanged 48x128 sampling rectangle. All masks/bands share its pivot.
+function R:_PoseBottle(p,angle)
+    local regions={p._bottleTex,p._mask}
+    for _,layer in ipairs(p._layers) do regions[#regions+1]=layer end
+    local corners={{-24,64},{-24,-64},{24,64},{24,-64}}
+    local c,s=math.cos(angle),math.sin(angle)
+    for i,pt in ipairs(corners) do
+        local x,y=pt[1],pt[2]; local ox,oy=x*c-y*s-x,x*s+y*c-y
+        for _,region in ipairs(regions) do region:SetVertexOffset(i,ox,oy) end
     end
-
-    local function DrainSrc(step)
-        if gen ~= E._timerGuard:Generation() then return end
-        local layerI = srcStart - step + 1
-        local layer  = srcTF._layers[layerI]
-        if layer then
-            layer:SetAlpha(0)
-        end
-        if step < layers then
-            E._timerGuard:After(STEP_TIME, function() DrainSrc(step + 1) end)
-        else
-            E._timerGuard:After(STEP_TIME * 0.5, function()
-                if gen ~= E._timerGuard:Generation() then return end
-                FillDst(1)
-            end)
-        end
+    p._angle=angle
+end
+function R:_PoseDrop(drop,mouthX,mouthY,angle)
+    local hw,hh=CFG.pour_drop_w/2,CFG.pour_drop_h/2
+    local reach=CFG.pour_drop_reach
+    local cx=mouthX-reach*math.sin(angle)
+    local cy=mouthY-reach*math.cos(angle)
+    drop:ClearAllPoints(); drop:SetPoint("CENTER",self._playfield,"TOPLEFT",cx,-cy)
+    local corners={{-hw,hh},{-hw,-hh},{hw,hh},{hw,-hh}}
+    local c,s=math.cos(angle),math.sin(angle)
+    for i,pt in ipairs(corners) do
+        local x,y=pt[1],pt[2]
+        drop:SetVertexOffset(i,x*c-y*s-x,x*s+y*c-y)
     end
-
-    local S = ArcadiaNexus.ALS_Settings
-    if S and S:Get("soundEnabled") and S:Get("soundOnPour") then
-        PlaySoundFile("Interface\\AddOns\\ArcadiaNexus\\Games\\AlchemistsSort\\Assets\\sounds\\flow.wav", "SFX")
+end
+function R:CancelPour()
+    self._pourToken=(self._pourToken or 0)+1
+    if self._pourLoop then self._pourLoop:Stop() end
+    if self._pourSource then self._pourSource:SetAlpha(1); self._pourSource=nil end
+    if self._pourDrop then self._pourDrop:Hide() end
+    if self._pourStream then self._pourStream:Hide() end
+    local p=self._pourProxy
+    if p then
+        self:_PoseBottle(p,0)
+        for _,layer in ipairs(p._layers) do layer:SetAlpha(1) end
+        p:Hide()
     end
-    DrainSrc(1)
 end
 
 -- ── Shake (ungültiger Zug) ────────────────────────────────────
@@ -705,6 +684,7 @@ function R:_ClearHint()
 end
 
 function R:CancelTransientEffects()
+    self:CancelPour()
     self._hintGuard:Cancel()
     self._feedbackGuard:Cancel()
     self._hintToken = self._hintToken + 1
@@ -815,101 +795,53 @@ end
 -- ── HUD aktualisieren ─────────────────────────────────────────
 
 function R:UpdateHUD()
-    local E = ArcadiaNexus.ALS_Engine
-    local L = ArcadiaNexus.GetLocaleTable("ALCHEMISTSSORT")
-
-    if self._hud.level then
-        local lvl = ArcadiaNexus.ALS_Settings:GetCurrentLevel()
-        self._hud.level:SetText(tostring(lvl))
-    end
-
-    if self._hud.timer then
-        local sec = math.floor(E:GetElapsed())
-        self._hud.timer:SetText(ArcadiaNexus.Format.SecondsMMSS(sec, false))
-    end
-
-    if self._hud.moves then
-        self._hud.moves:SetText(tostring(E._moveCount or 0))
-    end
-
-    if self._btnUndo and L then
-        local u = E._undosLeft or 0
-        if u > 0 then
-            self._btnUndo:SetLabel(L.lbl_undo_left:format(u))
-            self._btnUndo:SetEnabled(true)
-        else
-        self._btnUndo:SetLabel(L.lbl_undo_none or "Undo")
-            self._btnUndo:SetEnabled(false)
-        end
-    end
-
-    if self._btnHint and L then
-        local h = E._hintsLeft or 0
-        if h > 0 then
-            self._btnHint:SetLabel(L.lbl_hint_left:format(h))
-            self._btnHint:SetEnabled(true)
-        else
-        self._btnHint:SetLabel(L.lbl_hint_none or "Tipp")
-            self._btnHint:SetEnabled(false)
-        end
-    end
-
-    if self._btnAdd then
-        self._btnAdd:SetEnabled(not E._addedTube)
-    end
+    local E=ArcadiaNexus.ALS_Engine
+    if self._hud.level then self._hud.level:SetText(tostring(E._level or ArcadiaNexus.ALS_Settings:GetCurrentLevel())) end
+    if self._hud.timer then self._hud.timer:SetText(ArcadiaNexus.Format.SecondsMMSS(math.floor(E:GetElapsed()),false)) end
+    if self._hud.moves then self._hud.moves:SetText(tostring(E._moveCount or 0)) end
+    local active=E:CanAct()
+    if self._btnReset then self._btnReset:SetAvailable(active) end
+    if self._btnUndo then self._btnUndo:SetAvailable(active and E._undosLeft>0 and #E._undoStack>0,E._undosLeft) end
+    if self._btnHint then self._btnHint:SetAvailable(active and E._hintsLeft>0,E._hintsLeft) end
+    if self._btnAdd then self._btnAdd:SetAvailable(active and not E._addedTube,E._addedTube and 0 or 1) end
 end
 
 -- ── Win-Overlay ───────────────────────────────────────────────
 
-function R:ShowWinOverlay(score, moves, elapsed, stars, bestStars)
-    local parent = self._playfield
-    if not parent then return end
-    local L  = ArcadiaNexus.GetLocaleTable("ALCHEMISTSSORT")
-    local UI = ArcadiaNexus.UI
-    local sec     = math.floor(elapsed)
-    local timeStr = ArcadiaNexus.Format.SecondsMMSS(sec, false)
-    local lines = {}
-    lines[#lines + 1] = string.format(L and L.result_stars or "Sterne: %d (Bestwert: %d)",
-        stars or 0, bestStars or 0)
-    if L and L.win_moves then
-        lines[#lines + 1] = string.format(L.win_moves, moves)
-    else
-        lines[#lines + 1] = "Züge: " .. tostring(moves)
+function R:ShowWinOverlay(data)
+    local A=ArcadiaNexus; local UI,L=A.UI,A.GetLocaleTable("ALCHEMISTSSORT"); local E=A.ALS_Engine
+    local stats=data.stats; local lines={string.format(L.result_stars,stats.stars,data.bestStars or stats.stars),
+        string.format(L.win_moves,stats.moves),string.format(L.win_time,A.Format.SecondsMMSS(math.floor(stats.elapsedMs/1000),false))}
+    if data.newMetricRecords and not data.localReplay then
+        if data.newMetricRecords.moves then lines[#lines+1]=L.record_moves end
+        if data.newMetricRecords.time then lines[#lines+1]=L.record_time end
     end
-    if L and L.win_time then
-        lines[#lines + 1] = string.format(L.win_time, timeStr)
-    else
-        lines[#lines + 1] = timeStr
+    if data.minimum.kind=="exact" and not stats.usedAddTube then lines[#lines+1]=string.format(L.minimum_exact,data.minimum.moves) end
+    local function go(fn)
+        return function() UI.HideResultDialog(self._playfield); fn() end
     end
-    UI.ShowArcadeResult(parent, {
-        title      = L and L.state_win or "Gelöst!",
-        titleColor = { 1, 0.85, 0.1 },
-        score      = score,
-        gameId     = "ALCHEMISTSSORT",
-        result     = "WIN",
-        lines      = lines,
-        L          = L,
-        buttons    = {
-            {
-                label   = L and L.btn_next_level or "Nächstes Level",
-                onClick = function()
-                    local E = ArcadiaNexus.ALS_Engine
-                    if E then E:StartLevel(ArcadiaNexus.ALS_Settings:GetCurrentLevel()) end
-                end,
-            },
-            {
-                label   = L and L.btn_level_select or "Levelauswahl",
-                onClick = function()
-                    ArcadiaNexus.ALS_Engine:OpenLevelSelect()
-                end,
-            },
-        },
-    })
+    UI.ShowResultDialog({parent=self._playfield,title=L.state_win,result="WIN",gameId="ALCHEMISTSSORT",difficulty="normal",
+        hideHighscore=true,xp=data.awardedXP or 0,gold=data.awardedGold or 0,lines=lines,
+        buttons=UI.ResultDialogButtons.Campaign(L,
+            go(function() E:StartLevel(data.level+1) end),
+            go(function() E:OpenLevelSelect() end),
+            go(function() E:StartLevel(data.level) end),
+            go(function() E:SaveAndStop() end))})
+end
+function R:ShowPendingResult()
+    local A=ArcadiaNexus; local L=A.GetLocaleTable("ALCHEMISTSSORT")
+    A.UI.ShowResultDialog({parent=self._playfield,title=L.msg_result_pending,xp=0,hideHighscore=true,
+        lines={L.pending_help},buttons={{label=L.btn_retry_result,onClick=function() A.ALS_Engine:RetryResult() end},
+            {label=L.btn_exit,onClick=function() A.ALS_Engine:SaveAndStop() end}}})
 end
 
 -- ── Confirm-Reset ─────────────────────────────────────────────
 
-function R:ShowConfirmReset(onConfirm)
+function R:ShowConfirmReset(onConfirm,onCancel)
+    if self._confirmText then
+        local L=ArcadiaNexus.GetLocaleTable("ALCHEMISTSSORT")
+        self._confirmText:SetText(L and L.confirm_reset or "Level neu starten?")
+    end
     local co = self._confirmFrame
     if not co then
         if onConfirm then onConfirm() end
@@ -926,6 +858,32 @@ function R:ShowConfirmReset(onConfirm)
     if self._confirmNo then
         self._confirmNo:SetScript("OnClick", function()
             co:Hide()
+            if onCancel then onCancel() end
+        end)
+    end
+end
+
+function R:ShowConfirmLeave(onYes, onNo)
+    local co=self._confirmFrame
+    if not co then
+        if onNo then onNo() end
+        return
+    end
+    if self._confirmText then
+        local L=ArcadiaNexus.GetLocaleTable("ALCHEMISTSSORT")
+        self._confirmText:SetText(L and L.confirm_leave_level or "Laufendes Level verwerfen?")
+    end
+    co:Show()
+    if self._confirmYes then
+        self._confirmYes:SetScript("OnClick", function()
+            co:Hide()
+            if onYes then onYes() end
+        end)
+    end
+    if self._confirmNo then
+        self._confirmNo:SetScript("OnClick", function()
+            co:Hide()
+            if onNo then onNo() end
         end)
     end
 end
@@ -940,28 +898,36 @@ function R:_CreateLevelSelect()
             local S = ArcadiaNexus.ALS_Settings
             local L = ArcadiaNexus.GetLocaleTable("ALCHEMISTSSORT") or {}
             local unlocked = math.max(1, tonumber(S:GetUnlockedLevel()) or 1)
+            local catalog = ArcadiaNexus.ALS_Catalog
+            local catalogCount = type(catalog) == "table" and #catalog or 1000
             local save = S:LoadSlot(S:GetActiveSlot())
             return {
-                levelCount = unlocked,
-                padLastPage = true,
+                levelCount = math.max(catalogCount, unlocked),
                 currentLevel = S:GetCurrentLevel(),
                 titleFormat = L.map_title,
                 subtitle = string.format(L.map_progress or "Frei bis %d · Sterne: %d", unlocked, S:SumStars(save)),
                 lockedText = L.map_locked or "—",
                 actionLabel = save and save.midGame and (L.btn_resume_level or "Fortsetzen") or nil,
                 getLevel = function(level)
-                    local best = S:GetLevelBest(level)
+                    local classes,legacy = S:GetLevelBests(level)
+                    local best = nil
                     local stars = S:GetStar(save, level)
                     local moves = best and best.moves and string.format(L.level_best_moves or "%d Züge", best.moves)
                     local elapsed = best and best.time and string.format(L.level_best_time or "%s",
                         ArcadiaNexus.Format.SecondsMMSS(math.floor(best.time), false))
+                    local details={string.format(L.level_stars or "Sterne: %d / 3",stars),L.best_independent}
+                    for _,aid in ipairs({"unassisted","hint_or_undo","extra_bottle"}) do
+                        local b=classes[aid]
+                        if b then details[#details+1]=string.format(L.map_best_class,L["aid_"..aid],b.moves,
+                            ArcadiaNexus.Format.SecondsMMSS(math.floor(b.elapsedMs/1000),false)) end
+                    end
+                    if legacy then details[#details+1]=string.format(L.map_legacy,legacy.moves or 0,
+                        ArcadiaNexus.Format.SecondsMMSS(math.floor(legacy.time or 0),false)) end
                     return {
                         unlocked = level <= unlocked,
                         text = stars > 0 and string.rep("*", stars) or "—",
                         tooltipTitle = (L.lbl_level or "Level") .. " " .. level,
-                        tooltipText = string.format(L.level_stars or "Sterne: %d / 3", stars)
-                            .. (moves and ("\n" .. moves) or "")
-                            .. (elapsed and ("\n" .. (L.lbl_time or "Zeit") .. ": " .. elapsed) or ""),
+                        tooltipText = table.concat(details,"\n"),
                     }
                 end,
             }
@@ -1024,65 +990,19 @@ end
 
 -- ── State-Changes ─────────────────────────────────────────────
 
-function R:OnStateChanged(newState)
-    local L = ArcadiaNexus.GetLocaleTable("ALCHEMISTSSORT")
-
-    if newState ~= "WIN" then
-        ArcadiaNexus.UI.HideResultDialog(self._playfield)
-    end
-
-    if newState == "PLAYING" then
-        self:HideLevelSelect()
-        if self._logoTex then self._logoTex:Hide() end
-        if self._hud.levelBox then self._hud.levelBox:Show() end
-        if self._hud.timerBox then self._hud.timerBox:Show() end
-        if self._hud.cntBox   then self._hud.cntBox:Show()   end
-        if self._slotMenu then self._slotMenu:Hide() end
-        if self._btnStart then self._btnStart:Hide() end
-        if self._exitBtn  then self._exitBtn:Show()  end
-        if self._btnReset then self._btnReset:SetShown(true) end
-        if self._btnUndo  then self._btnUndo:SetShown(true)  end
-        if self._btnHint  then self._btnHint:SetShown(true)  end
-        if self._btnAdd   then self._btnAdd:SetShown(true)   end
-    end
-
-    if newState == "IDLE" then
-        self:EnterIdle()
-        return
-    end
-
-    if newState == "LEVEL_SELECT" then
-        for _, tf in ipairs(self._tubeFrames) do tf:Hide() end
-        if self._hud.levelBox then self._hud.levelBox:Hide() end
-        if self._hud.timerBox then self._hud.timerBox:Hide() end
-        if self._hud.cntBox then self._hud.cntBox:Hide() end
-        if self._slotMenu then self._slotMenu:Hide() end
-        if self._logoTex then self._logoTex:Hide() end
-        if self._btnStart then self._btnStart:Hide() end
-        if self._exitBtn then self._exitBtn:Show() end
-        if self._btnReset then self._btnReset:SetShown(false) end
-        if self._btnUndo then self._btnUndo:SetShown(false) end
-        if self._btnHint then self._btnHint:SetShown(false) end
-        if self._btnAdd then self._btnAdd:SetShown(false) end
-        return
-    end
-
+function R:OnStateChanged(state)
+    if state=="IDLE" then self:EnterIdle(); return end
+    local board=state~="LEVEL_SELECT" and state~="GENERATING"
+    if state~="WIN" then ArcadiaNexus.UI.HideResultDialog(self._playfield) end
+    if not board then for _,tf in ipairs(self._tubeFrames) do tf:Hide() end end
+    for _,box in pairs({self._hud.levelBox,self._hud.timerBox,self._hud.cntBox}) do box:SetShown(board) end
+    for _,btn in pairs({self._btnReset,self._btnUndo,self._btnHint,self._btnAdd}) do btn:SetShown(board) end
+    if self._logoTex then self._logoTex:Hide() end
+    if self._slotMenu then self._slotMenu:Hide() end
     if self._btnStart then self._btnStart:Hide() end
-    if self._exitBtn  then self._exitBtn:Show()  end
-
-    local locked = (newState == "POURING")
-    if self._btnReset then self._btnReset:SetEnabled(not locked) end
-    if self._btnUndo  then
-        local u = ArcadiaNexus.ALS_Engine._undosLeft or 0
-        self._btnUndo:SetEnabled(not locked and u > 0)
-    end
-    if self._btnHint  then
-        local h = ArcadiaNexus.ALS_Engine._hintsLeft or 0
-        self._btnHint:SetEnabled(not locked and h > 0)
-    end
-    if self._btnAdd then
-        self._btnAdd:SetEnabled(not locked and not ArcadiaNexus.ALS_Engine._addedTube)
-    end
+    if self._exitBtn then self._exitBtn:Show() end
+    if state=="PLAYING" then self:HideLevelSelect() end
+    self:UpdateHUD()
 end
 
 function R:EnterIdle()

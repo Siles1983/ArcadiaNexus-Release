@@ -118,15 +118,14 @@ function E:OnMatchReject(f)
 end
 
 function E:OnMatchResult(node, resultId)
+    if self._resultEmitted then return true end
     if self.match ~= node or not self._sessionId or node:GetState() ~= "FINISHED" then return end
-    if self._resultEmitted then return end
-    self._resultEmitted = true
     local board = self:GetBoardState()
     local result = (board and board.result) or "DRAW"
     local score = 0
     if result == "WIN" then score = 150
     elseif result == "DRAW" then score = 50 end
-    ArcadiaNexus.Engine:Emit("GAME_RESULT", {
+    local payload = {
         gameId = "ARCADIAROWS",
         resultId = resultId,
         matchHost = node.hostKey,
@@ -134,9 +133,13 @@ function E:OnMatchResult(node, resultId)
         score = score,
         result = result,
         stats = { moveCount = board and board.moveCount or 0, vsHuman = 1 },
-    })
+    }
+    ArcadiaNexus.Engine:Emit("GAME_RESULT", payload)
+    if payload.matchBooked ~= true then return false end
+    self._resultEmitted = true
     -- Dialog erst nach Fall-Animation (Renderer → OnDropSettled).
     Notify()
+    return true
 end
 
 function E:MaybeShowResult(result)
@@ -210,17 +213,7 @@ function E:StartGame(config)
         })
         return
     end
-    self.mode = mode
-    self._resultEmitted = false
-    self._notice = nil
-    self._busy = false
-    _timerGuard:Cancel()
-
-    self:StopMatchQuiet()
-    if self.activeGame then
-        GH_LogWarn("AR_Engine", "StartGame aufgerufen obwohl Spiel bereits läuft – stoppe zuerst.")
-        self:StopGame()
-    end
+    if self.match and not self.match._closed then return false end
 
     local gameClass = ArcadiaNexus.AR_Game
     if not gameClass then
@@ -232,16 +225,20 @@ function E:StartGame(config)
         return
     end
 
-    if config.playMode ~= "puzzle" and not config.seriesContinue then
-        ResetSeries()
-    end
-
     if config.playMode ~= "puzzle" and config.popOut == nil then
         local S = ArcadiaNexus.AR_Settings
         config.popOut = S and S:Get("popOut") and true or false
     end
 
-    E._sessionId = ArcadiaNexus.Lifecycle:RestartGame("ARCADIAROWS", E._sessionId)
+    local sid = ArcadiaNexus.Lifecycle:ClaimRestart("ARCADIAROWS", E._sessionId)
+    if not sid then return false end
+    self._busy = false
+    _timerGuard:Cancel()
+    self:StopMatchQuiet()
+    if config.playMode ~= "puzzle" and not config.seriesContinue then
+        ResetSeries()
+    end
+    E._sessionId = sid
     local instance = gameClass:New()
     instance:Init(config)
     self.activeGame = instance

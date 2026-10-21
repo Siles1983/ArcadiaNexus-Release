@@ -58,7 +58,7 @@ ArcadiaNexus.RegisterLocale("GOBLINBLAST", "deDE", {
     result_level           = "|cffaaaaaa Level:|r |cffffff00%d|r",
     result_walls           = "|cffaaaaaa Wände zerstört:|r |cffffff00%d|r",
     result_enemies         = "|cffaaaaaa Gegner besiegt:|r |cffffff00%d|r",
-    result_time            = "|cffaaaaaa Zeit:|r |cffffff00%d:%02d|r",
+    result_time            = "|cffaaaaaa Zeit:|r |cffffff00%s|r",
     result_time_bonus      = "|cffaaaaaa Zeitbonus:|r |cff40ff40+%d|r",
 
     -- Settings-Panel: Box-Titel
@@ -74,16 +74,23 @@ ArcadiaNexus.RegisterLocale("GOBLINBLAST", "deDE", {
 
     -- Settings-Panel: Spielanleitung
     guide_goal      = "|cffffff00Ziel:|r Besiege in 12 Leveln alle Gegner mit deinen Bomben, ohne selbst getroffen zu werden!",
-    guide_controls  = "|cffffff00Steuerung:|r WASD oder Pfeiltasten bewegen. Leertaste legt eine Bombe. ESC unterbricht (Fortschritt wird gespeichert).",
+    guide_controls  = "|cffffff00Steuerung:|r WASD oder Pfeiltasten bewegen. Leertaste legt eine Bombe. P / Gamepad Y pausiert. ESC unterbricht (Fortschritt wird gespeichert).",
     guide_bombs     = "|cffffff00Bomben:|r Explodieren nach 2,5 Sekunden im Kreuz. Explosionen zünden andere Bomben (Kettenreaktion!).",
-    guide_powerups  = "|cffffff00Power-ups:|r Zerstörte Wände hinterlassen manchmal Extras – |cffff8800orange|r = größerer Radius, |cff4db8ffblau|r = mehr Bomben.",
+    guide_powerups  = "|cffffff00Power-ups:|r Zerstörte Wände hinterlassen manchmal Extras – |cffff8800orange R|r = größerer Radius, |cff4db8ffblau B|r = mehr Bomben.",
     guide_levels    = "|cffffff00Level:|r 12 Level mit mehr Gegnern, mehr Tempo und dichteren Wänden. Ab Level 4 legen Gegner selbst Bomben!",
     guide_timer     = "|cffffff00Timer:|r Je schneller du ein Level schaffst, desto höher der Zeitbonus auf deine Punkte.",
     guide_score     = "|cffffff00Punkte:|r Wand = 10 · Gegner = 100 · Level = +500 + Zeitbonus (Einfach x1 · Normal x2 · Schwer x4).",
     guide_diff      = "|cffffff00Schwierigkeit:|r Einfach = langsame Gegner, Normal = +1 Gegner pro Level, Schwer = +2 Gegner, schnelleres Tempo, mehr Gegner-Bomben, nur 2 Leben.",
-    guide_hint      = "|cffaaaaaa Ein unterbrochenes Spiel kann über den Weiterspielen-Button fortgesetzt werden.|r",
+    guide_hint      = "|cffaaaaaa Start → gespeicherten Slot → Weiterspielen setzt dieselbe Welt fort. Alte Checkpoints starten das gespeicherte Level neu und nutzen historische Wertung.|r",
 
     -- Reset
+    btn_pause="Pause", pause_hint="Pause – P / Gamepad Y / Weiter",
+    lbl_level_time="Levelzeit", lbl_total_time="Gesamtzeit",
+    hud_tooltip="Bomben: verfügbar / Maximum. R: Reichweite (max. 6). B: Bombenbudget (max. 5). Levelzeit bestimmt den Zeitbonus; Gesamtzeit zählt den Lauf.",
+    legacy_slot="Alter Checkpoint: Levelneustart",
+    lbl_legacy_score="Historisch", legacy_points="Altpunkte: %d · historische Gesamtwertung: %d",
+    legacy_hint="Alter Checkpoint: Level neu erzeugt. Separate historische Wertung.",
+    invalid_save_title="Spielstand nicht ladbar", invalid_save_body="Dieser Spielstand ist beschädigt oder nicht kompatibel. Er bleibt erhalten; wähle einen anderen Slot oder ein neues Spiel.",
     btn_reset       = "Reset",
 })
 
@@ -138,7 +145,7 @@ ArcadiaNexus.RegisterLocale("GOBLINBLAST", "enUS", {
     result_level           = "|cffaaaaaa Level:|r |cffffff00%d|r",
     result_walls           = "|cffaaaaaa Walls destroyed:|r |cffffff00%d|r",
     result_enemies         = "|cffaaaaaa Enemies defeated:|r |cffffff00%d|r",
-    result_time            = "|cffaaaaaa Time:|r |cffffff00%d:%02d|r",
+    result_time            = "|cffaaaaaa Time:|r |cffffff00%s|r",
     result_time_bonus      = "|cffaaaaaa Time bonus:|r |cff40ff40+%d|r",
 
     -- Settings boxes
@@ -154,15 +161,22 @@ ArcadiaNexus.RegisterLocale("GOBLINBLAST", "enUS", {
 
     -- Guide
     guide_goal      = "|cffffff00Goal:|r Defeat all enemies across 12 levels with your bombs without getting hit!",
-    guide_controls  = "|cffffff00Controls:|r Move with WASD or Arrow Keys. Spacebar drops a bomb. ESC interrupts (progress is saved).",
+    guide_controls  = "|cffffff00Controls:|r Move with WASD or Arrow Keys. Spacebar drops a bomb. P / Gamepad Y pauses. ESC interrupts (progress is saved).",
     guide_bombs     = "|cffffff00Bombs:|r Explode after 2.5 seconds in a cross shape. Explosions ignite other bombs (chain reaction!).",
-    guide_powerups  = "|cffffff00Power-ups:|r Destroyed walls sometimes drop extras – |cffff8800orange|r = bigger radius, |cff4db8ffblue|r = more bombs.",
+    guide_powerups  = "|cffffff00Power-ups:|r Destroyed walls sometimes drop extras – |cffff8800orange R|r = bigger radius, |cff4db8ffblue B|r = more bombs.",
     guide_levels    = "|cffffff00Levels:|r 12 levels with more enemies, higher speed and denser walls. From level 4 enemies drop bombs themselves!",
     guide_timer     = "|cffffff00Timer:|r The faster you clear a level, the higher the time bonus added to your score.",
     guide_score     = "|cffffff00Score:|r Wall = 10 · Enemy = 100 · Level = +500 + time bonus (Easy x1 · Normal x2 · Hard x4).",
     guide_diff      = "|cffffff00Difficulty:|r Easy = slow enemies, Normal = +1 enemy per level, Hard = +2 enemies, faster pace, more enemy bombs, only 2 lives.",
-    guide_hint      = "|cffaaaaaa An interrupted game can be resumed via the Continue button.|r",
+    guide_hint      = "|cffaaaaaa Start → saved slot → Continue resumes the same world. Old checkpoints restart their saved level and use historical ranking.|r",
 
     -- Reset
+    btn_pause="Pause", pause_hint="Paused – P / Gamepad Y / Continue",
+    lbl_level_time="Level time", lbl_total_time="Total time",
+    hud_tooltip="Bombs: available / maximum. R: range (max. 6). B: bomb capacity (max. 5). Level time determines the bonus; total time tracks the run.",
+    legacy_slot="Old checkpoint: level restart",
+    lbl_legacy_score="Historical", legacy_points="Previous points: %d · historical total: %d",
+    legacy_hint="Old checkpoint: regenerated level. Separate historical ranking.",
+    invalid_save_title="Cannot load save", invalid_save_body="This save is damaged or incompatible. It remains intact; choose another slot or a new game.",
     btn_reset       = "Reset",
 })
